@@ -61,10 +61,12 @@ function dress(node: HTMLElement) {
 
 type ConfettiBurstProps = {
   /** Appelé une fois le dernier confetti retombé — le parent démonte alors. */
-  onDone: () => void;
+  onDone?: () => void;
+  /** Nombre de confettis générés (défaut : 32). */
+  count?: number;
 };
 
-export function ConfettiBurst({ onDone }: ConfettiBurstProps) {
+export function ConfettiBurst({ onDone, count = COUNT }: ConfettiBurstProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
 
   useLayoutEffect(() => {
@@ -76,6 +78,7 @@ export function ConfettiBurst({ onDone }: ConfettiBurstProps) {
   }, []);
 
   useEffect(() => {
+    if (!onDone) return;
     const timer = window.setTimeout(onDone, LIFETIME_MS);
     return () => window.clearTimeout(timer);
   }, [onDone]);
@@ -86,7 +89,7 @@ export function ConfettiBurst({ onDone }: ConfettiBurstProps) {
       aria-hidden
       className="pointer-events-none absolute left-1/2 top-1/2 z-[4] block h-0 w-0"
     >
-      {Array.from({ length: COUNT }, (_, i) => (
+      {Array.from({ length: count }, (_, i) => (
         <span key={i} className="k-confetti absolute block" />
       ))}
     </span>

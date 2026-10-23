@@ -1,43 +1,34 @@
+import type { Metadata } from "next";
 import { Lilita_One, Nunito } from "next/font/google";
 import Link from "next/link";
-import { ExperienceSelector } from "@/components/marketing/experience-selector";
+import { HeroCloudBackdrop } from "@/components/marketing/hero-cloud-backdrop";
+import { StraightRibbonTicker } from "@/components/marketing/straight-ribbon-ticker";
+import { KermessePatternSection } from "@/components/marketing/kermesse-pattern-background";
+import { KermesseWorldTransition } from "@/components/marketing/kermesse-world-transition";
 import { HeroStickers } from "@/components/marketing/hero-stickers";
 import { Magnetic } from "@/components/marketing/magnetic";
-import { Reveal } from "@/components/marketing/reveal";
-import { ScrollPanoramaBackground } from "@/components/marketing/scroll-panorama-background";
+import { InteractiveGamesSimulator } from "@/components/marketing/interactive-games-simulator";
+import { InteractiveModulesDeck } from "@/components/marketing/interactive-modules-deck";
+import { VitrineBookingShowcase } from "@/components/marketing/vitrine-booking-showcase";
+import { TradeRoiSimulator } from "@/components/marketing/trade-roi-simulator";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { SkipLink } from "@/components/ui/skip-link";
-import { Tilt3D } from "@/components/ui/tilt-3d";
-import { UseCasesByTrade } from "@/components/marketing/use-cases-by-trade";
-import { VitrineSpotlight } from "@/components/marketing/vitrine-spotlight";
-import {
-  PRIX_ENTREE_EUROS,
-  PRIX_ENTREE_MENSUEL,
-} from "@/components/marketing/prix";
 import { PLAN_TIERS } from "@/lib/plans";
+import { ScallopedDivider } from "@/components/marketing/scalloped-divider";
+import { InteractiveScratchCard } from "@/components/marketing/interactive-scratch-card";
+import { UseCasesByTrade } from "@/components/marketing/use-cases-by-trade";
+import { CheckerboardSeparator } from "@/components/marketing/checkerboard-separator";
 
-/* DA « La Kermesse » : Lilita One pour les titres (voix foraine, ronde),
-   Nunito 600-900 pour le corps.
-
-   Architecture de page orientée conversion commerciale :
-     1. Hero (promesse globale + compteur d'étendue)
-     2. Marquee
-     3. Votre commerce en situation réelle (par typologie métier : restaurant, bar, boutique, salon)
-     4. Le catalogue des 14 modules détaillés (contenu, situation d'usage, avantage clé, démo)
-     5. Gros plan : La Vitrine au QR Code (carte vivante bilingue, réservation sans commission)
-     6. Comment ça marche (3 étapes : QR code, jeu, caisse)
-     7. La boîte à outils & Caisse universelle (11 familles de codes, stats)
-     8. Le jeu honnête (fiche Google protégée, zéro gain contre un avis)
-     9. Espace commerçant (tableau de bord & statistiques)
-     10. Tarifs par objectif (5 offres sans prix en dur)
-     11. FAQ & Objections
-     12. CTA final */
+/* ═══════════════════════════════════════════════════════════════
+   TYPOGRAPHIE & STYLE NÉO-BRUTALISTE KERMESSE
+   ═══════════════════════════════════════════════════════════════ */
 
 const lilita = Lilita_One({
   subsets: ["latin"],
   weight: "400",
   variable: "--font-display",
 });
+
 const nunito = Nunito({
   subsets: ["latin"],
   weight: ["600", "700", "800", "900"],
@@ -45,140 +36,75 @@ const nunito = Nunito({
 });
 
 const DISPLAY = { fontFamily: "var(--font-display), system-ui, sans-serif" } as const;
-const SECTION = "relative z-10 mx-auto max-w-6xl scroll-mt-28 px-4 py-16 sm:px-6 sm:py-20";
 
-/* ─────────────────────────── Données ─────────────────────────── */
+export const metadata: Metadata = {
+  title: "Lastchance — Gamification & Fidélité au QR Code pour Commerces",
+  description:
+    "15 jeux instantanés, vitrine bilingue 0% commission, passeport fidélité Apple & Google Wallet et soirées pronostics live pour restaurants, bars et boutiques.",
+};
 
-const HERO_CHIPS = [
-  "Prêt en 10 min",
-  "Sans compte client",
-  "Conforme RGPD",
-  "Sans engagement",
-];
+/* ═══════════════════════════════════════════════════════════════
+   DONNÉES STATIQUES DU SITE
+   ═══════════════════════════════════════════════════════════════ */
 
-const STEPS = [
-  {
-    n: 1,
-    dot: "bg-k-orange text-k-ink",
-    tilt: "-rotate-[1.6deg]",
-    title: "Posez votre QR code",
-    description: "Sur le comptoir, le menu ou l'addition. Affiches A4 personnalisées prêtes à imprimer.",
-  },
-  {
-    n: 2,
-    dot: "bg-k-yellow text-k-ink",
-    tilt: "rotate-[1.3deg]",
-    title: "Ils jouent en direct",
-    description: "Vos clients scannent et jouent immédiatement à l'une de vos 15 mécaniques, sans compte obligatoire.",
-  },
-  {
-    n: 3,
-    dot: "bg-k-pink text-k-ink",
-    tilt: "-rotate-[0.7deg]",
-    title: "Vous encaissez les retours",
-    description: "Ils reviennent pour retirer leur lot. Votre équipe le valide en caisse au scanner.",
-  },
-];
 
-const FEATURES = [
-  { n: "01", dot: "bg-k-yellow text-k-ink", title: "QR codes & affiches prêtes", description: "Affiches A4 imprimables, quatre modèles au choix, QR personnalisés." },
-  { n: "02", dot: "bg-k-blue text-k-ink", title: "Stats en temps réel", description: "Parties jouées, taux de gagnants, scans et emails — par campagne." },
-  { n: "03", dot: "bg-k-orange text-k-ink", title: "15 mécaniques de jeu", description: "Roue, grattage, machine à sous, défis… adaptées à vos couleurs et votre logo." },
-  { n: "04", dot: "bg-k-pink text-k-ink", title: "Caisse universelle", description: "Un seul scanner pour valider les gains des onze familles de jeux." },
-  { n: "05", dot: "bg-k-green text-k-bg", title: "Conforme RGPD", description: "Consentement explicite, données en Europe, export CSV à tout moment." },
-  { n: "06", dot: "bg-k-orange text-k-ink", title: "Emails de gain automatiques", description: "Chaque gagnant reçoit son code au nom de votre établissement." },
-];
-
-const RISKS = [
-  "Conditionner un avantage à un avis viole les règles de Google Business Profile",
-  "Une fiche signalée peut être suspendue — invisible sur Maps et la recherche locale",
-  "Les faux avis (même « incités ») ternissent la confiance des vrais clients",
-];
 
 const MERCHANT_POINTS = [
-  "Campagnes et modules illimités",
-  "Caisse universelle pour toutes les mécaniques",
-  "Statistiques et retours en temps réel",
-  "Gestion des gains, stocks et probabilités",
-  "Export des joueurs et emails qualifiés",
-  "10 modèles de campagne prêts à l'emploi",
+  "Campagnes et modules de jeu illimités",
+  "Caisse universelle avec scanner 1 seconde",
+  "Statistiques de passages et retours en temps réel",
+  "Gestion totale des gains, stocks et probabilités",
+  "Export des joueurs et emails qualifiés conforme RGPD",
+  "10 modèles de campagne prêts à jouer en 1 clic",
 ];
 
 const FAQ = [
   {
     question: "Combien de temps faut-il pour démarrer ?",
     answer:
-      "Une dizaine de minutes : créez votre compte, choisissez l'un des 10 modèles prêts à jouer (roue, carte à gratter, vitrine, pronostics…), imprimez l'affiche avec son QR code et posez-la en caisse. Vos clients peuvent jouer immédiatement.",
+      "Une dizaine de minutes : créez votre compte, choisissez l'un des 10 modèles prêts à jouer, imprimez l'affiche avec son QR code et posez-la en caisse. Vos clients peuvent jouer immédiatement.",
   },
   {
     question: "Mes clients doivent-ils installer une application ?",
     answer:
-      "Non. Le jeu s'ouvre directement dans le navigateur du téléphone après le scan du QR code. Aucun téléchargement, aucun compte obligatoire côté client.",
+      "Non. Le jeu s'ouvre directement dans le navigateur après le scan du QR code. Aucun téléchargement, aucun compte obligatoire. Le passeport fidélité s'enregistre en 1 clic dans Apple Wallet ou Google Wallet.",
   },
   {
     question: "Comment sont contrôlés les gains ?",
     answer:
-      "C'est vous qui définissez les lots, leurs probabilités et leurs stocks. Les poids, le tirage pondéré et le décrément de stock sont calculés et protégés sur nos serveurs — le lot attribué ne dépend jamais de ce que renvoie le téléphone du joueur — et chaque gain génère un code unique que votre équipe valide en caisse universelle.",
+      "C'est vous qui définissez les lots, leurs probabilités et leurs stocks. Le tirage est calculé et sécurisé sur nos serveurs et chaque gain génère un code unique que votre équipe valide avec le scanner de caisse.",
   },
   {
     question: "Est-ce conforme au RGPD et aux règles Google ?",
     answer:
-      "Oui. Le consentement des joueurs est explicite, les données sont hébergées en Europe et vous pouvez les exporter à tout moment. Les gains ne sont JAMAIS conditionnés au dépôt d'un avis en ligne, ce qui protège votre fiche Google.",
+      "Oui. Le consentement des joueurs est explicite, les données sont hébergées en Europe. Les gains ne sont JAMAIS conditionnés au dépôt d'un avis, ce qui protège votre fiche Google.",
   },
   {
-    question: "Puis-je arrêter quand je veux ?",
+    question: "Puis-je changer d'offre ou résilier quand je veux ?",
     answer:
-      "Oui. L'abonnement est sans engagement : vous pouvez le gérer ou le résilier à tout moment depuis votre espace commerçant, en quelques clics.",
-  },
-  {
-    question: "Quelles sont les 15 mécaniques de jeu disponibles ?",
-    answer:
-      "Le module Jeux instantanés comprend 9 jeux de hasard (Roue, Carte à gratter, Carte retournée, Bonneteau 3 verres, Machine à sous, Memory, Coffre, Lancer de dé, Pioche) et 6 jeux d'adresse où le joueur doit réussir l'épreuve pour ouvrir le tirage (Pierre-feuille-ciseaux, Réflexe, Jauge, Puzzle, Mot mystère, Estimation).",
+      "Oui, absolument. Tous nos forfaits sont sans engagement de durée. Vous pouvez modifier votre formule ou résilier en un clic directement depuis votre espace commerçant, sans préavis.",
   },
 ];
 
-/* ─────────────────────── Éléments partagés ─────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   BOUTONS NÉO-BRUTALISTES RÉUTILISABLES
+   ═══════════════════════════════════════════════════════════════ */
 
-function KEyebrow({
-  children,
-  dot = "accent",
-  tone = "ink",
-}: {
-  children: React.ReactNode;
-  dot?: string;
-  tone?: "ink" | "cream";
-}) {
-  const accent = dot === "accent";
-  return (
-    <div className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.18em] sm:text-sm">
-      <span
-        aria-hidden
-        className={`h-2 w-2 flex-none rounded-full ${accent ? "" : dot}`}
-        style={accent ? { backgroundColor: "var(--backdrop-accent)" } : undefined}
-      />
-      <span className={tone === "cream" ? "text-k-bg" : "k-halo text-k-ink"}>{children}</span>
-    </div>
-  );
-}
-
-function KPrimary({
+function BtnPrimary({
   href,
   children,
-  className = "bg-k-orange text-k-ink",
-  large = false,
+  className = "",
 }: {
   href: string;
   children: React.ReactNode;
-  className?: string;
   large?: boolean;
+  className?: string;
 }) {
   return (
     <Magnetic>
       <Link
         href={href}
-        className={`k-border k-btn inline-block whitespace-nowrap rounded-full font-black focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink ${
-          large ? "px-9 py-4 text-lg" : "px-7 py-3.5 text-base"
-        } ${className}`}
+        className={`inline-flex items-center gap-2 rounded-full border-[2.5px] border-[#181512] bg-[#FF6B35] px-7 py-3 text-sm font-black text-white shadow-[0_4px_0_#181512] transition-all hover:-translate-y-0.5 hover:bg-[#e05622] hover:shadow-[0_6px_0_#181512] active:translate-y-0.5 active:shadow-[0_2px_0_#181512] ${className}`}
       >
         {children}
       </Link>
@@ -186,720 +112,810 @@ function KPrimary({
   );
 }
 
-function KOutline({ href, children }: { href: string; children: React.ReactNode }) {
+function BtnOutline({
+  href,
+  children,
+  className = "",
+}: {
+  href: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <Link
       href={href}
-      className="k-border k-btn inline-block whitespace-nowrap rounded-full bg-white/85 px-7 py-3.5 text-base font-black text-k-ink backdrop-blur-md focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+      className={`inline-flex items-center gap-2 rounded-full border-[2px] border-[#181512] bg-white px-6 py-3 text-sm font-black text-[#181512] shadow-[0_2px_0_#181512] transition-all hover:-translate-y-0.5 hover:bg-[#FFE600] hover:shadow-[0_4px_0_#181512] ${className}`}
     >
       {children}
     </Link>
   );
 }
 
-function KCheck() {
-  return (
-    <span className="k-border-thin flex h-6 w-6 flex-none items-center justify-center rounded-full bg-k-green text-k-bg">
-      <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none">
-        <path d="M2.5 6.2 5 8.5 9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </span>
-  );
-}
-
-function KCross() {
-  return (
-    <span className="k-border-thin flex h-7 w-7 flex-none items-center justify-center rounded-full bg-k-pink text-k-ink">
-      <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none">
-        <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      </svg>
-    </span>
-  );
-}
-
-/* ─────────────────────────── Sections ─────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 1 — HERO PANORAMIQUE 4K (DÉCOR STRICTEMENT ISOLÉ AU HERO)
+   ═══════════════════════════════════════════════════════════════ */
 
 function Hero() {
   return (
-    <section className="relative z-10 overflow-x-clip px-4 pb-12 pt-28 text-center sm:px-6 sm:pt-32">
+    <section className="relative flex min-h-[100dvh] flex-col justify-between overflow-hidden px-4 pt-20 text-center sm:px-6 sm:pt-24 bg-gradient-to-b from-[#FFFDF7] via-[#FFF9EE] to-[#FFF3E0]">
+      <HeroCloudBackdrop />
       <HeroStickers />
 
-      <div className="rise-in relative z-[2] inline-flex items-center gap-2 rounded-full border-[3px] border-k-ink bg-k-yellow px-4 py-1.5 text-[12px] font-black tracking-[0.06em] text-k-ink shadow-[0_4px_0_var(--color-k-ink)] sm:text-[13px]">
-        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-k-orange" />
-        7 jours offerts · Sans engagement
-      </div>
+      <div className="relative z-10 mx-auto max-w-4xl my-auto flex flex-col justify-center items-center py-6 sm:py-10">
+        <div className="inline-flex items-center gap-2 rounded-full border-[2.5px] border-[#181512] bg-[#FFE600] px-4 py-1.5 text-xs font-black uppercase tracking-wider text-[#181512] shadow-[0_3px_0_#181512]">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#FF6B35] animate-ping" />
+          🎪 La plateforme n°1 de gamification &amp; fidélité au QR code
+        </div>
 
-      <h1
-        className="rise-in k-halo relative z-[2] mx-auto mt-6 max-w-[960px] text-[clamp(2.7rem,7vw,5.1rem)] leading-[1.03]"
-        style={{ ...DISPLAY, animationDelay: "80ms" }}
-      >
-        Faites jouer vos clients.{" "}
-        <span className="inline-block -rotate-[1.56deg] rounded-[18px] border-[3px] border-k-ink bg-k-yellow px-4 pb-1.5 shadow-[0_5px_0_var(--color-k-ink)]">
-          Remplissez
-        </span>{" "}
-        votre commerce.
-      </h1>
-
-      <p
-        className="k-card rise-in mx-auto mt-6 max-w-2xl rounded-2xl p-4 text-sm sm:text-base font-bold text-k-body leading-relaxed shadow-sm"
-        style={{ animationDelay: "120ms" }}
-      >
-        La plateforme tout-en-un pour restaurants, bars et boutiques : carte au QR code, 15 mécaniques de jeu, fidélité smartphone et animations live. Dès {PRIX_ENTREE_MENSUEL}.
-      </p>
-
-      {/* Compteur d'étendue : 14 modules, 15 jeux, 1 caisse, prix d'entrée dérivé */}
-      <div
-        className="rise-in relative z-[2] mx-auto mt-6 flex max-w-3xl flex-wrap items-center justify-center gap-2.5 sm:gap-3"
-        style={{ animationDelay: "180ms" }}
-      >
-        <span className="k-card inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs sm:text-sm font-black text-k-ink shadow-sm">
-          <span className="text-k-orange-text font-black">★</span> 14 modules métiers
-        </span>
-        <span className="k-card inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs sm:text-sm font-black text-k-ink shadow-sm">
-          <span className="text-k-yellow font-black">★</span> 15 mécaniques de jeu
-        </span>
-        <span className="k-card inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs sm:text-sm font-black text-k-ink shadow-sm">
-          <span className="text-k-pink font-black">★</span> 1 caisse universelle
-        </span>
-        <span className="k-card inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs sm:text-sm font-black text-k-ink shadow-sm">
-          <span className="text-k-green font-black">★</span> Dès {PRIX_ENTREE_MENSUEL}
-        </span>
-      </div>
-
-      <div
-        className="rise-in relative z-[2] mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row"
-        style={{ animationDelay: "220ms" }}
-      >
-        <KPrimary href="/signup" className="bg-k-orange text-k-ink">
-          Essayer gratuitement 7 jours →
-        </KPrimary>
-        <KOutline href="#metiers">Découvrir selon mon activité</KOutline>
-      </div>
-
-      <div
-        className="rise-in relative z-[2] mt-8 flex flex-wrap justify-center gap-2.5"
-        style={{ animationDelay: "260ms" }}
-      >
-        {HERO_CHIPS.map((chip) => (
-          <span
-            key={chip}
-            className="inline-flex items-center gap-1.5 rounded-full border border-k-ink/20 bg-white/80 px-4 py-2 text-sm font-bold text-k-ink shadow-[0_2px_8px_rgba(33,29,22,0.10)] backdrop-blur-md"
-          >
-            <span aria-hidden className="font-black text-k-green">
-              ✓
-            </span>
-            {chip}
-          </span>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Marquee() {
-  const line = "ILS SCANNENT ★ ILS JOUENT ★ ILS GAGNENT ★ ILS REVIENNENT ★ ".repeat(3);
-  return (
-    <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6">
-      <div
-        aria-hidden
-        className="ticker overflow-hidden rounded-full bg-k-ink/80 py-2.5 backdrop-blur-md"
-      >
-        <div
-          className="ticker-track flex w-max whitespace-nowrap text-lg font-extrabold tracking-[0.08em]"
-          style={{ ...DISPLAY, color: "var(--backdrop-accent-text)" }}
+        <h1
+          className="mt-4 text-[clamp(2.2rem,5vw,4.2rem)] font-black tracking-tight text-[#181512] leading-[1.04]"
+          style={DISPLAY}
         >
-          <span className="pr-10">{line.trim()}</span>
-          <span className="pr-10">{line.trim()}</span>
+          Faites jouer vos clients.{" "}
+          <span className="inline-block -rotate-1 rounded-2xl border-[3.5px] border-[#181512] bg-[#fcca59] px-4 pb-1 text-[#181512] shadow-[0_6px_0_#181512]">
+            Remplissez
+          </span>{" "}
+          votre commerce.
+        </h1>
+
+        <p className="mx-auto mt-3 max-w-2xl text-base sm:text-lg md:text-xl font-bold leading-relaxed text-[#181512]/85">
+          Roue de la fortune en direct, passeport fidélité Apple &amp; Google Wallet et vitrine sans commission.
+          Vos clients scannent et jouent en 30 secondes.
+        </p>
+
+        {/* Boutons d'action Kermesse physiques */}
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-4">
+          <BtnPrimary href="/signup" className="px-8 sm:px-10 py-4 text-base sm:text-lg">
+            <span>Essayer gratuitement 7 jours</span>
+            <span className="text-xl">→</span>
+          </BtnPrimary>
+
+          <BtnOutline href="#simulateur-jeux" className="px-7 py-4 text-base sm:text-lg">
+            <span>🎲 Tester la Roue 3D</span>
+          </BtnOutline>
+        </div>
+
+        {/* Pastilles de réassurance foraine */}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-4 text-xs font-black text-[#181512]/75">
+          <span className="flex items-center gap-1.5">
+            <span className="text-[#10B981]">✓</span> 0 € de frais de mise en service
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[#10B981]">✓</span> Sans engagement &amp; sans appli
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[#10B981]">✓</span> Validation caisse en 1 sec
+          </span>
         </div>
       </div>
-    </div>
-  );
-}
 
-/** Section Cas d'usage par métier (Restaurant, Bar, Boutique, Salon). */
-function TradeUseCasesSection() {
-  return (
-    <section id="metiers" className={SECTION}>
-      <Reveal>
-        <UseCasesByTrade />
-      </Reveal>
-    </section>
-  );
-}
-
-/** Grand stand catalogue des 14 modules détaillés. */
-function ModulesShowcase() {
-  return (
-    <section id="modules" className={SECTION}>
-      <Reveal>
-        <ExperienceSelector />
-      </Reveal>
-    </section>
-  );
-}
-
-/** Section Focus : La Vitrine au QR Code. */
-function VitrineSection() {
-  return (
-    <section id="vitrine" className={SECTION}>
-      <Reveal>
-        <VitrineSpotlight />
-      </Reveal>
-    </section>
-  );
-}
-
-function StepVisual({ step }: { step: number }) {
-  if (step === 1) {
-    return (
-      <div className="k-border-thin mb-4 mt-4 grid h-[86px] w-[86px] grid-cols-3 grid-rows-3 gap-[5px] rounded-[14px] bg-white/90 p-2.5">
-        <span className="rounded-[3px] bg-k-ink" /><span /><span className="rounded-[3px] bg-k-ink" />
-        <span /><span className="rounded-[3px] bg-k-orange" /><span />
-        <span className="rounded-[3px] bg-k-ink" /><span /><span className="rounded-[3px] bg-k-ink" />
+      {/* Bandeau d'informations clés foraines droit et net (sans déformation wavy) */}
+      <div className="relative z-20 w-full mt-auto pb-0">
+        <StraightRibbonTicker bgColor="bg-[#FFE600]" textColor="text-[#181512]" />
       </div>
-    );
-  }
-  if (step === 2) {
-    return (
+    </section>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 3 — LA GAMME LASTCHANCE (FOND COULEUR UNIE : JAUNE VANILLE SOLAIRE ÉCLATANT)
+   ANIMÉ ET IMMERSIF AVEC DECK 3D ET CARTES EN LÉVITATION TILT
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 4 — CONFIGURATEUR JEUX & PRONOSTICS (ASYMÉTRIQUE : TEXTE GAUCHE / SIMULATEUR DROITE)
+   FOND MOTIF : ÉTOILES DORÉES KERMESSE SCINTILLANTES
+   ═══════════════════════════════════════════════════════════════ */
+
+function InteractiveGamesSection() {
+  return (
+    <KermessePatternSection
+      variant="stars-yellow"
+      id="simulateur-jeux"
+      className="py-16 sm:py-24 text-[#181512] overflow-hidden"
+    >
+      {/* Halo d'ambiance doré subtil et organique */}
       <div
-        className="k-border-thin k-spin mb-4 mt-4 h-[86px] w-[86px] rounded-full"
-        style={{ background: "conic-gradient(var(--color-k-orange) 0 25%, var(--color-k-yellow) 0 50%, var(--color-k-pink) 0 75%, var(--color-k-blue) 0 100%)" }}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_75%_55%_at_50%_45%,rgba(255,225,90,0.18),transparent_70%)]"
       />
-    );
-  }
-  return (
-    <div className="k-border-thin mb-4 mt-4 flex h-[86px] w-[86px] items-end gap-2 rounded-[14px] bg-white/90 p-3">
-      <span className="k-border-thin h-[38%] flex-1 rounded-t-md bg-k-pink" />
-      <span className="k-border-thin h-[64%] flex-1 rounded-t-md bg-k-yellow" />
-      <span className="k-border-thin h-[88%] flex-1 rounded-t-md bg-k-green" />
-    </div>
-  );
-}
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* MISE EN PAGE EN ZIGZAG : INTRO & CONTRÔLES À GAUCHE / SMARTPHONE & TEST À DROITE */}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-center">
+          {/* Côté GAUCHE (5 colonnes) : Titre asymétrique, pitch, arguments & CTA */}
+          <div className="lg:col-span-5 flex flex-col justify-center">
+            <div className="inline-flex items-center gap-2 self-start rounded-full border-2 border-[#181512] bg-[#FFE600] px-3.5 py-1 text-xs font-black uppercase tracking-wider text-[#181512] shadow-[0_2px_0_#181512]">
+              🎲 15 Jeux Instantanés &amp; Studio Live
+            </div>
 
-function KArrow({ flip = false }: { flip?: boolean }) {
-  return (
-    <div className={`hidden items-center px-1.5 lg:flex ${flip ? "translate-y-2.5 -scale-y-100" : "-translate-y-5"}`}>
-      <svg width="90" height="52" viewBox="0 0 90 52" aria-hidden>
-        <path className="dash-flow" d="M6 40 C 30 8, 58 8, 80 26" fill="none" stroke="var(--color-k-ink)" strokeWidth="4" strokeLinecap="round" />
-        <path d="M70 18 L 82 27 L 68 32" fill="none" stroke="var(--color-k-ink)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </div>
-  );
-}
-
-function Steps() {
-  return (
-    <section id="comment-ca-marche" className={SECTION}>
-      <Reveal className="text-center">
-        <KEyebrow>Comment ça marche</KEyebrow>
-        <h2 className="k-halo mt-3 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
-          Trois étapes. Zéro prise de tête.
-        </h2>
-      </Reveal>
-
-      <div className="mt-12 flex flex-col items-center justify-center gap-10 lg:flex-row lg:items-stretch lg:gap-0">
-        {STEPS.map((step, i) => (
-          <div key={step.n} className="contents">
-            <Reveal
-              delay={i * 120}
-              className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i]}
+            <h2
+              className="mt-4 text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#181512] leading-[1.08]"
+              style={DISPLAY}
             >
-              <div className={step.tilt}>
-                <Tilt3D>
-                  <div className="k-card k-card-hover relative w-full max-w-[340px] rounded-[22px] px-8 pb-8 pt-9">
-                    <span
-                      className={`k-border k-hard-sm absolute -top-6 left-6 flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${step.dot}`}
-                      style={DISPLAY}
-                    >
-                      {step.n}
-                    </span>
-                    <StepVisual step={step.n} />
-                    <h3 className="text-[22px]" style={DISPLAY}>{step.title}</h3>
-                    <p className="mt-2.5 text-[15px] font-bold leading-normal text-k-body">{step.description}</p>
-                  </div>
-                </Tilt3D>
-              </div>
-            </Reveal>
-            {i < STEPS.length - 1 && <KArrow flip={i === 1} />}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
+              Vos clients scannent.
+              <br />
+              <span className="inline-block -rotate-1 rounded-xl border-2 border-[#181512] bg-[#FF6B35] px-3 py-0.5 text-white shadow-[0_3px_0_#181512]">
+                Ils jouent.
+              </span>{" "}
+              Ils reviennent.
+            </h2>
 
-function Features() {
-  return (
-    <section id="fonctionnalites" className={SECTION}>
-      <Reveal className="text-center">
-        <KEyebrow>La boîte à outils</KEyebrow>
-        <h2 className="k-halo mt-3 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
-          Tout ce qu&apos;il faut, rien de superflu.
-        </h2>
-      </Reveal>
-
-      <div className="mt-11 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {FEATURES.map((f, i) => (
-          <Reveal key={f.n} delay={(i % 3) * 90} className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i % 3]}>
-            <div className={i % 2 ? "-rotate-[0.65deg]" : "rotate-[0.65deg]"}>
-              <Tilt3D>
-                <div className="k-card k-card-hover h-full rounded-[22px] p-6">
-                  <span
-                    className={`k-border k-hard-sm inline-flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${f.dot}`}
-                    style={DISPLAY}
-                  >
-                    {f.n}
-                  </span>
-                  <h3 className="mt-4 text-[21px]" style={DISPLAY}>{f.title}</h3>
-                  <p className="mt-2 text-[14.5px] font-bold leading-normal text-k-body">{f.description}</p>
-                </div>
-              </Tilt3D>
-            </div>
-          </Reveal>
-        ))}
-      </div>
-
-      <HonestGame />
-    </section>
-  );
-}
-
-/** Notre différence : le jeu honnête. */
-function HonestGame() {
-  return (
-    <Reveal className="reveal-pop mt-14" delay={80}>
-      <Tilt3D intensity={6}>
-        <div className="k-card-deep grid gap-9 rounded-[26px] p-7 sm:p-10 lg:grid-cols-[1.1fr_1fr]">
-          <div>
-            <KEyebrow dot="bg-k-yellow" tone="cream">Notre différence</KEyebrow>
-            <h3 className="mt-3 text-[clamp(1.7rem,3vw,2.1rem)] leading-tight text-k-bg" style={DISPLAY}>
-              Un jeu honnête,<br />pas un piège à avis.
-            </h3>
-            <p className="mt-3.5 text-[15.5px] font-bold leading-[1.55] text-k-bg/90">
-              Le gain n&apos;est jamais conditionné à un avis, un like ou un
-              abonnement. Vos clients jouent, gagnent, reviennent — et si un
-              avis arrive, il est spontané. Votre fiche Google ne prend aucun
-              risque de suspension.
+            <p className="mt-3 text-sm sm:text-base font-bold text-[#181512]/80 leading-relaxed">
+              Roue de la fortune, tickets à gratter, défi réflexe, machine à sous ou tournois de pronostics sportifs :
+              le joueur tente sa chance immédiatement sur son smartphone sans télécharger d&apos;application ni créer de compte.
             </p>
-          </div>
-          <div className="flex flex-col justify-center gap-3.5">
-            {RISKS.map((risk, i) => (
-              <div
-                key={risk}
-                className={`flex items-center gap-3 rounded-2xl border-2 border-k-ink/15 bg-white/88 px-4 py-3 text-[13.5px] font-extrabold text-k-ink ${
-                  i % 2 ? "rotate-[0.65deg]" : "-rotate-[0.65deg]"
-                }`}
-              >
-                <KCross />
-                {risk}
+
+            <div className="mt-5 space-y-2.5">
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#181512]">
+                <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 border-[#181512] bg-[#10B981] text-white text-[10px]">✓</span>
+                <span>Tirage serveur chiffré infalsifiable (aucun trucage possible)</span>
               </div>
-            ))}
-            <div className="k-border k-hard-sm rotate-[0.65deg] rounded-2xl bg-k-yellow px-4 py-3.5 text-[14.5px] font-extrabold text-k-ink">
-              <div className="flex items-center gap-3">
-                <span className="k-border-thin flex h-7 w-7 flex-none items-center justify-center rounded-full bg-k-bg">
-                  <svg aria-hidden width="13" height="13" viewBox="0 0 12 12" fill="none">
-                    <path d="M2.5 6.2 5 8.5 9.5 3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-                « Jouez, gagnez, un point c&apos;est tout » — fiche protégée
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#181512]">
+                <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 border-[#181512] bg-[#FFE600] text-[#181512] text-[10px]">✓</span>
+                <span>98% des clients jouent en moins de 45 secondes</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#181512]">
+                <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 border-[#181512] bg-[#FF5C93] text-white text-[10px]">✓</span>
+                <span>1 scan en caisse = gain validé en 1 seconde chrono</span>
               </div>
             </div>
+
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <BtnPrimary href="/signup">
+                Essayer 7 jours offerts →
+              </BtnPrimary>
+              <BtnOutline href="/jeux-instantanes">
+                Voir les 15 mécaniques
+              </BtnOutline>
+            </div>
+
+            {/* Démo tactile immédiate : Le Ticket d'Or Forain */}
+            <div className="mt-8 pt-6 border-t-2 border-dashed border-[#181512]/15">
+              <div className="mb-2.5 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#181512] bg-[#FFE600] text-xs font-black">★</span>
+                <span className="text-xs font-black uppercase tracking-wider text-[#181512]" style={DISPLAY}>
+                  Testez en direct le Ticket d&apos;Or :
+                </span>
+              </div>
+              <InteractiveScratchCard />
+            </div>
+          </div>
+
+          {/* Côté DROIT (7 colonnes) : Simulateur interactif directement intégré dans le décor */}
+          <div className="lg:col-span-7">
+            <InteractiveGamesSimulator />
           </div>
         </div>
-      </Tilt3D>
-    </Reveal>
+      </div>
+    </KermessePatternSection>
   );
 }
 
-function DonutChart() {
-  const data = [
-    { label: "-20 %", value: 35, color: "var(--color-k-orange)" },
-    { label: "Boisson offerte", value: 25, color: "var(--color-k-pink)" },
-    { label: "-10 %", value: 20, color: "var(--color-k-yellow)" },
-    { label: "Dessert offert", value: 10, color: "var(--color-k-blue)" },
-    { label: "Autres", value: 10, color: "var(--color-k-green)" },
-  ];
-  const R = 32;
-  const CIRC = 2 * Math.PI * R;
-  let offset = 0;
-  return (
-    <div className="flex items-center gap-4">
-      <svg viewBox="0 0 80 80" className="chart-pop h-24 w-24 shrink-0 -rotate-90" aria-hidden>
-        {data.map((d) => {
-          const len = (d.value / 100) * CIRC;
-          const seg = (
-            <circle
-              key={d.label}
-              cx="40"
-              cy="40"
-              r={R}
-              fill="none"
-              stroke={d.color}
-              strokeWidth="14"
-              strokeDasharray={`${len} ${CIRC - len}`}
-              strokeDashoffset={-offset}
-            />
-          );
-          offset += len;
-          return seg;
-        })}
-      </svg>
-      <ul className="space-y-1 text-xs">
-        {data.map((d) => (
-          <li key={d.label} className="flex items-center gap-2 font-bold text-k-body">
-            <span className="k-border-thin h-3 w-3 rounded-full" style={{ background: d.color }} />
-            <span className="flex-1">{d.label}</span>
-            <span className="font-black text-k-ink">{d.value}%</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 5 — VITRINE & RÉSERVATION DIRECTE 0% (ASYMÉTRIQUE : DÉMO GAUCHE / TITRE DROITE)
+   FOND COULEUR UNIE : MENTHE FRAÎCHE / LAGON KERMESSE POP
+   ═══════════════════════════════════════════════════════════════ */
 
-function LineChart() {
-  const pts = [8, 22, 15, 30, 24, 40, 33, 52, 44, 60];
-  const w = 260;
-  const h = 90;
-  const step = w / (pts.length - 1);
-  const max = 64;
-  const path = pts.map((v, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)} ${(h - (v / max) * h).toFixed(1)}`).join(" ");
-  const area = `${path} L${w} ${h} L0 ${h} Z`;
-  const markerX = 7 * step;
-  const markerY = h - (52 / max) * h;
+function VitrineReservationSection() {
   return (
-    <svg viewBox={`0 0 ${w} ${h + 16}`} className="w-full" aria-hidden>
-      <defs>
-        <linearGradient id="lc-area" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f5793b" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="#f5793b" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill="url(#lc-area)" className="chart-pop" />
-      <path d={path} fill="none" stroke="#f5793b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="chart-line" pathLength={1} />
-      <circle cx={markerX} cy={markerY} r="4.5" fill="#f5793b" stroke="#211d16" strokeWidth="2" className="chart-marker" />
-      <g transform={`translate(${markerX - 15} ${markerY - 26})`} className="chart-marker">
-        <rect width="30" height="17" rx="8.5" fill="#211d16" />
-        <text x="15" y="12" textAnchor="middle" fontSize="9" fontWeight="700" fill="#fdf6e3">128</text>
-      </g>
-    </svg>
-  );
-}
-
-function DashboardMockup() {
-  const navItems = ["Tableau de bord", "Campagnes", "14 Modules", "Caisse universelle", "Statistiques", "QR Hub", "Paramètres"];
-  const stats = [
-    { label: "Joueurs", value: "1 286", delta: "+18%" },
-    { label: "Emails collectés", value: "342", delta: "+27%" },
-    { label: "Taux de participation", value: "34%", delta: "+13%" },
-    { label: "Gains validés", value: "412", delta: "+15%" },
-  ];
-  return (
-    <div className="k-border k-soft overflow-hidden rounded-[22px] bg-white">
-      <div className="grid grid-cols-[130px_1fr] sm:grid-cols-[160px_1fr]">
-        <aside className="border-r-[2.5px] border-k-ink bg-k-bg p-3">
-          <p className="px-2 text-sm" style={DISPLAY}>
-            LastChance<span className="text-k-orange-text">.</span>
-          </p>
-          <ul className="mt-4 space-y-0.5">
-            {navItems.map((item, i) => (
-              <li
-                key={item}
-                className={`truncate rounded-lg px-2 py-1.5 text-[11px] font-bold ${
-                  i === 0 ? "k-border-thin bg-k-yellow text-k-ink" : "text-k-body"
-                }`}
-              >
-                {item}
-              </li>
-            ))}
-          </ul>
-        </aside>
-
-        <div className="p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-black text-k-ink">Tableau de bord commerçant</p>
-            <span className="k-border-thin rounded-md px-2 py-1 text-[10px] font-bold text-k-body">1 – 31 mai 2026</span>
+    <KermessePatternSection
+      variant="mint-lagoon"
+      id="vitrine-reservation"
+      className="py-16 sm:py-24 text-[#181512] overflow-hidden"
+    >
+      {/* Halo d'ambiance menthe fraîche lagonaire douce */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_75%_55%_at_50%_50%,rgba(16,185,129,0.13),transparent_70%)]"
+      />
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* INVERSION DU ZIGZAG : DÉMO À GAUCHE / CONTENU & COMPARATIF À DROITE */}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-center">
+          {/* Côté GAUCHE (7 colonnes) : Démo interactive Vitrine & Réservation */}
+          <div className="lg:col-span-7 order-2 lg:order-1">
+            <VitrineBookingShowcase />
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {stats.map((s) => (
-              <div key={s.label} className="k-border-thin rounded-lg bg-white p-2.5">
-                <p className="truncate text-[10px] font-bold text-k-body">{s.label}</p>
-                <p className="mt-0.5 text-base font-black text-k-ink">
-                  {s.value} <span className="text-[10px] font-black text-k-green">↑ {s.delta}</span>
+          {/* Côté DROIT (5 colonnes) : Titre fort à droite, comparatif 0% et boutons */}
+          <div className="lg:col-span-5 order-1 lg:order-2 flex flex-col justify-center">
+            <div className="inline-flex items-center gap-2 self-start rounded-full border-2 border-[#181512] bg-[#FFE600] px-3.5 py-1 text-xs font-black uppercase tracking-wider text-[#181512] shadow-[0_2px_0_#181512]">
+              🍽️ Vitrine Vivante &amp; Réservation Directe 0%
+            </div>
+
+            <h2
+              className="mt-4 text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#181512] leading-[1.08]"
+              style={DISPLAY}
+            >
+              En finir avec
+              <br />
+              <span className="inline-block -rotate-1 rounded-xl border-2 border-[#181512] bg-[#FF6B35] px-3 py-0.5 text-white shadow-[0_3px_0_#181512]">
+                la taxe TheFork.
+              </span>
+            </h2>
+
+            <p className="mt-3 text-sm sm:text-base font-bold text-[#181512]/80 leading-relaxed">
+              Les centrales vous facturent 2 € à 3,50 € par couvert et gardent vos clients captifs.
+              Avec LastChance, votre carte est consultable au QR code, les réservations arrivent en direct et 100% de votre marge reste chez vous.
+            </p>
+
+            {/* Boîte comparaison visuelle */}
+            <div className="mt-5 grid grid-cols-2 gap-2.5 text-left">
+              <div className="rounded-xl border-2 border-red-300 bg-red-50 p-3 shadow-[0_2px_0_#ef4444]">
+                <span className="text-[10px] font-black text-red-700 uppercase tracking-wider">
+                  ❌ Centrales tierces
+                </span>
+                <div className="mt-1 text-sm font-black text-red-900">
+                  2,50 € / couvert
+                </div>
+                <p className="mt-0.5 text-[10px] font-bold text-red-700/80 leading-tight">
+                  Commissions déduites de vos marges + clients captifs
                 </p>
               </div>
-            ))}
-          </div>
 
-          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div className="k-border-thin rounded-lg p-3">
-              <p className="text-xs font-black text-k-ink">Évolution des participations</p>
-              <div className="mt-2">
-                <LineChart />
+              <div className="rounded-xl border-2 border-[#10B981] bg-white p-3 shadow-[0_3px_0_#10B981]">
+                <span className="text-[10px] font-black text-[#065F46] uppercase tracking-wider">
+                  ✅ LastChance Vitrine
+                </span>
+                <div className="mt-1 text-sm font-black text-[#047857]">
+                  0 € de commission
+                </div>
+                <p className="mt-0.5 text-[10px] font-bold text-[#065F46]/90 leading-tight">
+                  100% de marge conservée + clients dans votre fichier
+                </p>
               </div>
             </div>
-            <div className="k-border-thin rounded-lg p-3">
-              <p className="text-xs font-black text-k-ink">Top gains validés</p>
-              <div className="mt-3">
-                <DonutChart />
+
+            {/* Piliers clés */}
+            <div className="mt-5 space-y-2 border-t border-[#181512]/15 pt-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-[#181512]">
+                <span className="text-[#10B981] font-black">✓</span>
+                <span>Carte bilingue FR / EN modifiable en 30 secondes chrono</span>
               </div>
+              <div className="flex items-center gap-2 text-xs font-bold text-[#181512]">
+                <span className="text-[#10B981] font-black">✓</span>
+                <span>Réservations instantanées sans application à télécharger</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-bold text-[#181512]">
+                <span className="text-[#10B981] font-black">✓</span>
+                <span>Rappels automatiques e-mail / SMS pour diviser les no-shows</span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <BtnPrimary href="/signup">
+                Démarrer mon essai 7 jours →
+              </BtnPrimary>
+              <BtnOutline href="/vitrine-reservation">
+                Découvrir la Vitrine
+              </BtnOutline>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </KermessePatternSection>
   );
 }
 
-function MerchantSpace() {
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 5b — LES CAS D'USAGE PAR MÉTIER (EXPÉRIENCE GOURMANDE FESTONNÉE)
+   FOND MOTIF : CRÈME SOLAIRE & POIS AMBRÉS KERMESSE
+   ═══════════════════════════════════════════════════════════════ */
+
+function TradesShowcaseSection() {
   return (
-    <section id="espace-commercant" className={SECTION}>
-      <div className="grid items-center gap-12 lg:grid-cols-[0.85fr_1.15fr]">
-        <Reveal className="reveal-tilt-l">
-          <KEyebrow>Votre espace</KEyebrow>
-          <h2 className="k-halo mt-3 text-[clamp(2rem,4vw,2.8rem)] leading-tight" style={DISPLAY}>
-            Vous voyez qui revient, et ce que ça vous rapporte.
+    <KermessePatternSection
+      variant="confetti-multi"
+      id="metiers"
+      className="py-16 sm:py-24 text-[#181512] overflow-hidden"
+    >
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-3xl mx-auto mb-10">
+          <div className="inline-flex items-center gap-2 rounded-full border-2 border-[#181512] bg-[#FFE600] px-4 py-1 text-xs font-black uppercase tracking-wider text-[#181512] shadow-[0_2px_0_#181512]">
+            🎯 Adapté à votre activité
+          </div>
+          <h2
+            className="mt-3 text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#181512]"
+            style={DISPLAY}
+          >
+            Chaque commerce a sa mécanique gagnante.
           </h2>
-          <div className="k-card mt-8 rounded-[22px] p-6">
-            <ul className="space-y-3.5">
-              {MERCHANT_POINTS.map((point) => (
-                <li key={point} className="flex items-center gap-3 font-bold text-k-body">
-                  <KCheck />
-                  {point}
+          <p className="mt-2 text-sm sm:text-base font-bold text-[#181512]/75">
+            Du café de quartier à la brasserie de 150 couverts, découvrez exactement comment vos confrères remplissent leur salle et fidélisent sans effort.
+          </p>
+        </div>
+
+        <UseCasesByTrade />
+      </div>
+    </KermessePatternSection>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 6 — ESPACE COMMERÇANT & ESTIMATIF CHIFFRE D'AFFAIRES (ASYMÉTRIQUE : GAUCHE DASHBOARD / DROITE ROI)
+   FOND MOTIF : CARREAUX VICHY / DAMIER KERMESSE LILAS
+   ═══════════════════════════════════════════════════════════════ */
+
+function MerchantSection() {
+  return (
+    <KermessePatternSection
+      variant="gingham-purple"
+      id="espace-commercant"
+      className="py-16 sm:py-24 text-[#181512] overflow-hidden"
+    >
+      {/* Halo d'ambiance lilas feutré du cockpit */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_75%_55%_at_50%_50%,rgba(168,85,247,0.10),transparent_70%)]"
+      />
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* INVERSION DU ZIGZAG : DASHBOARD PILOTAGE À GAUCHE / ESTIMATIF DU CA À DROITE */}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:items-center">
+          {/* Côté GAUCHE (5 colonnes) : Espace Commerçant & Pilotage */}
+          <div className="lg:col-span-5 flex flex-col justify-center">
+            <div className="inline-flex items-center gap-2 self-start rounded-full border-2 border-[#181512] bg-[#FFE600] px-3.5 py-1 text-xs font-black uppercase tracking-wider text-[#181512] shadow-[0_2px_0_#181512]">
+              📊 Espace Commerçant &amp; Pilotage
+            </div>
+
+            <h2
+              className="mt-4 text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#181512] leading-[1.08]"
+              style={DISPLAY}
+            >
+              Tout piloter depuis
+              <br />
+              <span className="inline-block rotate-1 rounded-xl border-2 border-[#181512] bg-[#FFE600] px-3 py-0.5 text-[#181512] shadow-[0_3px_0_#181512]">
+                un seul écran.
+              </span>
+            </h2>
+
+            <p className="mt-3 text-sm sm:text-base font-bold text-[#181512]/80 leading-relaxed">
+              Suivez qui revient, ce que chaque jeu vous rapporte, et ajustez vos campagnes en 1 clic.
+              Vos données sont hébergées en Europe et exportables en un instant.
+            </p>
+
+            <div className="relative overflow-hidden rounded-2xl border-[2.5px] border-[#181512] bg-white shadow-[0_4px_0_#181512] my-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/marketing/dashboard-mockup.jpg"
+                alt="Tableau de bord commerçant LastChance — analytics et retours en direct"
+                className="w-full object-cover max-h-[200px]"
+              />
+            </div>
+
+            <ul className="space-y-1.5">
+              {MERCHANT_POINTS.slice(0, 4).map((point) => (
+                <li key={point} className="flex items-center gap-2 text-xs sm:text-sm font-bold text-[#181512]">
+                  <span className="flex h-4 w-4 flex-none items-center justify-center rounded-full border border-[#181512] bg-[#10B981] text-white text-[9px] font-black">✓</span>
+                  <span>{point}</span>
                 </li>
               ))}
             </ul>
-          </div>
-          <div className="mt-9">
-            <KPrimary href="/signup" className="bg-k-yellow text-k-ink">
-              Voir mon tableau de bord →
-            </KPrimary>
-          </div>
-        </Reveal>
 
-        <Reveal delay={120} className="reveal-tilt-r">
-          <div className="rotate-[0.6deg]">
-            <Tilt3D intensity={8}>
-              <DashboardMockup />
-            </Tilt3D>
+            <div className="mt-5">
+              <BtnPrimary href="/signup" className="w-full justify-center">
+                Créer mon compte commerçant →
+              </BtnPrimary>
+            </div>
           </div>
-        </Reveal>
+
+          {/* Côté DROIT (7 colonnes) : Estimatif Chiffre d'Affaires & Simulateur */}
+          <div className="lg:col-span-7">
+            <TradeRoiSimulator />
+          </div>
+        </div>
       </div>
-    </section>
+    </KermessePatternSection>
   );
 }
 
-/** Section Aperçu des 5 offres classées par objectif. */
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 7 — TARIFS (5 FORMULES DÉTAILLÉES)
+   FOND COULEUR UNIE : PÊCHE / CRÈME DOUCEUR SOLAIRE
+   ═══════════════════════════════════════════════════════════════ */
+
+const PLAN_DETAILS_EXTENDED: Record<
+  string,
+  {
+    includedNotice?: string;
+    features: string[];
+  }
+> = {
+  core: {
+    features: [
+      "15 jeux au QR code (Roue, grattage, machine à sous...)",
+      "Affiches A4 et QR codes prêts à poser illimités",
+      "Duo Miroir & Portrait de la Bande à table",
+      "Scanner caisse universel (validation en 1 sec)",
+      "Émission de Tickets d'Or personnalisés en caisse",
+      "4 scénarios d'e-mails automatiques (retrait, relance)",
+    ],
+  },
+  engagement: {
+    includedNotice: "Tout Coup d'envoi inclus +",
+    features: [
+      "Passeport Fidélité Apple & Google Wallet",
+      "Calendrier à surprises quotidiennes (7 à 24j)",
+      "Module de Parrainage & Recommandation client",
+      "Chasses aux trésors QR en rayon / boutique",
+      "Quiz du Commerçant personnalisés",
+      "Fichier clients qualifié et exportable CSV",
+    ],
+  },
+  place: {
+    includedNotice: "Tout Coup d'envoi inclus +",
+    features: [
+      "Vitrine interactive & Carte bilingue FR/EN",
+      "Réservation directe de table (0€ commission)",
+      "Prise de Rendez-vous en ligne avec agenda",
+      "Photos HD, allergènes et suggestions du chef",
+      "Porte Quiz intégrée directement à la carte",
+      "Rappels automatiques par e-mail et SMS",
+    ],
+  },
+  live: {
+    includedNotice: "Tout Coup d'envoi inclus +",
+    features: [
+      "Championnats de pronostics sportifs (L1, C1...)",
+      "Soirées Live & animation sur grand écran",
+      "Télécommande organisateur en direct sur mobile",
+      "Jusqu'à 250 joueurs simultanés en salle",
+      "Jackpot collectif en temps réel",
+      "100% de revisite physique en établissement",
+    ],
+  },
+  full: {
+    includedNotice: "Toute la plateforme LastChance",
+    features: [
+      "Le Club + Sur Place + Le Grand Jeu réunis",
+      "14 modules métiers & 15 mécaniques illimités",
+      "Passeport Fidélité Wallet + Carte Vitrine + Résa 0%",
+      "Pronostics sportifs & Soirées live 250 pers.",
+      "Accès immédiat à tout nouveau module inclus",
+      "Support prioritaire dédié 7j/7",
+    ],
+  },
+};
+
 function Pricing() {
   return (
-    <section id="tarifs" className={SECTION}>
-      <Reveal className="text-center">
-        <KEyebrow>Tarifs clairs</KEyebrow>
-        <h2 className="k-halo mt-3 text-[clamp(2rem,4vw,2.9rem)] leading-[1.05]" style={DISPLAY}>
-          Cinq offres bâties pour vos objectifs.
-        </h2>
-        <p className="k-card mx-auto mt-5 max-w-[620px] rounded-[18px] px-6 py-4 text-base font-bold leading-[1.55] text-k-body">
-          Pas de mauvaise surprise : chaque offre est conçue pour un besoin précis.
-          Sans engagement, 7 jours d&apos;essai offerts, résiliable à tout moment.
-        </p>
-      </Reveal>
+    <KermessePatternSection
+      variant="stripes-orange"
+      id="tarifs"
+      className="py-16 sm:py-24 text-[#181512] overflow-hidden"
+    >
+      {/* Halo d'ambiance pêche solaire chaleureuse */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_80%_55%_at_50%_50%,rgba(255,107,53,0.10),transparent_70%)]"
+      />
+      <div className="mx-auto max-w-[1440px] px-4 sm:px-6">
+        {/* En-tête asymétrique */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border-2 border-[#181512] bg-[#fcca59] px-3.5 py-1 text-xs font-black uppercase tracking-wider text-[#181512] shadow-[0_2px_0_#181512]">
+              5 formules claires
+            </div>
+            <h2
+              className="mt-3 text-3xl sm:text-4xl font-black tracking-tight text-[#181512]"
+              style={DISPLAY}
+            >
+              Toutes nos offres, sans engagement.
+            </h2>
+            <p className="mt-1 text-sm font-bold text-[#181512]/70">
+              Choisissez la formule qui colle à vos priorités. Évoluez ou résiliez en 1 clic.
+            </p>
+          </div>
 
-      {/* Cartes d'offres : 5 offres de PLAN_TIERS */}
-      <div className="mx-auto mt-12 grid max-w-5xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {PLAN_TIERS.map((tier, idx) => {
-          const isPopular = tier.id === "engagement" || tier.id === "core";
-          return (
-            <Reveal key={tier.id} delay={idx * 70} className="h-full">
-              <div className="h-full">
-                <Tilt3D intensity={6}>
-                  <div
-                    className={`k-card k-card-hover relative flex h-full flex-col justify-between rounded-[24px] p-7 ${
-                      isPopular ? "border-k-ink shadow-md" : ""
+          <div className="flex items-center gap-2 rounded-2xl border-2 border-[#181512] bg-white px-4 py-2.5 shadow-[0_3px_0_#181512]">
+            <span className="text-xl">🎁</span>
+            <div className="text-xs font-black text-[#181512] leading-tight">
+              <span>7 jours d&apos;essai offerts</span>
+              <span className="block text-[10px] text-[#181512]/60 font-bold">Sans carte bancaire</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 5 Formules sur UNE SEULE LIGNE en desktop */}
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 items-stretch">
+          {PLAN_TIERS.map((tier) => {
+            const isPopular = tier.id === "place";
+            const details = PLAN_DETAILS_EXTENDED[tier.id] ?? { features: tier.highlights };
+
+            return (
+              <div
+                key={tier.id}
+                className={`relative flex flex-col justify-between rounded-3xl border-[3px] border-[#181512] p-4.5 sm:p-5 transition-all ${
+                  isPopular
+                    ? "bg-[#FFFBEB] shadow-[0_8px_0_#FF6B35] ring-2 ring-[#FF6B35]/40"
+                    : "bg-white shadow-[0_5px_0_#181512] hover:-translate-y-1 hover:shadow-[0_8px_0_#181512]"
+                }`}
+              >
+                {isPopular && (
+                  <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border-2 border-[#181512] bg-[#FF6B35] px-3 py-0.5 text-[11px] font-black text-white shadow-[0_2px_0_#181512]">
+                    ★ Le plus populaire
+                  </span>
+                )}
+
+                <div>
+                  <h3 className="text-lg font-black text-[#181512]" style={DISPLAY}>
+                    {tier.name}
+                  </h3>
+
+                  <div className="mt-2 flex items-baseline gap-1">
+                    <span className="text-3xl font-black text-[#181512]" style={DISPLAY}>
+                      {tier.priceMonthly}€
+                    </span>
+                    <span className="text-xs font-bold text-[#181512]/60">/ mois</span>
+                  </div>
+
+                  <p className="mt-1.5 text-xs leading-relaxed font-bold text-[#181512]/70 min-h-[34px]">
+                    {tier.tagline}
+                  </p>
+
+                  <div className="my-3 border-t-2 border-[#181512]/10" />
+
+                  {details.includedNotice && (
+                    <div className="mb-2 rounded-lg bg-[#fcca59]/30 border border-[#181512]/20 px-2 py-0.5 text-[10px] font-black text-[#181512]">
+                      ⚡ {details.includedNotice}
+                    </div>
+                  )}
+
+                  <ul className="space-y-1.5 text-left">
+                    {details.features.map((feature) => (
+                      <li key={feature} className="flex items-start gap-1.5 text-[11px] font-bold text-[#181512] leading-snug">
+                        <span className="mt-0.5 text-xs font-black text-[#10B981] shrink-0">✓</span>
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="mt-5 pt-2">
+                  <Link
+                    href="/signup"
+                    className={`block w-full rounded-full border-2 border-[#181512] py-2 text-center text-xs font-black transition-all ${
+                      isPopular
+                        ? "bg-[#FF6B35] text-white shadow-[0_3px_0_#181512] hover:bg-orange-600"
+                        : "bg-white text-[#181512] shadow-[0_2px_0_#181512] hover:bg-[#fcca59]"
                     }`}
                   >
-                    {isPopular && (
-                      <span className="k-border k-hard-sm absolute -top-3.5 right-6 rounded-full bg-k-yellow px-3.5 py-1 text-xs font-black text-k-ink">
-                        {tier.id === "core" ? `Entrée dès ${PRIX_ENTREE_EUROS}` : "Populaire"}
-                      </span>
-                    )}
-
-                    <div>
-                      <div className="text-[22px] font-black" style={DISPLAY}>
-                        {tier.name}
-                      </div>
-                      <div className="mt-2 flex items-baseline gap-1.5">
-                        <span className="text-4xl font-black sm:text-5xl" style={DISPLAY}>
-                          {tier.priceMonthly} €
-                        </span>
-                        <span className="text-sm font-black text-k-muted">/ mois</span>
-                      </div>
-                      <p className="mt-3 text-xs font-bold leading-relaxed text-k-body">
-                        {tier.tagline}
-                      </p>
-
-                      <div className="my-5 border-t-2 border-dashed border-k-ink/20" />
-
-                      <ul className="flex flex-col gap-2 text-xs font-extrabold text-k-ink">
-                        {tier.highlights.map((h) => (
-                          <li key={h} className="flex items-start gap-2">
-                            <span className="mt-0.5 text-k-green">✓</span>
-                            <span>{h}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="mt-6 pt-4">
-                      <Link
-                        href="/signup"
-                        className={`k-border k-btn block w-full rounded-full py-2.5 text-center text-sm font-black focus-visible:outline-3 focus-visible:outline-offset-2 ${
-                          tier.id === "core"
-                            ? "bg-k-orange text-k-ink"
-                            : "bg-k-yellow text-k-ink"
-                        }`}
-                      >
-                        Tester 7 jours offerts
-                      </Link>
-                    </div>
-                  </div>
-                </Tilt3D>
+                    Tester 7j offerts
+                  </Link>
+                </div>
               </div>
-            </Reveal>
-          );
-        })}
-      </div>
-
-      <div className="mt-10 text-center">
-        <Link
-          href="/tarifs"
-          className="k-border k-btn inline-flex items-center gap-2 rounded-full bg-white/90 px-8 py-3.5 text-base font-black text-k-ink backdrop-blur-md hover:bg-k-yellow"
-        >
-          <span>Comparer les 5 offres, les 13 options & le simulateur de ROI</span>
-          <span>→</span>
-        </Link>
-      </div>
-    </section>
-  );
-}
-
-function Faq() {
-  return (
-    <section id="faq" className={SECTION}>
-      <div className="mx-auto max-w-3xl">
-        <Reveal className="text-center">
-          <KEyebrow>Questions fréquentes</KEyebrow>
-          <h2 className="k-halo mt-3 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
-            Tout ce que vous voulez savoir.
-          </h2>
-        </Reveal>
-
-        <div className="mt-11 space-y-4">
-          {FAQ.map((item, i) => (
-            <Reveal key={item.question} delay={i * 60}>
-              <details
-                className={`k-card group rounded-[18px] ${i % 2 ? "rotate-[0.4deg]" : "-rotate-[0.4deg]"}`}
-              >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-[18px] px-6 py-5 text-[16px] font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink [&::-webkit-details-marker]:hidden">
-                  {item.question}
-                  <span className="k-border-thin flex h-8 w-8 flex-none items-center justify-center rounded-full bg-k-yellow transition-transform duration-300 group-open:rotate-45">
-                    <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none">
-                      <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                </summary>
-                <p className="px-6 pb-6 font-bold leading-relaxed text-k-body">{item.answer}</p>
-              </details>
-            </Reveal>
-          ))}
+            );
+          })}
         </div>
 
         <div className="mt-8 text-center">
           <Link
-            href="/faq"
-            className="inline-flex items-center gap-2 text-sm font-black text-k-ink hover:underline"
+            href="/tarifs"
+            className="inline-flex items-center gap-2 rounded-full border-2 border-[#181512] bg-white px-5 py-2.5 text-xs sm:text-sm font-black text-[#181512] shadow-[0_3px_0_#181512] transition-all hover:-translate-y-0.5 hover:shadow-[0_5px_0_#181512] hover:bg-[#FF6B35] hover:text-white"
           >
-            <span>Consulter la foire aux questions complète</span>
+            <span>Consulter le comparatif détaillé des 5 offres</span>
             <span>→</span>
           </Link>
         </div>
       </div>
-    </section>
+    </KermessePatternSection>
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 8 — FAQ (ASYMÉTRIQUE : GAUCHE TITRE / DROITE QUESTIONS)
+   FOND MOTIF : PETITS NUAGES CARTOON BLEUS DESSINÉS
+   ═══════════════════════════════════════════════════════════════ */
+
+function Faq() {
+  return (
+    <KermessePatternSection
+      variant="clouds-blue"
+      id="faq"
+      className="py-16 sm:py-24 text-[#181512] overflow-hidden"
+    >
+      {/* Halo d'ambiance ciel d'été azur douce */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_75%_55%_at_50%_50%,rgba(14,165,233,0.10),transparent_70%)]"
+      />
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+          {/* Côté GAUCHE (4 colonnes) : Titre & assistance */}
+          <div className="lg:col-span-4 flex flex-col justify-start">
+            <div className="inline-flex items-center gap-2 self-start rounded-full border-2 border-[#181512] bg-[#FFE600] px-3.5 py-1 text-xs font-black uppercase tracking-wider text-[#181512] shadow-[0_2px_0_#181512]">
+              Questions fréquentes
+            </div>
+
+            <h2
+              className="mt-4 text-3xl sm:text-4xl font-black tracking-tight text-[#181512] leading-[1.1]"
+              style={DISPLAY}
+            >
+              Tout ce que vous voulez savoir.
+            </h2>
+
+            <p className="mt-2 text-sm font-bold text-[#181512]/75">
+              Mise en place en 10 minutes, conformité RGPD, règles Google, caisse universelle :
+              toutes les réponses pour démarrer sereinement.
+            </p>
+
+            <div className="mt-6 rounded-2xl border-2 border-[#181512] bg-white p-4 shadow-[0_3px_0_#181512]">
+              <p className="text-xs font-black text-[#181512]">Une question spécifique ?</p>
+              <p className="mt-1 text-[11px] font-bold text-[#181512]/70">
+                Notre équipe vous aide à choisir la meilleure mécanique pour votre établissement.
+              </p>
+              <Link
+                href="/faq"
+                className="mt-3 inline-block rounded-full border-2 border-[#181512] bg-[#FFE600] px-4 py-1.5 text-xs font-black text-[#181512] shadow-[0_2px_0_#181512] hover:bg-[#ffd700]"
+              >
+                Accéder à la FAQ complète →
+              </Link>
+            </div>
+          </div>
+
+          {/* Côté DROIT (8 colonnes) : Questions accordéons */}
+          <div className="lg:col-span-8 space-y-3">
+            {FAQ.map((item) => (
+              <details
+                key={item.question}
+                className="group rounded-2xl border-2 border-[#181512] bg-white shadow-[0_3px_0_#181512] transition-colors open:bg-[#FFFBEB]"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-black text-[#181512] [&::-webkit-details-marker]:hidden">
+                  <span className="leading-snug">{item.question}</span>
+                  <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full border border-[#181512] bg-[#FFE600] text-[#181512] font-black transition-transform duration-300 group-open:rotate-45">
+                    +
+                  </span>
+                </summary>
+                <p className="px-5 pb-4 text-xs sm:text-sm leading-relaxed font-bold text-[#181512]/75 border-t border-[#181512]/10 pt-2.5">
+                  {item.answer}
+                </p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </div>
+    </KermessePatternSection>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BLOC 9 — CTA FINAL ORANGE POP & FOOTER NOIR
+   ═══════════════════════════════════════════════════════════════ */
+
 function FinalCtaFooter() {
   return (
-    <div className="relative z-10 mx-auto mt-10 max-w-6xl px-4 sm:px-6">
-      <div className="rounded-t-[36px] border-2 border-b-0 border-k-bg/20 bg-k-ink/82 px-5 pt-16 text-center text-k-bg backdrop-blur-xl sm:px-10 sm:pt-20">
-        <Reveal className="reveal-pop relative mx-auto max-w-4xl">
-          <h2 className="text-[clamp(2.3rem,6vw,4.4rem)] leading-[1.05]" style={DISPLAY}>
+    <>
+      <section className="relative z-10 bg-[#FF6B35] py-14 sm:py-20 text-white border-t-[3px] border-[#181512]">
+        <div className="mx-auto max-w-3xl px-4 text-center">
+          <h2
+            className="text-[clamp(2rem,4vw,3.2rem)] font-black leading-tight text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.15)]"
+            style={DISPLAY}
+          >
             Votre commerce en jeu dès ce soir.
           </h2>
-          <p className="mx-auto mt-4 max-w-[540px] text-[17px] font-bold text-k-bg/85">
-            Créez votre compte en 2 minutes, activez vos modules préférés, imprimez votre affiche.
-            7 jours pour essayer avec vos vrais clients.
+          <p className="mx-auto mt-3 max-w-lg text-sm sm:text-base leading-relaxed text-white/95 font-bold">
+            Créez votre compte en 2 minutes, activez vos mécaniques préférées, imprimez votre affiche.
+            7 jours d&apos;essai offerts avec vos vrais clients.
           </p>
-          <div className="mt-7 flex justify-center">
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Magnetic>
               <Link
                 href="/signup"
-                className="k-btn-light inline-block whitespace-nowrap rounded-full border-[3px] border-k-bg bg-k-yellow px-9 py-4 text-lg font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-bg"
+                className="inline-flex items-center justify-center gap-2 rounded-full border-[3px] border-[#181512] bg-white px-8 py-3.5 text-base font-black text-[#FF6B35] shadow-[0_5px_0_#181512] transition-all hover:-translate-y-0.5 hover:shadow-[0_7px_0_#181512] active:translate-y-0.5 active:shadow-[0_2px_0_#181512]"
               >
                 Démarrer mon essai gratuit →
               </Link>
             </Magnetic>
           </div>
-        </Reveal>
+          <p className="mt-3 text-[11px] font-bold text-white/80">
+            ✓ 0 € de frais de mise en service · Sans carte bancaire requise · Annulation en 1 clic
+          </p>
+        </div>
+      </section>
 
-        <footer className="mt-14 border-t border-k-bg/25 py-6">
-          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-[13.5px] font-bold text-k-bg/70 sm:flex-row">
-            <span className="text-lg text-k-bg" style={DISPLAY}>
-              LastChance<span className="text-k-orange">.</span>
-            </span>
-            <nav aria-label="Pied de page" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
-              <Link href="/attirer" className="transition-colors hover:text-k-bg">Acquérir</Link>
-              <Link href="/faire-venir" className="transition-colors hover:text-k-bg">Créer du trafic</Link>
-              <Link href="/fideliser" className="transition-colors hover:text-k-bg">Fidéliser</Link>
-              <Link href="/animer" className="transition-colors hover:text-k-bg">Animer</Link>
-              <Link href="/tarifs" className="transition-colors hover:text-k-bg">Tarifs</Link>
-              <Link href="/faq" className="transition-colors hover:text-k-bg">FAQ</Link>
-              <Link href="/login" className="transition-colors hover:text-k-bg">Connexion</Link>
-              <Link href="/signup" className="transition-colors hover:text-k-bg">Essai gratuit</Link>
-            </nav>
-            <span>© {new Date().getFullYear()} — Jamais de gain contre un avis.</span>
-          </div>
-        </footer>
-      </div>
-    </div>
+      <footer className="relative z-10 bg-[#181512] py-10 text-white/65">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-4 sm:flex-row sm:px-6">
+          <span className="text-2xl font-black text-white" style={DISPLAY}>
+            LastChance<span className="text-[#FF6B35]">.</span>
+          </span>
+          <nav
+            aria-label="Pied de page"
+            className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-bold"
+          >
+            <Link href="/jeux-instantanes" className="transition-colors hover:text-white">
+              Jeux
+            </Link>
+            <Link href="/vitrine-reservation" className="transition-colors hover:text-white">
+              Vitrine
+            </Link>
+            <Link href="/passeport-fidelite" className="transition-colors hover:text-white">
+              Fidélité
+            </Link>
+            <Link href="/championnats-evenements" className="transition-colors hover:text-white">
+              Événements
+            </Link>
+            <Link href="/tarifs" className="transition-colors hover:text-white">
+              Tarifs
+            </Link>
+            <Link href="/faq" className="transition-colors hover:text-white">
+              FAQ
+            </Link>
+            <Link href="/login" className="transition-colors hover:text-white">
+              Connexion
+            </Link>
+          </nav>
+          <span className="text-xs font-semibold">© {new Date().getFullYear()} LastChance</span>
+        </div>
+      </footer>
+    </>
   );
 }
 
-/* ─────────────────────────── Page ─────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   PAGE — Assemblage final avec alternance rigoureuse 1 sur 2
+   (Formes / Nuages Hero ↔ Couleurs Unies Gourmandes)
+   ═══════════════════════════════════════════════════════════════ */
 
 export default function LandingPage() {
   return (
     <div
-      className={`${lilita.variable} ${nunito.variable} relative flex-1 overflow-x-clip bg-transparent text-k-ink`}
+      className={`${lilita.variable} ${nunito.variable} relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-[#FFFDF9] text-[#181512]`}
       style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
-      <ScrollPanoramaBackground />
-
       <SkipLink />
-
       <SiteHeader />
 
       <main id="contenu" tabIndex={-1} className="relative z-10 outline-none">
+        {/* 1. HERO DANS LES NUAGES */}
         <Hero />
-        <Marquee />
-        <TradeUseCasesSection />
-        <ModulesShowcase />
-        <VitrineSection />
-        <Steps />
-        <Features />
-        <MerchantSpace />
+
+        {/* Vague de nuages festonnés vers les modules */}
+        <ScallopedDivider fillColor="#FFF8D6" height={48} variant="clouds" />
+
+        {/* 2. LES 4 MODULES DE JEU — PLEINE LARGEUR PANORAMIQUE */}
+        <InteractiveModulesDeck />
+
+        {/* Transition fluide continue vers les 15 Jeux */}
+        <ScallopedDivider fillColor="#FFF385" height={56} />
+
+        {/* 3. SIMULATEUR JEUX & PRONOSTICS + TICKET D'OR INTERACTIF */}
+        <InteractiveGamesSection />
+
+        {/* Transition fluide continue vers la Vitrine */}
+        <ScallopedDivider fillColor="#BFF0D4" height={56} />
+
+        {/* 4. VITRINE & RÉSERVATION DIRECTE 0% */}
+        <VitrineReservationSection />
+
+        {/* Transition fluide continue vers les Métiers */}
+        <ScallopedDivider fillColor="#FEF08A" height={56} />
+
+        {/* 5. LES CAS D'USAGE PAR MÉTIER (RESTAURANT, BAR, BOUTIQUE, BOULANGERIE, BEAUTÉ) */}
+        <TradesShowcaseSection />
+
+        {/* Transition fluide continue vers le Cockpit */}
+        <ScallopedDivider fillColor="#EBDCFF" height={56} />
+
+        {/* 6. ESPACE COMMERÇANT & ESTIMATIF CHIFFRE D'AFFAIRES */}
+        <MerchantSection />
+
+        {/* Transition fluide continue vers la Billetterie */}
+        <ScallopedDivider fillColor="#FED7AA" height={56} />
+
+        {/* 7. TARIFS — 5 FORMULES SUR UNE SEULE LIGNE */}
         <Pricing />
+
+        {/* Transition fluide continue vers la FAQ */}
+        <ScallopedDivider fillColor="#BAE6FD" height={56} />
+
+        {/* 8. FAQ */}
         <Faq />
+
+        {/* Séparateur Damier Racing Kermesse avant le CTA Final */}
+        <div className="relative z-20 w-full overflow-hidden my-2">
+          <CheckerboardSeparator variant="orange" height={52} />
+        </div>
+
+        {/* 9. CTA FINAL APLAT ORANGE POP + FOOTER NOIR */}
         <FinalCtaFooter />
       </main>
     </div>

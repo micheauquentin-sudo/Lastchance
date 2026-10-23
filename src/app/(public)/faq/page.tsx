@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { Lilita_One, Nunito } from "next/font/google";
 import Link from "next/link";
+import { HeroCloudBackdrop } from "@/components/marketing/hero-cloud-backdrop";
+import { StraightRibbonTicker } from "@/components/marketing/straight-ribbon-ticker";
+import { CheckerboardSeparator } from "@/components/marketing/checkerboard-separator";
 import { Magnetic } from "@/components/marketing/magnetic";
 import { Reveal } from "@/components/marketing/reveal";
-import { ScrollPanoramaBackground } from "@/components/marketing/scroll-panorama-background";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { SkipLink } from "@/components/ui/skip-link";
 
@@ -19,7 +21,6 @@ const nunito = Nunito({
 });
 
 const DISPLAY = { fontFamily: "var(--font-display), system-ui, sans-serif" } as const;
-const SECTION = "relative z-10 mx-auto max-w-4xl scroll-mt-28 px-4 py-16 sm:px-6 sm:py-20";
 
 export const metadata: Metadata = {
   title: "Foire aux questions (FAQ) · Lastchance",
@@ -91,7 +92,7 @@ export default function FaqPage() {
 
   return (
     <div
-      className={`${lilita.variable} ${nunito.variable} relative flex-1 overflow-x-clip bg-transparent text-k-ink`}
+      className={`${lilita.variable} ${nunito.variable} relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-[#FFFDF9] text-k-ink`}
       style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
       <script
@@ -99,85 +100,120 @@ export default function FaqPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      <ScrollPanoramaBackground />
       <SkipLink />
       <SiteHeader />
 
       <main id="contenu" tabIndex={-1} className="relative z-10 outline-none">
-        <section className="relative z-10 overflow-x-clip px-4 pb-12 pt-28 text-center sm:px-6 sm:pt-36">
-          <div className="rise-in inline-flex items-center gap-2 rounded-full border-[3px] border-k-ink bg-k-yellow px-4 py-1.5 text-xs font-black text-k-ink shadow-[0_4px_0_var(--color-k-ink)]">
-            <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-k-orange" />
-            Questions fréquentes
+        {/* HERO AVEC NUAGES ISOLES STRICTEMENT DANS LE HERO */}
+        <section className="relative flex min-h-[46vh] sm:min-h-[50vh] flex-col justify-center overflow-hidden px-4 pb-12 pt-28 text-center sm:px-6 sm:pt-32">
+          <HeroCloudBackdrop />
+
+          <div className="relative z-10 mx-auto max-w-4xl">
+            <div className="rise-in inline-flex items-center gap-2 rounded-full border-[2.5px] border-k-ink bg-k-yellow px-4 py-1.5 text-xs font-black text-k-ink shadow-[0_3px_0_var(--color-k-ink)]">
+              <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-k-orange" />
+              Questions fréquentes & réponses claires
+            </div>
+
+            <h1
+              className="rise-in k-halo relative z-[2] mx-auto mt-5 max-w-3xl text-[clamp(2.4rem,5.5vw,4.2rem)] leading-[1.05]"
+              style={{ ...DISPLAY, animationDelay: "80ms" }}
+            >
+              Tout ce que vous voulez{" "}
+              <span className="inline-block -rotate-[1.5deg] rounded-[18px] border-[3px] border-k-ink bg-k-orange px-4 pb-1 text-k-bg shadow-[0_5px_0_var(--color-k-ink)]">
+                savoir
+              </span>
+            </h1>
+
+            <p
+              className="k-card rise-in mx-auto mt-4 max-w-xl rounded-2xl border-[2px] border-k-ink bg-white/95 p-3.5 text-sm font-bold text-k-body shadow-[0_3px_0_var(--color-k-ink)]"
+              style={{ animationDelay: "140ms" }}
+            >
+              Mise en place en 10 minutes, conformité RGPD, règles Google, caisse universelle :
+              toutes les réponses pour démarrer sereinement.
+            </p>
           </div>
-
-          <h1
-            className="rise-in k-halo relative z-[2] mx-auto mt-6 max-w-3xl text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.04]"
-            style={{ ...DISPLAY, animationDelay: "80ms" }}
-          >
-            Tout ce que vous voulez{" "}
-            <span className="inline-block -rotate-[1.5deg] rounded-[18px] border-[3px] border-k-ink bg-k-orange px-4 pb-1 text-k-bg shadow-[0_5px_0_var(--color-k-ink)]">
-              savoir
-            </span>
-          </h1>
-
-          <p
-            className="k-card rise-in mx-auto mt-6 max-w-xl rounded-2xl p-4 text-sm font-bold text-k-body shadow-sm"
-            style={{ animationDelay: "140ms" }}
-          >
-            Mise en place en 10 minutes, respect des règles Google, contrôle des lots, fonctionnement de la caisse : toutes les réponses à vos questions.
-          </p>
         </section>
 
-        <section className={SECTION}>
-          <div className="space-y-4">
-            {FAQ_ITEMS.map((item, i) => (
-              <Reveal key={item.q} delay={i * 40}>
-                <details
-                  className={`k-card group rounded-[20px] ${i % 2 ? "rotate-[0.3deg]" : "-rotate-[0.3deg]"}`}
-                >
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-[20px] px-6 py-5 text-[17px] font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink [&::-webkit-details-marker]:hidden">
-                    <div>
-                      <span className="block text-[10px] font-extrabold uppercase tracking-wider text-k-muted">
-                        {item.category}
-                      </span>
-                      <span className="mt-0.5 block">{item.q}</span>
-                    </div>
-                    <span className="k-border-thin flex h-8 w-8 flex-none items-center justify-center rounded-full bg-k-yellow transition-transform duration-300 group-open:rotate-45">
-                      <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                  </summary>
-                  <p className="px-6 pb-6 text-sm font-bold leading-relaxed text-k-body border-t border-k-ink/10 pt-3">
-                    {item.a}
-                  </p>
-                </details>
-              </Reveal>
-            ))}
-          </div>
+        <StraightRibbonTicker />
 
-          <div className="mt-14 rounded-3xl bg-k-ink/85 p-8 text-center text-k-bg backdrop-blur-md">
-            <h2 className="text-2xl font-black text-k-yellow" style={DISPLAY}>
-              Une question spécifique sur votre établissement ?
-            </h2>
-            <p className="mx-auto mt-2 max-w-md text-xs font-bold text-k-bg/80">
-              Notre équipe vous accompagne pour choisir les meilleures mécaniques pour votre type de commerce.
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <Magnetic>
+        {/* SECTION FAQ : FOND UNI BLANC SOLAIRE #FFFDF9 */}
+        <section className="relative z-10 bg-[#FFFDF9] py-12 sm:py-16">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6">
+            <div className="space-y-3.5">
+              {FAQ_ITEMS.map((item, i) => (
+                <Reveal key={item.q} delay={i * 30}>
+                  <details
+                    className={`k-card group rounded-[20px] border-[2px] border-k-ink bg-white shadow-[0_3px_0_var(--color-k-ink)] transition-all ${
+                      i % 2 ? "rotate-[0.2deg]" : "-rotate-[0.2deg]"
+                    }`}
+                  >
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-[20px] px-5 py-4 text-[16px] font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink [&::-webkit-details-marker]:hidden">
+                      <div>
+                        <span className="inline-block rounded-full bg-k-yellow/30 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-k-ink">
+                          {item.category}
+                        </span>
+                        <span className="mt-1 block text-base font-black leading-snug">{item.q}</span>
+                      </div>
+                      <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full border-2 border-k-ink bg-k-yellow shadow-[0_2px_0_var(--color-k-ink)] transition-transform duration-300 group-open:rotate-45">
+                        <svg aria-hidden width="12" height="12" viewBox="0 0 14 14" fill="none">
+                          <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                        </svg>
+                      </span>
+                    </summary>
+                    <p className="border-t border-k-ink/10 px-5 pb-5 pt-3 text-sm font-semibold leading-relaxed text-k-body">
+                      {item.a}
+                    </p>
+                  </details>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <CheckerboardSeparator variant="amber-orange" />
+
+        {/* SECTION FORMES (RAYURES KERMESSE) : ACCOMPAGNEMENT & CTA INSCRIPTION */}
+        <section
+          className="relative z-10 py-14 sm:py-16 text-k-ink"
+          style={{
+            backgroundColor: "#FFF8ED",
+            backgroundImage:
+              "repeating-linear-gradient(135deg, rgba(255, 107, 53, 0.07) 0px, rgba(255, 107, 53, 0.07) 32px, transparent 32px, transparent 64px)",
+          }}
+        >
+          <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
+            <div className="rounded-3xl border-[3px] border-k-ink bg-white p-7 sm:p-10 shadow-[0_6px_0_var(--color-k-ink)]">
+              <span className="inline-block rounded-full border-2 border-k-ink bg-k-yellow px-3 py-1 text-xs font-black">
+                Support & Démo
+              </span>
+              <h2 className="mt-3 text-2xl sm:text-3xl font-black text-k-ink" style={DISPLAY}>
+                Une question spécifique sur votre établissement ?
+              </h2>
+              <p className="mx-auto mt-2 max-w-md text-sm font-bold text-k-body">
+                Notre équipe vous aide à choisir les meilleures mécaniques pour votre activité :
+                restaurant, bar, boutique, salon ou loisir.
+              </p>
+
+              <div className="mt-6 flex flex-wrap justify-center items-center gap-3">
+                <Magnetic>
+                  <Link
+                    href="/signup"
+                    className="k-btn-light inline-flex items-center gap-2 rounded-full border-[2.5px] border-k-ink bg-k-orange px-8 py-3 text-sm font-black text-white shadow-[0_4px_0_var(--color-k-ink)] hover:bg-[#e05622] transition-colors"
+                  >
+                    Créer mon compte en 2 min →
+                  </Link>
+                </Magnetic>
                 <Link
-                  href="/signup"
-                  className="k-btn-light rounded-full border-2 border-k-bg bg-k-yellow px-7 py-3 text-sm font-black text-k-ink"
+                  href="/tarifs"
+                  className="rounded-full border-[2px] border-k-ink bg-k-yellow/40 px-6 py-3 text-sm font-black text-k-ink shadow-[0_2px_0_var(--color-k-ink)] hover:bg-k-yellow"
                 >
-                  Essayer 7 jours offerts →
+                  Voir les formules & tarifs
                 </Link>
-              </Magnetic>
-              <Link
-                href="/tarifs"
-                className="rounded-full border border-k-bg/30 bg-white/10 px-6 py-3 text-sm font-bold text-k-bg hover:bg-white/20"
-              >
-                Voir les tarifs
-              </Link>
+              </div>
+
+              <p className="mt-4 text-[11px] font-bold text-k-muted">
+                ✓ 0 € de frais de mise en service · 7 jours d&apos;essai offerts · Sans engagement
+              </p>
             </div>
           </div>
         </section>

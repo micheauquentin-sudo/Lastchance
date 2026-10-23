@@ -138,6 +138,59 @@ body {
   animation: play-shine 3.6s ease-in-out infinite;
 }
 
+/* ═══════════════ Nuages Atmosphériques Aériens ═══════════════ */
+@keyframes float-slow {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(1deg);
+  }
+}
+
+@keyframes float-reverse {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(10px) rotate(-1deg);
+  }
+}
+
+@keyframes cloud-drift-left {
+  0%, 100% {
+    transform: translateX(0px);
+  }
+  50% {
+    transform: translateX(-16px);
+  }
+}
+
+@keyframes cloud-drift-right {
+  0%, 100% {
+    transform: translateX(0px);
+  }
+  50% {
+    transform: translateX(18px);
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 7s ease-in-out infinite;
+}
+
+.animate-float-reverse {
+  animation: float-reverse 8.5s ease-in-out infinite;
+}
+
+.animate-drift-left {
+  animation: cloud-drift-left 12s ease-in-out infinite;
+}
+
+.animate-drift-right {
+  animation: cloud-drift-right 14s ease-in-out infinite;
+}
+
 /* ═══════════════ Landing « La Kermesse » ═══════════════ */
 
 /* Bordures encre et ombres dures décalées (aucun flou : c'est la signature). */
@@ -321,6 +374,61 @@ details.k-card[open] {
   );
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+}
+
+/* ═══════════════ DA « Pop Kermesse Moderne » (Inspirations Milu & Holy) ═══════════════ */
+
+/* Carte épurée, moderne et aérienne : verre blanc dépoli, liseré délicat, ombres douces */
+.k-card-pop {
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1.5px solid rgba(33, 29, 22, 0.12);
+  border-radius: 32px;
+  box-shadow:
+    0 16px 36px -12px rgba(33, 29, 22, 0.08),
+    0 4px 12px rgba(33, 29, 22, 0.03);
+  transition:
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.k-card-pop:hover {
+  background-color: rgba(255, 255, 255, 0.98);
+  border-color: rgba(33, 29, 22, 0.24);
+  transform: translateY(-5px);
+  box-shadow:
+    0 24px 50px -12px rgba(33, 29, 22, 0.13),
+    0 8px 24px rgba(33, 29, 22, 0.05);
+}
+
+/* Tampon graphique rétro-moderne forain (Inspiration Milu) */
+.k-stamp {
+  border: 2px dashed rgba(33, 29, 22, 0.4);
+  border-radius: 9999px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  transition: transform 0.2s ease;
+}
+
+.k-stamp:hover {
+  transform: scale(1.06) rotate(-3deg);
+}
+
+/* Boutons capsules épurés Holy */
+.k-pill {
+  border-radius: 9999px;
+  border: 2px solid var(--color-k-ink);
+  font-weight: 900;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.k-pill:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(33, 29, 22, 0.12);
 }
 
 
@@ -990,4 +1098,37 @@ details.k-card[open] {
     opacity: 1 !important;
     scale: 1 !important;
   }
+}
+
+/* ── Style Pop Aéré & Moderne (Inspiré Holy & Milu) ── */
+.k-card-pop {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1.5px solid rgba(33, 29, 22, 0.12);
+  box-shadow: 0 16px 36px -10px rgba(33, 29, 22, 0.08), 0 4px 12px -2px rgba(33, 29, 22, 0.04);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.k-card-pop:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 44px -10px rgba(33, 29, 22, 0.14), 0 8px 18px -4px rgba(33, 29, 22, 0.06);
+  border-color: rgba(33, 29, 22, 0.22);
+}
+
+.k-stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 2px dashed var(--color-k-ink);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.k-pill {
+  border-radius: 9999px;
+  padding: 0.625rem 1.5rem;
+  font-weight: 800;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }

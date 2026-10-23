@@ -1,0 +1,127 @@
+# RELEASE GATE — LASTCHANCE
+
+## VERDICT
+
+🔴 NO-GO
+
+La livraison technique du SHA 5a3d77ebe552ccb2df2673f3f262cfadef47b891 est saine : CI, migration, déploiement et healthcheck sont verts.
+Mais un BLOCKER métier confirmé contourne la protection serveur des lots de 20 € ou plus via cinq parcours de tours offerts.
+ADR-183 n’est donc pas complètement respectée sur tous les chemins équivalents.
+Aucun rollback urgent n’est justifié, mais il faut corriger avant d’ouvrir davantage la production.
+
+# PARCOURS CRITIQUE RECONSTRUIT
+
+QR → page publique → loadPlayContext vérifie campagne, roue et droits → spinWheel résout l’identité navigateur, Turnstile et rate limits → perform_atomic_spin calcule le résultat depuis les poids en base, réserve stock et budget puis enregistre le spin → le frontend anime uniquement le résultat serveur → claim_winning_spin verrouille le gain et crée le code de retrait.
+
+Ce parcours principal est cohérent. La faille se trouve dans les chemins parallèles consume_*_spin_grant, qui reproduisent le tirage sans reprendre la garde de valeur d’ADR-183.
+
+# BLOCKERS
+
+Problème : la protection serveur interdisant les lots gagnants de valeur inconnue ou supérieure ou égale à 20 € n’est pas appliquée aux cinq RPC de tours offerts.
+
+Preuve : la garde lotInterditAvecIdentiteFaible est appelée dans le tirage principal et les jeux d’adresse :
+
+- src/actions/play.ts:279
+- src/actions/skill.ts:107
+
+Elle est absente des dernières définitions de :
+
+- consume_calendar_spin_grant et consume_quiz_spin_grant : supabase/migrations/20260811120000_borne2_calendar_quiz.sql:52
+- consume_loyalty_spin_grant : supabase/migrations/20260725200000_loyalty_spin_bounds.sql:421
+- consume_referral_spin_grant : supabase/migrations/20260809120000_referral_spin_grant_fixes.sql:53
+- consume_reserver_wait_spin_grant : supabase/migrations/20261006120000_reserver_attente_active.sql:994
+
+Ces fonctions sélectionnent les lots selon activité, poids et stock, sans aucun filtre value_cents.
+
+Scénario concret : un commerçant publie une roue avec un lot sous 20 €, puis le revalorise à 20 € ou plus via updatePrize (src/actions/prizes.ts:130), qui ne bloque pas cette modification sur une campagne active. La roue est reliée à une case Calendrier. Un joueur identifié uniquement par cookie consomme son tour offert ; la RPC peut sélectionner et attribuer le lot cher.
+
+Impact : attribution d’un gain de forte valeur à une identité faible, contrairement à la garantie serveur utilisée par ADR-183 pour accepter le caractère supprimable du cookie. Le stock borne la perte totale, mais n’empêche ni l’attribution ni le contournement métier.
+
+Fichier / zone : actions de lots, actions Calendrier et cinq RPC consume_*_spin_grant.
+
+Pourquoi cela bloque la production : c’est une possibilité réaliste de fraude et une correction de sécurité appliquée seulement sur certains chemins. Le cahier des charges exige explicitement que tous les chemins équivalents soient protégés.
+
+# HIGH
+
+1. Libellé ADR-183 encore inexact. « Par appareil » est faux techniquement : l’identité est un cookie propre au navigateur. Chrome, Safari, navigation privée ou deux profils du même téléphone donnent plusieurs identités. Le texte exact devrait parler de navigateur (src/lib/limite-participation.ts:56).
+
+2. Anciennes promesses « par personne » toujours atteignables.
+
+- Description de lot effectivement persistée puis montrée au gagnant : src/lib/campaign-templates.ts:492.
+- Texte affiché au commerçant dans ses réglages : src/components/dashboard/data-retention-form.tsx:69.
+- Le nouveau test ne recherche les formulations fautives que dans src/components/wheel.
+
+3. Domaine commercial non opérationnel. lastchance.app pointe encore vers le parking GoDaddy et app.lastchance.app est inexistant. Cela bloque un lancement sur le domaine de marque, mais pas le runtime actuel sous *.vercel.app.
+
+# MEDIUM / LOW
+
+- MEDIUM : Ticket d’Or garantit une utilisation par ticket, pas techniquement une unicité par personne ; aucun bénéficiaire n’est enregistré.
+- MEDIUM : le résultat exact de reap_ops_worker_runs n’est pas observable depuis le healthcheck CI, car CRON_SECRET manque dans GitHub Actions.
+- MEDIUM : Google Wallet reste désactivé faute des trois variables de production attendues.
+- LOW : deux textes d’e-mails modèles parlent encore de limite « par personne », mais ils sont actuellement dormants et non envoyés.
+- LOW : git diff --check détecte 79 espaces finaux dans 11 fichiers modifiés. Aucun effet d’exécution.
+
+# CHECK DES INVARIANTS
+
+Participation unique : ✅
+Limitation de participation : ❌ exclusivement fondée sur un cookie de navigateur ; ADR-183 l’accepte comme contrat produit, mais l’invariant strict demandé n’est pas satisfait.
+Résultat autoritaire côté serveur : ✅
+Probabilités protégées : ✅
+Stock protégé : ✅
+Dernier lot concurrent : ✅
+Idempotence : ✅
+Multi-onglets : ✅
+Refresh : ✅
+Replay API : ✅
+Permissions utilisateur : ✅
+Permissions admin : ✅
+Intégrité DB : ✅
+
+# TESTS EFFECTUÉS
+
+Validation locale fraîche :
+
+- npm run typecheck : réussi.
+- npm run lint : réussi, zéro erreur et un avertissement non bloquant.
+- Vitest ciblé ADR-183/tirage/campagnes : 140/140, 5 fichiers.
+- npm run sql:check : réussi.
+- npm run migrations:check : réussi, 218 migrations, head 20261220120000.
+- git diff --check : échec qualité, 79 espaces finaux.
+
+Preuves du SHA exact en CI :
+
+- CI post-fusion 34892072926 : 7/7 jobs réussis.
+  https://github.com/micheauquentin-sudo/Lastchance/actions/runs/34892072926
+- Vitest : 7 719/7 719, 436 fichiers.
+- pgTAP : 6 562 tests, 108 fichiers, PASS.
+- Playwright : 355 réussis, 45 ignorés et donc non comptés comme preuve exécutée.
+- Site E2E/axe : 22/22.
+- Build application et build site : réussis.
+- Audit npm et CodeQL : réussis.
+- Migration Supabase distante alignée sur 20261220120000.
+- Healthcheck post-déploiement 34892266737 : réussi ; endpoint live HTTP 200.
+  https://github.com/micheauquentin-sudo/Lastchance/actions/runs/34892266737
+
+Non vérifié volontairement : injection destructive de panne en production, capacité de charge réelle et compteur exact des exécutions du reaper.
+
+# 3 SCÉNARIOS LES PLUS DANGEREUX
+
+1. Lot revalorisé après publication puis gagné par un tour offert : vulnérable. La RPC sélectionne le lot sans appliquer le seuil de 20 €.
+
+2. Même téléphone, autre navigateur ou cookie supprimé : nouvelle participation possible. C’est assumé par ADR-183, mais cela contredit le libellé « par appareil » et devient critique lorsque le plafond de valeur est contourné.
+
+3. Double clic, multi-onglets, réponse perdue et retry sur le tirage principal : protégé. La clé d’idempotence, les verrous SQL et les contraintes empêchent le second gain et le double décrément du dernier lot.
+
+# DETTE TECHNIQUE NON BLOQUANTE
+
+- Corriger les 79 espaces finaux du diff.
+- Actualiser le compte rendu qui annonce encore 7 713 tests au lieu de 7 719.
+- Étendre la garde lexicale à toutes les surfaces réellement rendues.
+- Rendre le résultat du reaper visible dans un contrôle authentifié.
+- Certifier séparément la capacité de charge de production.
+
+Aucun fichier de code n’a été modifié. Les changements locaux préexistants dans AGENTS.md et site/public/ ont été préservés.
+
+# DÉCISION FINALE
+
+### 🔴 LASTCHANCE NE DOIT PAS ÊTRE MIS EN PRODUCTION AVANT CORRECTION DES BLOCKERS.

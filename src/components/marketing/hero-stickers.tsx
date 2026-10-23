@@ -161,7 +161,7 @@ function PlayableSticker({
  */
 export function HeroStickers() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-[1] hidden lg:block">
+    <div className="pointer-events-none absolute inset-0 z-[1] hidden lg:block opacity-90">
       {/* Scintillements : ponctuation, jamais un objet. */}
       <span aria-hidden className="k-twinkle absolute left-[13%] top-[26%] h-3.5 w-3.5 rounded-full bg-white" />
       <span aria-hidden className="k-twinkle absolute right-[16%] top-[21%] h-3 w-3 rounded-full bg-k-yellow" style={{ animationDelay: "0.6s" }} />
@@ -169,18 +169,18 @@ export function HeroStickers() {
 
       {/* -20 % : losange jaune double */}
       <PlayableSticker
-        place="left-[6%] top-[24%]"
+        place="left-[3%] xl:left-[6%] top-[22%]"
         bob="k-bob"
         code="KERMESSE-20"
         name="Sticker « -20 % »"
-        frontClassName="relative h-[120px] w-[120px]"
+        frontClassName="relative h-[110px] w-[110px]"
         backClassName="rounded-[22px]"
       >
         <span aria-hidden className="k-border k-sticker absolute inset-0 rotate-45 rounded-[22px] bg-k-yellow" />
         <span aria-hidden className="k-border absolute inset-0 rounded-[22px] bg-k-yellow" />
         <span
           aria-hidden
-          className="absolute inset-0 flex -rotate-[8deg] items-center justify-center text-[28px] text-k-ink"
+          className="absolute inset-0 flex -rotate-[8deg] items-center justify-center text-[26px] text-k-ink"
           style={DISPLAY}
         >
           -20%
@@ -188,33 +188,33 @@ export function HeroStickers() {
       </PlayableSticker>
 
       <PlayableSticker
-        place="right-[5%] top-[27%]"
+        place="right-[3%] xl:right-[5%] top-[24%]"
         bob="k-bob-r"
         code="KERMESSE-CAFE"
         name="Sticker « Café offert »"
-        frontClassName="k-border k-sticker rotate-[5deg] whitespace-nowrap rounded-full bg-k-pink px-6 py-3 text-2xl font-black text-k-ink"
+        frontClassName="k-border k-sticker rotate-[5deg] whitespace-nowrap rounded-full bg-k-pink px-5 py-2.5 text-xl xl:text-2xl font-black text-k-ink"
         backClassName="rotate-[5deg] rounded-full"
       >
         Café offert
       </PlayableSticker>
 
       <PlayableSticker
-        place="bottom-[22%] left-[4%]"
+        place="bottom-[18%] left-[2%] xl:left-[5%]"
         bob="k-bob-r"
         code="KERMESSE-SCAN"
         name="Sticker « Scan et joue »"
-        frontClassName="k-border k-sticker -rotate-[5deg] whitespace-nowrap rounded-full bg-k-blue px-6 py-3 text-xl font-black tracking-wide text-k-ink"
+        frontClassName="k-border k-sticker -rotate-[5deg] whitespace-nowrap rounded-full bg-k-blue px-5 py-2.5 text-lg xl:text-xl font-black tracking-wide text-k-ink"
         backClassName="-rotate-[5deg] rounded-full"
       >
         SCAN &amp; JOUE
       </PlayableSticker>
 
       <PlayableSticker
-        place="bottom-[24%] right-[6%]"
+        place="bottom-[18%] right-[3%] xl:right-[6%]"
         bob="k-bob"
         code="KERMESSE-CHANCE"
         name="Sticker « Toutes les chances »"
-        frontClassName="k-border k-sticker inline-flex rotate-[4deg] items-center gap-2 whitespace-nowrap rounded-full bg-k-green px-6 py-3 text-xl font-black text-k-bg"
+        frontClassName="k-border k-sticker inline-flex rotate-[4deg] items-center gap-2 whitespace-nowrap rounded-full bg-k-green px-5 py-2.5 text-lg xl:text-xl font-black text-k-bg"
         backClassName="rotate-[4deg] rounded-full"
       >
         Toutes les chances

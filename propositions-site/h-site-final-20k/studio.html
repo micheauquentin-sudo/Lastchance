@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mon Studio Kermesse — Créer, Prévisualiser &amp; Publier — Lastchance</title>
+  <meta name="description" content="Configurez librement votre Vitrine, vos 15 Jeux Instantanés, vos Pronostics et votre Passeport de Fidélité dans le Studio Kermesse Lastchance. Sauvegarde automatique et aperçu en direct." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;700;800;900&family=Fredoka:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="kermesse-studio-body">
+  <!-- Bandeau rayé signature « La Kermesse » (src/components/wheel/play-theme.tsx : KermesseStripe) -->
+  <div class="k-stripe-bar" aria-hidden="true"></div>
+
+  <!-- ==========================================================
+       COQUILLE DU STUDIO (Miroir exact de src/components/studio/coquille.tsx)
+       Thème Dashboard & Gestion : « La Kermesse » (#fdf6e3 / #211d16 / #fcca59)
+       ========================================================== -->
+  <header class="k-studio-header">
+    <div class="k-studio-top-row">
+      <div class="k-studio-left">
+        <a class="k-btn-back" href="index.html" id="k-back-link">← Retour au site</a>
+        <div class="k-brand-tag">
+          <span class="k-dot"></span>
+          <strong>STUDIO KERMESSE</strong>
+        </div>
+
+        <!-- Sélecteur des 4 Studios du projet -->
+        <nav class="k-module-switcher" id="k-module-switcher" aria-label="Choisir l'outil à configurer">
+          <button type="button" class="k-mod-tab active" data-module="vitrine">📖 Vitrine &amp; Réserver</button>
+          <button type="button" class="k-mod-tab" data-module="roue">🎰 15 Jeux Instantanés</button>
+          <button type="button" class="k-mod-tab" data-module="pronostics">🏆 Pronostics</button>
+          <button type="button" class="k-mod-tab" data-module="fidelite">🛂 Passeport Fidélité &amp; Jackpot</button>
+        </nav>
+      </div>
+
+      <div class="k-studio-right">
+        <span class="k-autosave-status" id="k-autosave-status" aria-live="polite">
+          💾 Enregistré automatiquement en cache
+        </span>
+
+        <button type="button" class="k-account-pill" id="k-account-btn">
+          👤 <span id="k-account-label">Brouillon en cache (Sans compte)</span>
+        </button>
+
+        <button type="button" class="k-btn k-btn-white" id="k-btn-preview-fullscreen">
+          👁️ Aperçu final client
+        </button>
+
+        <button type="button" class="k-btn k-btn-orange" id="k-btn-publish">
+          🚀 Publier &amp; Obtenir mon QR
+        </button>
+      </div>
+    </div>
+
+    <!-- Bandeau d'état de capacité (Miroir de src/components/dashboard/module-capability-notice.tsx) -->
+    <div class="k-capability-banner" id="k-capability-banner">
+      <div class="k-cap-text" id="k-cap-text">
+        <strong>✨ Mode Découverte &amp; Préparation libre :</strong> Configurez l'intégralité de votre expérience et testez l'aperçu final. Vos réglages sont gardés en mémoire automatiquement. Seule la <b>publication aux joueurs</b> nécessite une formule active.
+      </div>
+      <div class="k-cap-actions">
+        <button type="button" class="k-cap-link" id="k-cap-save-account-btn">Sauvegarder sur un compte gratuit →</button>
+      </div>
+    </div>
+
+    <!-- Barre d'étapes numérotées (Miroir de src/components/studio/barre-etapes.tsx) -->
+    <nav class="k-steps-bar" id="k-steps-bar" aria-label="Étapes de préparation"></nav>
+  </header>
+
+  <!-- ==========================================================
+       DEUX COLONNES INDÉPENDANTES (Gauche : Réglages · Droite : Aperçu Fidèle)
+       ========================================================== -->
+  <main class="k-studio-workspace">
+    <!-- Colonne de gauche : Étape courante -->
+    <aside class="k-studio-form-col" id="k-studio-form-col">
+      <!-- Injecté dynamiquement par studio.js selon le module et l'étape -->
+    </aside>
+
+    <!-- Colonne de droite : Cadre d'aperçu en direct (src/components/studio/cadre-apercu.tsx) -->
+    <section class="k-studio-preview-col" aria-label="Aperçu en direct de ce que verront vos clients">
+      <div class="k-preview-toolbar">
+        <div class="k-preview-toolbar-left">
+          <span class="k-preview-live-badge">● APERÇU CLIENT EN DIRECT</span>
+          <small id="k-preview-url-pill">lastchance.app/v/bistrot-letoile</small>
+        </div>
+        <div class="k-preview-toolbar-right" id="k-preview-tools">
+          <!-- Outils contextuels (ex: Interrupteur Exemples, Langue FR/EN, Tester un coup) -->
+        </div>
+      </div>
+
+      <div class="k-preview-phone-wrap">
+        <div class="k-preview-phone" id="k-preview-phone">
+          <!-- Rendu fidèle injecté par studio.js -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==========================================================
+       MODALE D'APERÇU FINAL PLEIN ÉCRAN
+       ========================================================== -->
+  <div class="k-modal-backdrop" id="k-modal-preview" hidden>
+    <div class="k-modal-dialog k-modal-large">
+      <div class="k-modal-header">
+        <div>
+          <span class="k-badge-yellow">👁️ APERÇU FINAL CLIENT</span>
+          <h2 id="k-modal-preview-title">Voici exactement ce que vos clients verront en scannant votre QR code</h2>
+        </div>
+        <button type="button" class="k-modal-close" id="k-close-preview-modal">✕ Fermer</button>
+      </div>
+      <div class="k-modal-body k-modal-preview-grid">
+        <div class="k-preview-phone k-preview-phone-large" id="k-modal-preview-phone"></div>
+        <div class="k-preview-conversion-panel">
+          <div class="k-stripe-bar" style="border-radius:10px;height:10px;margin-bottom:0.9rem;"></div>
+          <h3>Votre création est prête à être utilisée !</h3>
+          <p id="k-modal-preview-summary">
+            Tous vos choix (thème, couleurs, textes et récompenses) sont mémorisés.
+          </p>
+          <div class="k-conversion-steps-list">
+            <div class="k-conv-step is-done">
+              <span>✓</span>
+              <div>
+                <strong>1. Configuration &amp; Aperçu dans le Studio</strong>
+                <small>Terminé · Sauvegardé automatiquement en cache</small>
+              </div>
+            </div>
+            <div class="k-conv-step" id="k-conv-step-account">
+              <span>2</span>
+              <div>
+                <strong>2. Compte Commerçant (Gratuit)</strong>
+                <small>Permet de lier définitivement vos brouillons à votre établissement</small>
+              </div>
+            </div>
+            <div class="k-conv-step" id="k-conv-step-sub">
+              <span>3</span>
+              <div>
+                <strong>3. Abonnement actif pour Publier</strong>
+                <small>Débloque l'ouverture publique aux joueurs et votre QR code officiel</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="k-modal-cta-stack">
+            <button type="button" class="k-btn k-btn-orange k-btn-full" id="k-modal-preview-to-publish">
+              🚀 Publier maintenant &amp; Obtenir mon QR Code →
+            </button>
+            <button type="button" class="k-btn k-btn-white k-btn-full" id="k-modal-preview-continue">
+              ← Continuer à personnaliser dans le Studio
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================
+       MODALE DE PUBLICATION & CONVERSION (Cache -> Compte Gratuit -> Abonnement)
+       ========================================================== -->
+  <div class="k-modal-backdrop" id="k-modal-publish" hidden>
+    <div class="k-modal-dialog">
+      <div class="k-modal-header">
+        <div>
+          <span class="k-badge-yellow" id="k-pub-badge">🔒 PUBLICATION VERROUILLÉE</span>
+          <h2 id="k-pub-title">Sauvegardez et publiez votre création</h2>
+        </div>
+        <button type="button" class="k-modal-close" id="k-close-publish-modal">✕</button>
+      </div>
+
+      <div class="k-modal-body" id="k-pub-body">
+        <!-- Injecté dynamiquement par studio.js selon auth.status (guest / free_account / subscribed) -->
+      </div>
+    </div>
+  </div>
+
+  <script src="../shared/offre.js"></script>
+  <script src="../shared/codebase-themes.js"></script>
+  <script src="studio.js"></script>
+</body>
+</html>

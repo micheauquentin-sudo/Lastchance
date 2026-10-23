@@ -1,5 +1,27 @@
 # Transmission Codex -> Claude Code
 
+## Recherche de nom de marque — reprise du 2026-10-14
+
+La recherche est ouverte : aucune décision de remplacement de « LastChance »
+n'est prise. Le périmètre de la marque ombrelle couvre désormais la Vitrine,
+la réservation, les expériences en commerce et la fidélité ; un nom limité à
+la roue ou au hasard serait donc trop étroit. Les pistes ci-dessous sont une
+exploration créative uniquement : disponibilité domaine, marques déposées,
+prononciation internationale et conflits SEO restent à vérifier avant toute
+sélection.
+
+Première sélection à évaluer avec l'utilisateur : **Complice**, **Élan**,
+**Éclat**, **Rituel**, **Pépite**, **Sésame**, **Lumo** et **Nolio**.
+
+Critères retenus : promesse positive et immédiatement compréhensible, mémorable
+en français, prononçable en anglais, crédible pour un commerçant, chaleureuse
+pour un joueur, et extensible aux modules Vitrine / Réserver / Expériences.
+
+Prochaine décision : choisir deux ou trois territoires de ton (relation,
+moment, découverte, énergie ou nom inventé), puis effectuer une recherche de
+disponibilité et de risques sur une shortlist courte. Aucun code, domaine,
+configuration ou texte public n'est modifié à ce stade.
+
 Document de reprise opérationnelle. L'historique détaillé vit dans
 `docs/journal.md`; les décisions durables vivent dans `docs/decisions.md`.
 

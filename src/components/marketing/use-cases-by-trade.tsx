@@ -4,285 +4,375 @@ import { useState } from "react";
 import Link from "next/link";
 import { Tilt3D } from "@/components/ui/tilt-3d";
 import { prixOffre } from "@/components/marketing/prix";
-import { getPlanTier } from "@/lib/plans";
 
 const DISPLAY = { fontFamily: "var(--font-display), system-ui, sans-serif" } as const;
 
-interface TradeScenario {
+interface TradeJourneyStep {
+  num: string;
+  badge: string;
+  title: string;
+  desc: string;
+  emoji: string;
+}
+
+interface TradeModule {
+  name: string;
+  tag: string;
+  desc: string;
+  href: string;
+}
+
+interface TradeData {
   id: string;
   trade: string;
   emoji: string;
-  headline: string;
-  painPoint: string;
-  recommendedModules: {
-    name: string;
-    role: string;
-    why: string;
-    href: string;
-  }[];
-  concreteSituation: string;
-  /**
-   * BÉNÉFICE ATTENDU, ET NON RÉSULTAT MESURÉ.
-   *
-   * Ce champ portait des pourcentages (+22 %, +35 %, +28 %, « 7 à 5 semaines »,
-   * « 0 rendez-vous perdu ») sans aucune source dans le dépôt : ni banc, ni
-   * cohorte, ni client cité. Le chapeau, lui, annonçait « les résultats
-   * constatés ». Une vitrine ne peut pas annoncer une mesure que personne n'a
-   * faite : le champ dit désormais ce que le module change, pas ce qu'il
-   * rapporte. La seule valeur chiffrée qui subsiste est la jauge de joueurs
-   * simultanés, et elle est DÉRIVÉE de `src/lib/plans.ts`.
-   */
-  expectedBenefit: string;
-  offerTag: string;
+  catchphrase: string;
+  benefitStat: string;
+  offerName: string;
+  offerPrice: string;
+  steps: [TradeJourneyStep, TradeJourneyStep, TradeJourneyStep];
+  modules: TradeModule[];
 }
 
-/** Jauge live réellement vendue — dérivée du catalogue, jamais retapée. */
-const JAUGE_LIVE = getPlanTier("live").limits.eventParticipants;
-
-const TRADES: readonly TradeScenario[] = [
+const TRADES: readonly TradeData[] = [
   {
     id: "restaurant",
-    trade: "Restaurants & Brasseries",
+    trade: "Restaurant & Brasserie",
     emoji: "🍽️",
-    headline: "Remplir le midi, animer le soir, faire revenir sans brader",
-    painPoint: "Des services calmes le mardi, l'addition réglée sans jamais capter le contact du client, et les commissions exorbitantes des plateformes de réservation.",
-    recommendedModules: [
+    catchphrase: "Remplir les tables du midi, animer le soir et faire revenir sans brader vos prix.",
+    benefitStat: "0 € de commission sur vos réservations & +25% de revisite",
+    offerName: "Sur Place",
+    offerPrice: `${prixOffre("place")} €/mois`,
+    steps: [
       {
-        name: "Vitrine & Carte au QR",
-        role: "Carte bilingue toujours à jour + réservation directe sans commission.",
-        why: "Économisez les commissions des plateformes et mettez à jour vos plats du jour depuis votre espace.",
-        href: "/faire-venir",
+        num: "01",
+        badge: "À table ou au comptoir",
+        title: "Le client scanne le QR code",
+        desc: "Posé sur la table ou le porte-addition. La carte s'affiche en français ou en anglais instantanément sans télécharger d'application.",
+        emoji: "📱",
       },
       {
-        name: "Duo Miroir à table",
-        role: "Jeu complice sur smartphone pour 2 convives pendant l'attente des plats.",
-        why: "Fait passer le temps d'attente pour un moment de rire et pousse à la consommation de desserts/cafés.",
-        href: "/fideliser",
+        num: "02",
+        badge: "Pendant le repas",
+        title: "Il joue et gagne un avantage",
+        desc: "Roue de la fortune ou ticket à gratter : il remporte un café ou un dessert valable pour sa prochaine visite en semaine.",
+        emoji: "🎁",
       },
       {
-        name: "Carte à gratter ou Roue",
-        role: "Un QR code posé sur le porte-addition pour gagner un dessert ou café à la prochaine visite.",
-        why: "Collecte l'email du client (RGPD) et lui donne une raison immédiate de réserver à nouveau sous 15 jours.",
-        href: "/attirer",
-      },
-      {
-        name: "Ticket d'Or en caisse",
-        role: "Offrir un avantage surprise au comptoir en un geste sans passer par un tirage.",
-        why: "Fidélise instantanément les bons clients avec un geste élégant tracé en caisse.",
-        href: "/attirer",
+        num: "03",
+        badge: "En caisse & après",
+        title: "Vous encaissez et il revient",
+        desc: "Votre équipe valide le gain au scanner en 1 seconde. Le client reçoit son rappel et réserve sa table en direct sans commission.",
+        emoji: "💳",
       },
     ],
-    concreteSituation: "Vendredi soir, 22h : l'addition arrive avec un QR code Lastchance. Les convives scannent, découvrent leur dessert offert pour leur prochain déjeuner en semaine. Votre équipe valide le code en caisse.",
-    expectedBenefit: "Une raison concrète de revenir déjeuner en semaine, et une base d'emails clients qualifiés.",
-    offerTag: `Formule recommandée : Sur Place (${prixOffre("place")} €/mois)`,
+    modules: [
+      {
+        name: "Vitrine & Réservation sans frais",
+        tag: "0% commission",
+        desc: "Carte bilingue toujours à jour et réservations directes dans votre agenda.",
+        href: "/vitrine-reservation",
+      },
+      {
+        name: "Jeux instantanés sur addition",
+        tag: "Collecte RGPD",
+        desc: "Faites gagner un lot différé pour inciter à revenir dans les 15 jours.",
+        href: "/jeux-instantanes",
+      },
+      {
+        name: "Passeport fidélité Wallet",
+        tag: "Google Wallet",
+        desc: "Fidélisez les habitués du quartier sans cartes en carton froissées.",
+        href: "/passeport-fidelite",
+      },
+    ],
   },
   {
     id: "bar",
-    trade: "Bars, Pubs & Cafés",
+    trade: "Bar, Pub & Café",
     emoji: "🍻",
-    headline: "Transformer chaque soirée en événement festif et collectif",
-    painPoint: "La concurrence des soirs de match, des tables qui restent sur une seule tournée, et l'ambiance difficile à lancer les soirs creux de début de semaine.",
-    recommendedModules: [
+    catchphrase: "Créer une ambiance festive, prolonger les tournées et enflammer les soirs de match.",
+    benefitStat: "+1h passée à table en moyenne & ambiance garantie",
+    offerName: "Le Grand Jeu",
+    offerPrice: `${prixOffre("live")} €/mois`,
+    steps: [
       {
-        name: "Événements Live sur grand écran",
-        role: "Quiz et blind tests projetés sur la TV, les clients votent sur leur téléphone.",
-        why: "Crée une émulation collective incroyable : les clients restent 1h de plus et consomment davantage.",
-        href: "/animer",
+        num: "01",
+        badge: "En arrivant",
+        title: "Vos clients rejoignent le jeu",
+        desc: "Un QR code sur les sous-bocks ou les tables : les groupes se connectent sur leur téléphone en 5 secondes.",
+        emoji: "📲",
       },
       {
-        name: "Championnat de Pronostics",
-        role: "Pronostics sur la Ligue 1, le rugby ou l'Euro avec classement du bar mis à jour en direct.",
-        why: "Donne aux habitués un rendez-vous hebdomadaire immanquable pour défendre leur place au classement.",
-        href: "/animer",
+        num: "02",
+        badge: "Pendant la soirée",
+        title: "Pronostics & Quiz en direct",
+        desc: "Les scores du match et les classements s'affichent en temps réel sur la télé du bar. L'ambiance monte d'un cran.",
+        emoji: "🏆",
       },
       {
-        name: "Jackpot collectif",
-        role: "Une jauge commune projetée qui monte à chaque tournée jusqu'au tirage du lot.",
-        why: "Motive toute la salle à participer ensemble pour déclencher le jackpot de la soirée.",
-        href: "/animer",
-      },
-      {
-        name: "Portrait de la Bande",
-        role: "Jeu de vote secret entre amis à table (de 2 à 12 personnes).",
-        why: "Détend immédiatement les groupes et prolonge les apéritifs.",
-        href: "/fideliser",
+        num: "03",
+        badge: "À chaque tournée",
+        title: "Jackpot collectif & Lots",
+        desc: "Chaque commande alimente la jauge du bar. Au coup de sifflet final, la tournée ou le lot gagnant est tiré au sort.",
+        emoji: "🍻",
       },
     ],
-    concreteSituation: "Soir de Ligue des champions : vos clients pronostiquent le score à la mi-temps. À la fin du match, le classement s'affiche sur votre téléviseur avec les récompenses aux vainqueurs remises au comptoir.",
-    expectedBenefit: `Jusqu'à ${JAUGE_LIVE} joueurs connectés en même temps, et une salle qui joue ensemble toute la soirée.`,
-    offerTag: `Formule recommandée : Le Grand Jeu (${prixOffre("live")} €/mois)`,
+    modules: [
+      {
+        name: "Championnat de Pronostics",
+        tag: "Sport & TV",
+        desc: "Faites de votre bar le QG des passionnés avec classement des habitués.",
+        href: "/jeux-instantanes",
+      },
+      {
+        name: "Quiz & Blind Tests sur écran",
+        tag: "Animation live",
+        desc: "Buzzer sur smartphone et projection des questions sur grand écran.",
+        href: "/jeux-instantanes",
+      },
+      {
+        name: "Jackpot collectif au comptoir",
+        tag: "Effet de salle",
+        desc: "Fédérez toute la salle autour d'une jauge commune qui monte à chaque verre.",
+        href: "/passeport-fidelite",
+      },
+    ],
   },
   {
     id: "boutique",
-    trade: "Boutiques, Retail & Prêt-à-porter",
+    trade: "Boutique, Mode & Retail",
     emoji: "🛍️",
-    headline: "Faire entrer les passants, faire circuler dans les rayons et réactiver",
-    painPoint: "Des passants qui regardent la vitrine sans entrer, des rayons du fond désertés, et des clients de passage qui ne reviennent jamais après les soldes.",
-    recommendedModules: [
+    catchphrase: "Attirer les passants en rayon, animer l'encaissement et générer des achats répétés.",
+    benefitStat: "+35% de circulation en boutique & emails qualifiés",
+    offerName: "Le Club",
+    offerPrice: `${prixOffre("engagement")} €/mois`,
+    steps: [
       {
-        name: "Chasse au QR en boutique",
-        role: "3 QR codes dissimulés (vitrine, rayon créateurs, fond de boutique) à scanner pour débloquer -15%.",
-        why: "Oblige physiquement le client à explorer l'ensemble de votre boutique et découvrir vos collections.",
-        href: "/faire-venir",
+        num: "01",
+        badge: "En vitrine",
+        title: "L'affiche qui fait entrer",
+        desc: "Une affiche stylée avec QR code à l'entrée : le passant joue pour tenter de débloquer une remise immédiate.",
+        emoji: "🚪",
       },
       {
-        name: "Jeux instantanés au comptoir",
-        role: "Machine à sous ou boîte mystère déclenchée lors de l'encaissement.",
-        why: "Laisse une impression mémorable et offre un bon d'achat utilisable dès le mois suivant.",
-        href: "/attirer",
+        num: "02",
+        badge: "Dans les rayons",
+        title: "Chasse au QR dans le magasin",
+        desc: "3 QR codes dissimulés font visiter l'ensemble des collections pour valider l'avantage avant le passage en caisse.",
+        emoji: "🗺️",
       },
       {
-        name: "Calendrier à surprises",
-        role: "Opération spéciale (Noël, anniversaire du magasin, rentrée) avec un cadeau à dévoiler par jour.",
-        why: "Crée une habitude de consultation quotidienne et des visites répétées en magasin.",
-        href: "/fideliser",
-      },
-      {
-        name: "Parrainage d'amies",
-        role: "Partage d'un lien par SMS : -10 € pour l'amie, -10 € pour la cliente marraine dès la visite.",
-        why: "Le meilleur levier d'acquisition locale, sans dépenser un euro en publicité sponsorisée.",
-        href: "/attirer",
+        num: "03",
+        badge: "Au comptoir",
+        title: "Passeport & Bons d'achat",
+        desc: "Validation en 1 seconde en caisse. Le client repart avec son achat et son passeport enregistré dans son Google Wallet.",
+        emoji: "✨",
       },
     ],
-    concreteSituation: "Une cliente hésite devant la boutique : elle scanne l'affiche vitrine, gagne un petit lot valable immédiatement en caisse et franchit la porte pour l'utiliser.",
-    expectedBenefit: "Un parcours qui fait entrer les passants et circuler dans les rayons, et un fichier client conforme RGPD.",
-    offerTag: `Formule recommandée : Le Club (${prixOffre("engagement")} €/mois)`,
+    modules: [
+      {
+        name: "Jeux instantanés vitrine",
+        tag: "Trafic entrant",
+        desc: "Roue ou machine à sous pour transformer les passants en acheteurs.",
+        href: "/jeux-instantanes",
+      },
+      {
+        name: "Chasse aux QR codes",
+        tag: "Découverte rayons",
+        desc: "Faites circuler les visiteurs dans les rayons du fond sans effort.",
+        href: "/vitrine-reservation",
+      },
+      {
+        name: "Passeport fidélité & Relances",
+        tag: "Fidélisation VIP",
+        desc: "Rappelez automatiquement vos clientes quand une nouvelle collection arrive.",
+        href: "/passeport-fidelite",
+      },
+    ],
   },
   {
     id: "salon",
-    trade: "Salons de coiffure, Beauté & Services",
+    trade: "Salon, Beauté & Bien-être",
     emoji: "✂️",
-    headline: "Remplir l'agenda sans no-show et moderniser la fidélité",
-    painPoint: "Les cartes de fidélité en carton perdues ou oubliées, les rendez-vous manqués et le temps perdu à rappeler les clients pour reprendre rendez-vous.",
-    recommendedModules: [
+    catchphrase: "Zéro rendez-vous manqué, fin des cartes papier et remplissage des créneaux creux.",
+    benefitStat: "Zéro no-show & rappels de rendez-vous 100% automatiques",
+    offerName: "Sur Place",
+    offerPrice: `${prixOffre("place")} €/mois`,
+    steps: [
       {
-        name: "Passeport dans Google Wallet",
-        role: "Votre carte de fidélité installée dans le smartphone du client avec solde de points et notifications.",
-        why: "Zéro carte plastique à imprimer, toujours dans la poche du client, image de marque ultra-moderne.",
-        href: "/fideliser",
+        num: "01",
+        badge: "24h/24 en ligne",
+        title: "Réservation directe sans commission",
+        desc: "Vos clientes réservent leur coupe ou leur soin directement depuis votre vitrine mobile sans vous déranger pendant vos prestations.",
+        emoji: "📅",
       },
       {
-        name: "Réservation d'agenda automatique",
-        role: "Vos disponibilités configurées une fois, prise de rendez-vous directe au scan du QR.",
-        why: "Vos clients réservent leur prochain créneau 24h/24 sans vous déranger pendant vos prestations.",
-        href: "/faire-venir",
+        num: "02",
+        badge: "En fin de soin",
+        title: "1 bip pour tamponner le Wallet",
+        desc: "La cliente présente son smartphone : votre équipe bipe son passeport Google Wallet en 1 seconde.",
+        emoji: "🎟️",
       },
       {
-        name: "Moments & Ventes Flash",
-        role: "Proposer un créneau libre de dernière minute avec un petit avantage pour éviter un trou dans l'agenda.",
-        why: "Comble les annulations de dernière minute en prévenant vos habitués en 2 clics.",
-        href: "/faire-venir",
-      },
-      {
-        name: "Scénarios de réactivation",
-        role: "Relance automatique par email des clients qui n'ont pas repris rendez-vous depuis 6 semaines.",
-        why: "Fait revenir automatiquement les clients réguliers sans aucun travail manuel.",
-        href: "/fideliser",
+        num: "03",
+        badge: "4 semaines plus tard",
+        title: "Relance automatique bienveillante",
+        desc: "Le système invite automatiquement votre cliente à reprendre son créneau avant qu'elle ne vous oublie.",
+        emoji: "⏰",
       },
     ],
-    concreteSituation: "Après son soin, votre client pose son téléphone sur votre borne caisse : son passeport Google Wallet est tamponné en un bip, et un rappel pour son prochain créneau dans 4 semaines lui est proposé.",
-    expectedBenefit: "Un prochain rendez-vous proposé avant que le client quitte le salon, et des relances qui partent sans vous.",
-    offerTag: `Formule recommandée : Le Club (${prixOffre("engagement")} €/mois) ou Sur Place (${prixOffre("place")} €/mois)`,
+    modules: [
+      {
+        name: "Passeport fidélité Google Wallet",
+        tag: "Modernité",
+        desc: "Toujours dans le smartphone, notifications sur écran de verrouillage.",
+        href: "/passeport-fidelite",
+      },
+      {
+        name: "Réservation d'agenda 24/7",
+        tag: "Zéro appel",
+        desc: "Vos créneaux libres se remplissent automatiquement de jour comme de nuit.",
+        href: "/vitrine-reservation",
+      },
+      {
+        name: "Tickets d'Or VIP",
+        tag: "Geste de service",
+        desc: "Offrez un soin ou un produit surprise à vos clientes les plus fidèles.",
+        href: "/passeport-fidelite",
+      },
+    ],
   },
 ];
 
 export function UseCasesByTrade() {
-  const [selectedTrade, setSelectedTrade] = useState<string>("restaurant");
-  const currentScenario = TRADES.find((t) => t.id === selectedTrade) ?? TRADES[0];
+  const [selectedId, setSelectedId] = useState<string>("restaurant");
+  const current = TRADES.find((t) => t.id === selectedId) ?? TRADES[0];
 
   return (
-    <div className="k-card rounded-3xl p-6 sm:p-10 shadow-lg">
-      <div className="text-center">
-        <span className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.18em] text-k-muted">
-          <span className="h-2 w-2 rounded-full bg-k-orange" />
-          Votre commerce en situation réelle
-        </span>
-        <h3 className="mt-2 text-2xl font-black text-k-ink sm:text-3xl" style={DISPLAY}>
-          Comment Lastchance s&apos;adapte à votre métier
-        </h3>
-        <p className="mx-auto mt-2 max-w-2xl text-xs font-bold text-k-body sm:text-sm">
-          Choisissez votre activité pour voir les modules recommandés, la situation concrète d&apos;utilisation et le bénéfice attendu.
-        </p>
-      </div>
-
-      {/* Sélecteur de typologie */}
-      <div className="mt-8 flex flex-wrap justify-center gap-2.5">
-        {TRADES.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setSelectedTrade(t.id)}
-            className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-black sm:text-sm transition-all duration-150 focus-visible:outline-3 focus-visible:outline-offset-2 ${
-              selectedTrade === t.id
-                ? "k-border k-hard-sm bg-k-yellow text-k-ink scale-105"
-                : "border-2 border-k-ink/15 bg-white/70 text-k-body hover:border-k-ink/30 hover:bg-white"
-            }`}
-          >
-            <span>{t.emoji}</span>
-            <span>{t.trade}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Contenu détaillé du scénario */}
-      <div className="mt-10">
-        <div className="rounded-2xl bg-k-yellow/30 border-2 border-k-ink/20 p-5 sm:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h4 className="text-xl font-black text-k-ink sm:text-2xl" style={DISPLAY}>
-              {currentScenario.headline}
-            </h4>
-            <span className="k-border-thin rounded-full bg-k-ink px-3 py-1 text-xs font-black text-k-bg">
-              {currentScenario.offerTag}
-            </span>
-          </div>
-          <p className="mt-2 text-xs sm:text-sm font-bold text-k-body/90">
-            <strong>Le défi quotidien :</strong> {currentScenario.painPoint}
+    <div className="relative">
+      {/* En-tête asymétrique dé-zoomé */}
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 border-b border-k-ink/10 pb-5">
+        <div>
+          <span className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] font-black uppercase tracking-[0.16em] text-k-ink/70">
+            <span className="h-2 w-2 rounded-full bg-k-orange animate-pulse" />
+            Votre Commerce En Situation Réelle
+          </span>
+          <h3 className="mt-1.5 text-xl sm:text-[24px] font-black text-k-ink" style={DISPLAY}>
+            Conçu pour votre activité, pensé pour vos clients
+          </h3>
+          <p className="mt-1 max-w-xl text-xs sm:text-sm font-bold text-k-body leading-relaxed">
+            Parcours client fluide en 3 étapes et sélection des modules activables immédiatement dans votre commerce.
           </p>
         </div>
 
-        {/* Grille des 4 modules recommandés */}
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          {currentScenario.recommendedModules.map((mod) => (
-            <Tilt3D key={mod.name} intensity={4}>
-              <div className="k-card k-card-hover flex h-full flex-col justify-between rounded-2xl p-5">
+        {/* 4 Onglets Métier Pilules Modernes et Compacts alignés à droite */}
+        <div className="flex flex-wrap items-center gap-1.5 self-start md:self-end">
+          {TRADES.map((t) => {
+            const isActive = t.id === selectedId;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setSelectedId(t.id)}
+                className={`k-pill flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-black transition-all ${
+                  isActive
+                    ? "bg-k-yellow text-k-ink border-2 border-k-ink shadow-xs scale-105"
+                    : "bg-white/85 border border-k-ink/15 text-k-body hover:border-k-ink/30 hover:bg-white"
+                }`}
+              >
+                <span className="text-base">{t.emoji}</span>
+                <span>{t.trade}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Bannière de promesse métier compacte */}
+      <div className="mt-6 rounded-[20px] border border-k-ink/12 bg-gradient-to-r from-amber-50/70 via-yellow-50/50 to-amber-50/70 p-3.5 sm:p-4 text-center shadow-2xs">
+        <p className="text-sm sm:text-[15px] font-black text-k-ink leading-snug" style={DISPLAY}>
+          « {current.catchphrase} »
+        </p>
+        <div className="mt-2 inline-flex flex-wrap items-center justify-center gap-2 text-[11px] font-black text-k-ink">
+          <span className="rounded-full bg-k-green text-k-bg px-2.5 py-0.5">
+            ✓ {current.benefitStat}
+          </span>
+          <span className="rounded-full bg-white border border-k-ink/15 px-2.5 py-0.5 shadow-2xs">
+            Formule {current.offerName} ({current.offerPrice})
+          </span>
+        </div>
+      </div>
+
+      {/* Parcours en 3 étapes compact */}
+      <div className="mt-6">
+        <h4 className="text-center text-[10px] font-black uppercase tracking-wider text-k-muted">
+          Le parcours client en 3 étapes concrètes :
+        </h4>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+          {current.steps.map((step) => (
+            <Tilt3D key={step.num} intensity={4}>
+              <div className="k-card-pop flex flex-col justify-between rounded-[20px] p-4 sm:p-5 bg-white border border-k-ink/10 h-full shadow-2xs">
                 <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-base font-black text-k-ink">{mod.name}</span>
-                    <Link
-                      href={mod.href}
-                      className="text-xs font-black text-k-orange-text hover:underline"
-                    >
-                      Détails →
-                    </Link>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl">{step.emoji}</span>
+                    <span className="rounded-full bg-k-ink text-k-bg px-2.5 py-0.5 text-[10px] font-black font-mono">
+                      Étape {step.num}
+                    </span>
                   </div>
-                  <p className="mt-2 text-xs font-bold text-k-body leading-relaxed">
-                    {mod.role}
-                  </p>
-                  <p className="mt-2 rounded-xl bg-white/80 p-2.5 text-[11px] font-black text-k-muted">
-                    💡 <strong>Pourquoi le prendre :</strong> {mod.why}
+                  <span className="mt-2.5 inline-block rounded-full bg-amber-50 border border-k-ink/12 px-2.5 py-0.5 text-[9px] font-black uppercase text-k-orange-text">
+                    {step.badge}
+                  </span>
+                  <h5 className="mt-1.5 text-sm sm:text-base font-black text-k-ink" style={DISPLAY}>
+                    {step.title}
+                  </h5>
+                  <p className="mt-1 text-xs font-semibold text-k-body leading-relaxed">
+                    {step.desc}
                   </p>
                 </div>
               </div>
             </Tilt3D>
           ))}
         </div>
+      </div>
 
-        {/* Cas concret & Résultat */}
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          <div className="rounded-2xl border-2 border-k-ink/15 bg-white/90 p-5">
-            <p className="text-xs font-black uppercase text-k-orange-text">Scénario concret sur place :</p>
-            <p className="mt-2 text-xs sm:text-sm font-bold text-k-body leading-relaxed">
-              « {currentScenario.concreteSituation} »
-            </p>
-          </div>
-          <div className="k-card-deep rounded-2xl p-5 text-k-bg flex flex-col justify-center">
-            <p className="text-xs font-black uppercase text-k-yellow">Ce que ça change au quotidien :</p>
-            <p className="mt-1 text-base sm:text-lg font-black text-k-yellow" style={DISPLAY}>
-              {currentScenario.expectedBenefit}
-            </p>
-          </div>
+      {/* Les modules clés recommandés avec liens directs */}
+      <div className="mt-8 pt-5 border-t border-dashed border-k-ink/15">
+        <h4 className="text-[10px] font-black uppercase tracking-wider text-k-muted text-center sm:text-left">
+          Les modules inclus activables en 1 clic :
+        </h4>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {current.modules.map((m) => (
+            <div
+              key={m.name}
+              className="rounded-[16px] border border-k-ink/10 bg-white/90 p-4 flex flex-col justify-between shadow-2xs hover:border-k-ink/30 hover:shadow-xs transition-all"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-black text-k-ink">{m.name}</span>
+                  <span className="rounded-full bg-k-yellow/50 px-2 py-0.5 text-[9px] font-black text-k-ink whitespace-nowrap">
+                    {m.tag}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[11px] font-semibold text-k-body leading-snug">
+                  {m.desc}
+                </p>
+              </div>
+              <div className="mt-3 pt-2 border-t border-k-ink/10">
+                <Link
+                  href={m.href}
+                  className="text-xs font-black text-k-orange-text hover:underline flex items-center justify-between"
+                >
+                  <span>Découvrir la démo</span>
+                  <span>→</span>
+                </Link>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
+

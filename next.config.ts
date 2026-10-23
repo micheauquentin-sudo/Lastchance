@@ -277,6 +277,26 @@ const nextConfig: NextConfig = {
         : []),
     ];
   },
+
+  async redirects() {
+    return [
+      {
+        source: "/attirer",
+        destination: "/jeux-instantanes",
+        permanent: true,
+      },
+      {
+        source: "/faire-venir",
+        destination: "/vitrine-reservation",
+        permanent: true,
+      },
+      {
+        source: "/fideliser",
+        destination: "/passeport-fidelite",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default withSentryConfig(nextConfig, {

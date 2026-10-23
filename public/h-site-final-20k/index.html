@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lastchance — Jeux interactifs, Fidélité, Pronostics &amp; Vitrine par QR Code</title>
+  <meta name="description" content="15 jeux instantanés (hasard et adresse), pronostics, passeport fidélité, parrainage, jackpot collectif, vitrine bilingue et prise de rendez-vous sur un seul QR code." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700;800&family=Unbounded:wght@700;800;900&family=Caveat:wght@600;700&family=Manrope:wght@500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Bulles roses flottantes sur fond beige (strictement en arrière-plan z-index: 0) -->
+  <div class="floating-bubbles" aria-hidden="true" id="bubbles"></div>
+
+  <main>
+    <!-- ==========================================================
+         1. HERO AZUR PIXAR 4K (SANS BULLES) + TITRE FUN & QR 3D RAPPROCHÉS
+         ========================================================== -->
+    <section class="hero-master-pixar" id="top">
+      <!-- Navigation épurée (sans le lien Formules, avec accès aux 3 univers dédiés) -->
+      <header class="header-nav">
+        <a class="brand-logo" href="#top">LAST<span class="logo-club">chance</span></a>
+        <nav aria-label="Navigation principale">
+          <a href="#piliers">Le Concept</a>
+          <a href="#jeux">Le Manège</a>
+          <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
+          <a href="fidelite-communaute.html">Fidélité &amp; Jackpot</a>
+          <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+          <a href="studio.html" class="nav-highlight-link">🛠️ Studio Kermesse</a>
+        </nav>
+        <div class="nav-right-actions">
+          <div class="nav-circle-badges" aria-hidden="true">
+            <span class="c-dot dot-y">🎮</span>
+            <span class="c-dot dot-l">🎁</span>
+            <span class="c-dot dot-p">⚡</span>
+          </div>
+          <a class="ticket-btn pop-btn-yellow" href="studio.html">Créer gratuitement →</a>
+        </div>
+      </header>
+
+      <!-- Grille Héro Ultra-Épurée & Rapprochée : Titre Fun + QR Code Cartoon 3D côte à côte -->
+      <div class="hero-clean-grid">
+        <div class="hero-left-clean">
+          <h1 class="hero-fun-title">
+            Un simple scan.<br />
+            Une expérience qui crée<br />
+            <span class="hero-fun-sticker">le coup de cœur !</span>
+          </h1>
+
+          <p class="hero-fun-sub">
+            Déployez <b>15 mini-jeux</b> (hasard ou adresse), un <b>passeport fidélité</b>, des <b>pronostics</b> ou votre <b>agenda de réservation</b> — accessibles instantanément sur téléphone, sans rien installer.
+          </p>
+
+          <div class="hero-cta-row">
+            <button type="button" class="ticket-btn ticket-btn-large pop-btn-ink" id="hero-open-play-cta">🎮 Jouer &amp; Tester les 18 Thèmes</button>
+            <a class="wavy-link" href="studio.html">ouvrir le Studio de création gratuit →</a>
+          </div>
+        </div>
+
+        <!-- Le QR Code Cartoon 3D Flottant rapproché du titre (Ouvre l'expérience joueur /play avec les 18 thèmes du code source) -->
+        <div class="hero-right-qr-only">
+          <div class="qr-floating-unit">
+            <div class="qr-call-header">
+              <span class="qr-call-bubble">📱 Clique ou scanne pour jouer !</span>
+              <svg class="qr-curved-arrow" viewBox="0 0 64 52" aria-hidden="true">
+                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
+                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
+                <polygon points="31,34 43,48 51,33" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              </svg>
+            </div>
+
+            <button type="button" class="qr-cartoon-3d-block" id="hero-qr-play-btn" title="Cliquez pour lancer une vraie partie /play et tester les 18 thèmes du code source en direct" style="cursor:pointer;text-align:left;">
+              <div class="qr-cartoon-inner">
+                <img src="img/qr-code.svg" alt="QR Code Lastchance — Cliquez pour jouer et tester les 18 thèmes" width="180" height="180" class="qr-bleed-img" />
+                <div class="qr-center-wheel-badge" aria-hidden="true">🎮</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sol Damier 3D Perspective Orange & Crème + Rebord Menthe (100% bord à bord) -->
+      <div class="lottie-stage-wrapper">
+        <div class="perspective-checkerboard-floor" aria-hidden="true">
+          <div class="checkerboard-surface"></div>
+          <div class="checkerboard-mint-ledge"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         2. BANDEAU DÉFILANT VIOLET CIEL + BARRE MENTHE AUX 4 PILULES
+         ========================================================== -->
+    <div class="ticker-banner" aria-hidden="true">
+      <div class="ticker-content">
+        <span>15 MINI-JEUX DE HASARD &amp; D'ADRESSE</span><b>★</b><span>PASSEPORT FIDÉLITÉ GOOGLE WALLET &amp; ÉCRAN D'ACCUEIL</span><b>★</b><span>SAISONS DE PRONOSTICS</span><b>★</b><span>PARRAINAGE &amp; JACKPOT COLLECTIF</span><b>★</b><span>VITRINE BILINGUE &amp; PRISE DE RDV</span><b>★</b>
+        <span>15 MINI-JEUX DE HASARD &amp; D'ADRESSE</span><b>★</b><span>PASSEPORT FIDÉLITÉ GOOGLE WALLET &amp; ÉCRAN D'ACCUEIL</span><b>★</b><span>SAISONS DE PRONOSTICS</span><b>★</b><span>PARRAINAGE &amp; JACKPOT COLLECTIF</span><b>★</b><span>VITRINE BILINGUE &amp; PRISE DE RDV</span><b>★</b>
+      </div>
+    </div>
+
+    <section class="clog-stats-mint-bar" aria-label="Les 4 piliers de la plateforme Lastchance">
+      <div class="clog-stats-wrap">
+        <div class="clog-stat-pill">
+          <b>ZÉRO APPLI</b>
+          <span>OUVERTURE IMMÉDIATE DANS LE NAVIGATEUR</span>
+        </div>
+        <div class="clog-stat-pill">
+          <b>15 JEUX INCLUS</b>
+          <span>9 JEUX DE HASARD &amp; 6 DÉFIS D'ADRESSE</span>
+        </div>
+        <div class="clog-stat-pill">
+          <b>SUR-MESURE</b>
+          <span>À VOS COULEURS, VOS LOTS ET VOS RÈGLES</span>
+        </div>
+        <div class="clog-stat-pill">
+          <b>CAISSE UNIQUE</b>
+          <span>UN SEUL SCANNER VALIDE TOUS VOS GAINS</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         3. BLOC 2 : « QUEL QUE SOIT VOTRE UNIVERS, DONNEZ ENVIE DE SCANNER. »
+         + LES 3 CASES ORGANIQUES DÉCOUPÉES (Reliées aux 3 pages dédiées)
+         ========================================================== -->
+    <section class="organic-pillars-section" id="piliers" aria-labelledby="piliers-title">
+      <div class="center">
+        <p class="section-script">boutiques, salons, marques, événements ou lieux de vie</p>
+        <h2 class="section-title" id="piliers-title">
+          QUEL QUE SOIT VOTRE UNIVERS,<br />
+          <mark class="pop-mark pop-mark-yellow">DONNEZ ENVIE DE SCANNER.</mark>
+        </h2>
+      </div>
+
+      <div class="refeel-organic-trio">
+        <!-- Case 01 : Lavande -> Page Jeux Instantanés & Pronostics -->
+        <article class="organic-card organic-blob-purple reveal">
+          <span class="organic-num">01 · FAIRE JOUER &amp; VIBRER</span>
+          <h3>15 jeux instantanés personnalisables et vos concours de pronostics.</h3>
+          <p>
+            Coffre au trésor, bonneteau, machine à sous, défi de réflexe, mot mystère, grattage ou pronostics sur les grands championnats : captez l'attention dès le premier regard.
+          </p>
+          <a class="organic-pill organic-link-pill" href="jeux-pronostics.html">Explorer les 15 Jeux &amp; Pronostics →</a>
+        </article>
+
+        <!-- Case 02 : Menthe à double bordure -> Page Fidélité, Parrainage & Jackpot -->
+        <article class="organic-card organic-stamp-mint reveal">
+          <span class="organic-num">02 · FIDÉLISER &amp; FÉDÉRER</span>
+          <h3>Passeport fidélité, parrainage d'amis et cagnotte commune.</h3>
+          <p>
+            Vos clients enregistrent leur passeport sur Google Wallet ou l'écran d'accueil, invitent leurs proches pour franchir des paliers et font grimper ensemble le jackpot de votre établissement.
+          </p>
+          <a class="organic-pill organic-link-pill" href="fidelite-communaute.html">Découvrir Fidélité, Parrainage &amp; Jackpot →</a>
+
+          <div class="refeel-scallop-badge" aria-hidden="true">
+            <span>1 visite =<br />100 points</span>
+          </div>
+        </article>
+
+        <!-- Case 03 : Rose -> Page Vitrine & Réservation -->
+        <article class="organic-card organic-wave-pink reveal">
+          <span class="organic-num">03 · PRÉSENTER &amp; FAIRE RÉSERVER ⚡</span>
+          <h3>Votre vitrine bilingue et vos rendez-vous sans commission.</h3>
+          <p>
+            Affichez vos prestations ou votre catalogue 24h/24 en français et en anglais, laissez vos visiteurs réserver un créneau dans votre agenda ou s'inscrire à vos événements.
+          </p>
+          <a class="organic-pill organic-link-pill" href="vitrine-reservation.html">Voir l'espace Vitrine &amp; Réservation →</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         4. ILS SCANNENT. ILS JOUENT. ILS GAGNENT.
+         (STORYBOARD 3 ÉCRANS GÉNÉRALISTE : Multi-mécaniques, pas seulement la roue)
+         ========================================================== -->
+    <section class="clog-lavender-split" id="parcours">
+      <div class="lavender-split-wrap">
+        <div class="lavender-copy">
+          <p class="section-script">fluide du premier scan jusqu'à la récompense</p>
+          <h2>ILS SCANNENT.<br />ILS JOUENT.<br />ILS GAGNENT.</h2>
+          <p>
+            Que votre support soit posé sur un comptoir, collé en vitrine, imprimé sur un emballage ou projeté lors d'un événement, le parcours tient en trois gestes :
+          </p>
+          <ul class="parcours-bullets">
+            <li><b>1. Scan immédiat :</b> l'appareil photo ouvre votre expérience personnalisée sans création de compte.</li>
+            <li><b>2. Défi ou hasard :</b> coffre à ouvrir, réflexe, grattage, quiz, pronostic ou roue selon votre campagne.</li>
+            <li><b>3. Validation universelle :</b> un seul écran côté équipe valide les codes de toutes vos expériences.</li>
+          </ul>
+          <div class="lavender-cta-group">
+            <button type="button" class="ticket-btn pop-btn-yellow" id="demo-story-trigger">▶ Animer les 3 écrans</button>
+            <a class="ticket-btn pop-btn-pink" href="jeux-pronostics.html">Voir les 15 mécaniques →</a>
+          </div>
+        </div>
+
+        <!-- STORYBOARD 3 ÉCRANS EXPLICITES -->
+        <div class="storyboard-3-screens reveal" id="storyboard-demo">
+          <!-- ÉCRAN 1 : LE SCAN -->
+          <div class="story-phone-card story-step-1 is-active" data-step="1">
+            <div class="story-step-header">
+              <span class="story-badge">ÉTAPE 1</span>
+              <strong>ILS SCANNENT</strong>
+            </div>
+            <div class="story-phone-screen screen-scan-bg">
+              <div class="camera-viewfinder">
+                <span class="vf-corner vf-tl"></span>
+                <span class="vf-corner vf-tr"></span>
+                <span class="vf-corner vf-bl"></span>
+                <span class="vf-corner vf-br"></span>
+                <div class="laser-scan-line"></div>
+                <img src="img/qr-code.svg" alt="Scan du QR code" width="96" height="96" class="story-qr-img" />
+              </div>
+              <div class="camera-toast">📷 QR détecté · Ouverture...</div>
+            </div>
+            <p class="story-caption">En vitrine, à l'accueil, sur un produit, un miroir ou un stand.</p>
+          </div>
+
+          <!-- ÉCRAN 2 : LE CHOIX DU JEU (Généraliste : Coffre, Machine à sous, Réflexe, Grattage...) -->
+          <div class="story-phone-card story-step-2" data-step="2">
+            <div class="story-step-header">
+              <span class="story-badge">ÉTAPE 2</span>
+              <strong>ILS JOUENT</strong>
+            </div>
+            <div class="story-phone-screen screen-spin-bg">
+              <div class="mini-phone-topbar">✨ 15 mécaniques au choix</div>
+              <div class="story-multi-games-grid" id="story-mini-wheel">
+                <div class="smg-tile smg-y">🎰<span>Slots</span></div>
+                <div class="smg-tile smg-p">🧰<span>Coffre</span></div>
+                <div class="smg-tile smg-m">⚡<span>Réflexe</span></div>
+                <div class="smg-tile smg-l">🎟️<span>Grattage</span></div>
+              </div>
+              <span class="story-spin-pill">🎮 Hasard, adresse, quiz ou défi !</span>
+            </div>
+            <p class="story-caption">Vous changez de mécanique de jeu en 1 clic quand vous voulez.</p>
+          </div>
+
+          <!-- ÉCRAN 3 : LE GAIN & LE CODE UNIQUE -->
+          <div class="story-phone-card story-step-3" data-step="3">
+            <div class="story-step-header">
+              <span class="story-badge">ÉTAPE 3</span>
+              <strong>ILS GAGNENT !</strong>
+            </div>
+            <div class="story-phone-screen screen-win-bg">
+              <div class="win-confetti-row">🎉 BRAVO ! 🎉</div>
+              <div class="story-voucher-box">
+                <span class="voucher-gift-icon">🎁</span>
+                <strong id="story-prize-label">-20% ou Cadeau Offert</strong>
+                <div class="voucher-code-pill">
+                  <small>CODE UNIQUE :</small>
+                  <code id="story-prize-code">LC-7K2M</code>
+                </div>
+                <span class="voucher-valid-stamp">✓ Caisse Universelle</span>
+              </div>
+            </div>
+            <p class="story-caption">Un code unique sécurisé, enregistré dans le portefeuille du joueur.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         5. LE MANÈGE INTERACTIF DES 10 BRIQUES DE JEU & FIDÉLITÉ
+         (Suivi juste en dessous par les blocs dédiés Vitrine & Réservation,
+          Jeux & Pronostics, et Fidélité & Jackpot !)
+         ========================================================== -->
+    <section class="section games-jukebox-section" id="jeux">
+      <div class="center">
+        <p class="section-script">touchez un jeton pour voir l'expérience s'animer ↓</p>
+        <h2 class="section-title">LE MANÈGE DE VOS <mark class="pop-mark pop-mark-pink">10 UNIVERS DE JEU.</mark></h2>
+        <p class="jukebox-sub">
+          Cliquez sur n'importe quel jeton ci-dessous pour découvrir comment chaque brique engage vos visiteurs sur leur téléphone.
+        </p>
+      </div>
+
+      <div class="jukebox-arena reveal">
+        <!-- Nuage organique de 10 Jetons-Pilules rebondissants -->
+        <div class="jukebox-tokens-cloud" id="jukebox-tokens" role="tablist" aria-label="Choisir une expérience"></div>
+
+        <!-- Scène Animée en Direct -->
+        <div class="jukebox-live-stage" id="jukebox-stage" aria-live="polite">
+          <div class="jukebox-stage-top">
+            <span class="jukebox-cat-pill" id="jb-cat">Acquérir &amp; Convertir</span>
+            <span class="jukebox-step-counter" id="jb-counter">Expérience 1 / 10</span>
+          </div>
+
+          <div class="jukebox-visual-box" id="jb-visual"></div>
+
+          <div class="jukebox-stage-info">
+            <h3 id="jb-title">15 Jeux Instantanés (Hasard &amp; Adresse)</h3>
+            <p id="jb-desc">Machine à sous, coffre mystère, bonneteau, jeu de réflexe, mot mystère, grattage ou roue : variez les plaisirs à chaque campagne.</p>
+            <div class="jukebox-stage-footer">
+              <span class="jukebox-usage-pill" id="jb-usage">🎮 9 jeux de hasard + 6 défis d'adresse inclus</span>
+              <div class="jukebox-nav-arrows">
+                <button type="button" class="jb-arrow-btn" id="jb-prev" aria-label="Expérience précédente">←</button>
+                <button type="button" class="jb-arrow-btn" id="jb-next" aria-label="Expérience suivante">→</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ruban Forain Défilant de Tickets Inclinés -->
+      <div class="carnival-ribbon-wrap" aria-label="Ruban des expériences">
+        <div class="carnival-ribbon-track" id="carnival-ribbon"></div>
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         6. SOUS LE MANÈGE : LES 3 PORTES VERS VOS PAGES DÉDIÉES
+            (Dont le grand bloc Vitrine & Réservation placé sous le Manège !)
+         ========================================================== -->
+    <section class="vitrine-spotlight-section" id="vitrine-teaser">
+      <!-- Duo de Portes Dédiées : 15 Jeux & Pronostics + Fidélité, Parrainage & Jackpot -->
+      <div class="dedicated-pages-duo reveal">
+        <!-- Porte 1 : Les 15 Jeux Instantanés & Pronostics -->
+        <article class="dedicated-gateway-card gateway-yellow">
+          <div class="gateway-top-row">
+            <span class="vitrine-eyebrow">✦ PAGE DÉDIÉE · JEUX &amp; COMPÉTITIONS</span>
+            <span class="gateway-badge-pill">15 mécaniques + 11 types de pronostics</span>
+          </div>
+          <h3>15 Jeux Instantanés Personnalisables &amp; Saisons de Pronostics</h3>
+          <p>
+            Découvrez les <b>9 jeux de hasard</b> (coffre, machine à sous, bonneteau, grattage...) et les <b>6 défis d'adresse</b> (réflexe, pierre-feuille-ciseaux, jauge, mot mystère), ainsi que nos concours de <b>Pronostics</b> sur les vrais championnats (Ligue des Champions, Top 14, Euro, Roland-Garros, Eurovision...).
+          </p>
+          <div class="gateway-mini-tags">
+            <span>🎰 Machine à sous</span>
+            <span>🧰 Coffre à choisir</span>
+            <span>⚡ Jeu de réflexe</span>
+            <span>🏆 Ligue des Champions &amp; Top 14</span>
+          </div>
+          <a class="ticket-btn pop-btn-ink" href="jeux-pronostics.html">
+            Explorer les 15 Jeux &amp; Pronostics →
+          </a>
+        </article>
+
+        <!-- Porte 2 : Passeport Fidélité, Parrainage & Jackpot Collectif -->
+        <article class="dedicated-gateway-card gateway-mint">
+          <div class="gateway-top-row">
+            <span class="vitrine-eyebrow">✦ PAGE DÉDIÉE · LE TRIO FIDÉLITÉ</span>
+            <span class="gateway-badge-pill">Google Wallet &amp; Écran d'accueil</span>
+          </div>
+          <h3>Passeport Fidélité, Parrainage d'Amis &amp; Jackpot Collectif</h3>
+          <p>
+            Comprenez comment ces <b>3 briques fonctionnent ensemble</b> : le client cumule ses visites sur son <b>Passeport Fidélité</b> mobile (`1 visite = 100 pts`), débloque des paliers en <b>parrainant ses proches</b>, et chaque action fait grimper la jauge du <b>Jackpot Collectif</b> de votre établissement !
+          </p>
+          <div class="gateway-mini-tags">
+            <span>🛂 Passeport Wallet &amp; Web App</span>
+            <span>🤝 Parrainage à paliers</span>
+            <span>💰 Cagnotte collective</span>
+          </div>
+          <div style="display:flex;gap:0.65rem;flex-wrap:wrap;">
+            <a class="ticket-btn pop-btn-ink" href="fidelite-communaute.html">
+              Découvrir la synergie Fidélité &amp; Jackpot →
+            </a>
+            <a class="ticket-btn pop-btn-white" href="studio.html?module=fidelite">
+              🛠️ Créer mon Passeport
+            </a>
+          </div>
+        </article>
+      </div>
+
+      <!-- Grand Bloc Accrocheur Vitrine & Réservation (placé juste sous le Manège !) -->
+      <div class="vitrine-spotlight-shell reveal">
+        <div class="vitrine-spotlight-left">
+          <span class="vitrine-eyebrow">✦ PAGE DÉDIÉE · VITRINE &amp; AGENDA</span>
+          <h2 class="vitrine-spotlight-title">
+            SUR LE MÊME QR CODE :<br />
+            VOTRE <span class="pop-mark pop-mark-yellow">VITRINE</span> &amp; VOS <span class="pop-mark pop-mark-pink">RÉSERVATIONS.</span>
+          </h2>
+          <p class="vitrine-spotlight-lead">
+            En plus de vos animations ludiques, votre QR code permet d'afficher votre <b>catalogue ou carte de prestations bilingue (FR/EN)</b> selon les <b>7 secteurs métiers du Studio</b>, de recevoir des <b>prises de rendez-vous sans commission</b> et d'inscrire vos visiteurs à vos <b>Moments &amp; ventes privées</b>.
+          </p>
+
+          <div class="vitrine-feature-trio">
+            <div class="vf-item">
+              <span class="vf-icon">📖</span>
+              <div>
+                <strong>Vitrine &amp; Tarifs au QR (7 univers métiers)</strong>
+                <small>Restaurant, Bar, Coiffure &amp; Beauté, Boutique, Boulangerie, Hôtel/Loisirs ou Métier libre.</small>
+              </div>
+            </div>
+            <div class="vf-item">
+              <span class="vf-icon">📅</span>
+              <div>
+                <strong>Prise de RDV &amp; Réservation</strong>
+                <small>Choix du créneau en direct, agenda connecté et ajout au calendrier du téléphone.</small>
+              </div>
+            </div>
+            <div class="vf-item">
+              <span class="vf-icon">🎟️</span>
+              <div>
+                <strong>Moments &amp; Invitations VIP</strong>
+                <small>Ateliers, dégustations, ventes privées ou offres de dernière minute.</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="vitrine-cta-row" style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+            <a class="ticket-btn ticket-btn-large pop-btn-ink" href="vitrine-reservation.html">
+              Découvrir la page Vitrine &amp; Réservation →
+            </a>
+            <a class="ticket-btn ticket-btn-large pop-btn-yellow" href="studio.html?module=vitrine">
+              🛠️ Créer ma Vitrine dans le Studio →
+            </a>
+          </div>
+        </div>
+
+        <div class="vitrine-spotlight-right">
+          <a href="vitrine-reservation.html" class="vitrine-preview-stack" title="Cliquez pour explorer la page dédiée Vitrine & Réservation">
+            <div class="vp-card vp-card-vitrine">
+              <div class="vp-header">
+                <span class="vp-pill vp-pill-sky">📖 Module Vitrine</span>
+                <span class="vp-lang">🇫🇷 FR · 🇬🇧 EN</span>
+              </div>
+              <h4>Votre offre consultable 24h/24</h4>
+              <div class="vp-mock-lines">
+                <div class="vp-line"><span>✨ Prestation / Produit Phare</span><b>35 €</b></div>
+                <div class="vp-line"><span>🌿 Formule Découverte</span><b>49 €</b></div>
+                <div class="vp-line"><span>🎁 Coffret / Édition Limitée</span><b>25 €</b></div>
+              </div>
+            </div>
+
+            <div class="vp-card vp-card-rdv">
+              <div class="vp-header">
+                <span class="vp-pill vp-pill-pink">📅 Module Réservation &amp; Moments</span>
+                <span class="vp-zero-comm">0% commission</span>
+              </div>
+              <h4>Réservez votre créneau en 2 clics</h4>
+              <div class="vp-slots-grid">
+                <span class="vp-slot">Jeu. 10h30</span>
+                <span class="vp-slot vp-slot-active">Jeu. 14h30 ✓</span>
+                <span class="vp-slot">Ven. 11h00</span>
+                <span class="vp-slot">Ven. 16h00</span>
+              </div>
+              <div class="vp-cal-confirm">📲 Ajouté automatiquement à l'agenda du client</div>
+            </div>
+
+            <div class="vp-floating-cta">👉 Cliquer pour voir la démonstration complète</div>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- DAMIER PONCTUEL N°1 : ENTRÉE DANS LE MANIFESTE JAUNE -->
+    <div class="damier-separator damier-bw" aria-hidden="true"></div>
+
+    <!-- ==========================================================
+         7. MANIFESTE JAUNE SOLAIRE (Communication Globale Tous Établissements)
+         ========================================================== -->
+    <section class="clog-yellow-manifesto" id="manifesto">
+      <div class="manifesto-wrap">
+        <p class="section-script">créer du lien humain partout ↓</p>
+        <h2 class="manifesto-giant-title">
+          FAITES DE CHAQUE VISITE<br />
+          <span class="manifesto-pink-box">UN MOMENT QUI MARQUE.</span>
+        </h2>
+        <p class="manifesto-lead">
+          Que vous dirigiez une <b>boutique</b>, un <b>salon</b>, un <b>stand événementiel</b>, une <b>marque</b> ou un <b>lieu de convivialité</b>, vos visiteurs adorent être surpris. Nos expériences transforment quelques minutes d'attente ou un simple passage en un souvenir complice dont on parle autour de soi.
+        </p>
+
+        <div class="manifesto-photo-duo">
+          <div class="manifesto-photo-card tilt-left reveal">
+            <img src="img/terrasse.jpg" alt="Participants jouant ensemble sur leur téléphone" width="600" height="420" loading="lazy" />
+            <div class="manifesto-card-caption">
+              <span class="mini-pill" style="background:#ff4fa3;color:#fff">En duo ou en bande</span>
+              <b>Duo Miroir (à deux) &amp; Portrait de la Bande (votes secrets révélés en groupe de 2 à 12 joueurs)</b>
+            </div>
+          </div>
+
+          <div class="manifesto-photo-card tilt-right reveal">
+            <img src="img/bistro.jpg" alt="Sourires autour d'une animation mobile" width="600" height="420" loading="lazy" />
+            <div class="manifesto-card-caption">
+              <span class="mini-pill" style="background:#5de4b3;color:#161317">Pour tout établissement</span>
+              <b>Boutique, salon, événement, commerce ou lieu d'accueil : un seul scanner valide les 11 familles de gains</b>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DAMIER PONCTUEL N°2 : TRANSITION VERS LES FORMULES & LE SIMULATEUR -->
+    <div class="damier-separator damier-yellow-black" aria-hidden="true"></div>
+
+    <!-- ==========================================================
+         8. LES 5 FORMULES & LE SIMULATEUR SUR-MESURE
+         ========================================================== -->
+    <section class="section" id="formules">
+      <div class="section-top">
+        <div>
+          <p class="section-script">une formule par objectif, sans engagement</p>
+          <h2 class="section-title">LES 5 <mark class="pop-mark pop-mark-yellow">FORMULES.</mark></h2>
+        </div>
+        <p class="section-desc">Chaque formule démarre par <b>7 jours d'essai gratuit</b>. Cliquez sur une formule pour la personnaliser dans le simulateur ci-dessous.</p>
+      </div>
+      <div class="plans-deck" id="plans-deck"></div>
+    </section>
+
+    <section class="marmoris-configurator-section" id="configurateur">
+      <div class="marmoris-config-shell">
+        <div class="config-left-panel">
+          <span class="config-eyebrow">✦ SIMULATEUR SUR-MESURE</span>
+          <h2>COMPOSEZ VOTRE FORMULE IDÉALE</h2>
+          <p>Sélectionnez votre formule principale et ajoutez, si besoin, les briques Vitrine, Moments ou Réservation :</p>
+
+          <div class="config-step-label">1. Votre formule principale (essai 7 jours offert) :</div>
+          <div class="config-plan-radios" id="f-config-plans"></div>
+
+          <div class="config-step-label">2. Briques complémentaires à la carte (optionnel, sans engagement) :</div>
+          <div class="config-addon-checks" id="f-config-addons"></div>
+
+          <div class="config-total-bar">
+            <div class="config-total-price">
+              <small>Abonnement mensuel après les 7 jours d'essai :</small>
+              <strong id="f-config-total">59 € / mois</strong>
+              <span id="f-config-note">Sans engagement</span>
+            </div>
+            <a class="ticket-btn pop-btn-pink" href="studio.html">Configurer dans le Studio Kermesse →</a>
+          </div>
+        </div>
+
+        <div class="config-right-visual">
+          <div class="config-summary-card">
+            <div class="config-summary-head">
+              <span class="mini-pill" style="background:#ffd93d;color:#161317">Votre sélection en direct</span>
+              <h3 id="f-config-plan-name">Formule Le Club</h3>
+              <p id="f-config-plan-tagline">Fidéliser : installer l'habitude — fidélité, rendez-vous, bouche-à-oreille.</p>
+            </div>
+            <div class="config-jauge-badge" id="f-config-jauge">👥 Jusqu'à 100 participants en simultané</div>
+            <div class="config-chips-title">Expériences incluses dans votre sélection :</div>
+            <div class="config-included-chips" id="f-config-chips"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================================
+         9. QUESTIONS FRÉQUENTES & BANNIÈRE FINALE
+         ========================================================== -->
+    <section class="section section-narrow" id="faq">
+      <div class="center">
+        <p class="section-script">réponses claires et directes</p>
+        <h2 class="section-title">QUESTIONS FRÉQUENTES.</h2>
+      </div>
+      <div class="faq-accordion-pop">
+        <details class="faq-item-pop" open>
+          <summary>Y a-t-il uniquement une roue de la fortune ou d'autres jeux&nbsp;?</summary>
+          <p>Vous disposez de <b>15 mécaniques de jeu instantané</b> dès la première formule à 29 € : <b>9 jeux de hasard</b> (coffre à choisir, machine à sous, bonneteau, carte à gratter, memory, lancer de dé, carte retournée, tirage, roue) et <b>6 jeux d'adresse</b> (pierre-feuille-ciseaux, réflexe, jauge à arrêter, puzzle, mot mystère, estimation), auxquels s'ajoutent les quiz, pronostics, chasses au QR et jeux de groupe. <a href="jeux-pronostics.html" style="font-weight:800;color:#ff358b;">Découvrir les 15 jeux →</a></p>
+        </details>
+        <details class="faq-item-pop">
+          <summary>Comment fonctionnent le Passeport Fidélité, le Parrainage et le Jackpot&nbsp;?</summary>
+          <p>Ces trois outils se renforcent mutuellement : le Passeport Fidélité s'enregistre dans Google Wallet ou sur l'écran d'accueil pour récompenser l'assiduité (`1 visite = 100 points`), le Parrainage motive vos clients à inviter leurs amis par paliers, et le Jackpot Collectif fédère toute votre clientèle autour d'une jauge commune. <a href="fidelite-communaute.html" style="font-weight:800;color:#ff358b;">Voir la page dédiée Fidélité &amp; Jackpot →</a></p>
+        </details>
+        <details class="faq-item-pop">
+          <summary>Comment l'équipe vérifie-t-elle les gains de tant d'expériences différentes&nbsp;?</summary>
+          <p>Grâce à la <b>Caisse Universelle Lastchance</b> : un seul écran et un seul geste suffisent pour vérifier et désactiver instantanément les codes gagnants des 11 familles de récompenses (jeux instantanés, fidélité, parrainage, jackpot, pronostics, quiz, calendrier...).</p>
+        </details>
+        <details class="faq-item-pop">
+          <summary>Puis-je créer ma Vitrine ou mon Jeu gratuitement avant de m'abonner&nbsp;?</summary>
+          <p>Oui ! Le <b>Studio Kermesse</b> est 100 % ouvert : vous configurez librement vos jeux, vos 18 thèmes officiels, votre vitrine ou votre passeport fidélité avec un aperçu final en direct. Vos créations sont gardées en mémoire (dans votre cache ou sur un compte gratuit), et vous n'activez votre abonnement que lorsque vous souhaitez publier votre QR code officiel. <a href="studio.html" style="font-weight:800;color:#ff358b;">Ouvrir le Studio Kermesse →</a></p>
+        </details>
+      </div>
+    </section>
+
+    <!-- BANNIÈRE FINALE -->
+    <section class="grand-finale">
+      <h2>PRÊT À CRÉER VOTRE EXPÉRIENCE<br />DANS LE STUDIO KERMESSE&nbsp;?</h2>
+      <p>Testez l'intégralité du Studio gratuitement : configurez tout à votre convenance, obtenez l'aperçu final et publiez quand vous êtes prêt.</p>
+      <div class="finale-cta-row">
+        <a class="ticket-btn ticket-btn-large pop-btn-ink" href="studio.html">🛠️ Ouvrir le Studio de Création →</a>
+        <a class="ticket-btn ticket-btn-large pop-btn-white" href="jeux-pronostics.html">🎮 15 Jeux &amp; Pronostics</a>
+        <a class="ticket-btn ticket-btn-large pop-btn-white" href="vitrine-reservation.html">📖 Vitrine &amp; Réservation</a>
+        <a class="ticket-btn ticket-btn-large pop-btn-white" href="fidelite-communaute.html">🛂 Fidélité &amp; Jackpot</a>
+      </div>
+    </section>
+  </main>
+
+  <!-- ==========================================================
+       MODALE EXPÉRIENCE JOUEUR /PLAY (OUVERTE AU CLIC SUR LE QR CODE DU HÉRO)
+       Permet de jouer en direct tout en basculant entre les 18 thèmes du code source
+       ========================================================== -->
+  <div class="k-modal-backdrop" id="modal-hero-play" hidden>
+    <div class="hero-play-modal-card" role="dialog" aria-modal="true" aria-labelledby="hp-modal-title">
+      <div class="kermesse-stripe-bar" aria-hidden="true"></div>
+      <button type="button" class="k-modal-close" id="hp-modal-close" aria-label="Fermer">✕</button>
+
+      <div class="hero-play-grid">
+        <!-- Colonne gauche : Sélecteur des 18 thèmes du code source & des 15 mécaniques -->
+        <div class="hp-left-controls">
+          <div>
+            <span class="k-badge k-badge-yellow">EXPÉRIENCE JOUEUR AUTHENTIQUE (/play)</span>
+            <h2 id="hp-modal-title" style="font:900 1.45rem/1.15 var(--display);margin:0.35rem 0 0.25rem;">
+              Projetez votre établissement : jouez &amp; changez de thème en direct
+            </h2>
+            <p style="margin:0;font-size:0.83rem;font-weight:600;color:#4f4739;">
+              Ce que voit votre client lorsqu'il scanne votre QR code ne reprend pas le design du site marketing, mais <b>votre propre thème choisi parmi les 18 presets officiels du code source</b> :
+            </p>
+          </div>
+
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem;">
+              <strong style="font:800 0.8rem var(--display);">1. Choisissez parmi les 18 Thèmes du Code Source :</strong>
+              <div class="hp-theme-tabs">
+                <button type="button" class="k-choice-pill active" data-hp-tab="ambiances">🎨 8 Ambiances</button>
+                <button type="button" class="k-choice-pill" data-hp-tab="univers">🖼️ 10 Univers Illustrés</button>
+              </div>
+            </div>
+            <div class="hp-scroll-presets" id="hp-presets-grid"></div>
+          </div>
+
+          <div>
+            <strong style="font:800 0.8rem var(--display);display:block;margin-bottom:0.35rem;">2. Testez les 15 Mécaniques (9 hasard + 6 adresse) :</strong>
+            <div class="hp-mechanics-strip" id="hp-mechanics-strip"></div>
+          </div>
+
+          <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin-top:auto;padding-top:0.5rem;border-top:2px dashed rgba(33,29,22,0.2);">
+            <button type="button" class="k-btn k-btn-yellow k-btn-lg" id="hp-open-studio-btn">
+              🛠️ Personnaliser ce thème dans le Studio Kermesse →
+            </button>
+            <button type="button" class="k-btn k-btn-outline" id="hp-spin-trigger-left">
+              🎲 Lancer une partie test
+            </button>
+          </div>
+        </div>
+
+        <!-- Colonne droite : Le vrai téléphone joueur /play avec fond et roue/mécanique du thème -->
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          <div class="k-phone-frame" style="width:100%;max-width:380px;">
+            <div class="k-phone-notch"></div>
+            <div class="k-phone-screen" id="hp-phone-screen" style="min-height:470px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Barre flottante de reprise de brouillon en cache -->
+  <div class="lc-floating-draft-bar" id="lc-floating-draft-bar" hidden></div>
+
+  <footer class="footer-retro">
+    <div class="footer-wrap">
+      <a class="brand-logo" href="#top">LAST<span class="logo-club">chance</span></a>
+      <nav aria-label="Navigation secondaire">
+        <a href="studio.html">🛠️ Studio Kermesse</a>
+        <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
+        <a href="fidelite-communaute.html">Fidélité, Parrainage &amp; Jackpot</a>
+        <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+        <a href="#formules">5 Formules</a>
+      </nav>
+      <small>© 2026 Lastchance — Tous droits réservés</small>
+    </div>
+  </footer>
+
+  <script src="../shared/offre.js"></script>
+  <script src="../shared/codebase-themes.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
