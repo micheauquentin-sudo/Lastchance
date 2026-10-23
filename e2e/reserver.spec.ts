@@ -91,7 +91,9 @@ test.describe("réserver — parcours public puis comptoir", () => {
       undefined,
       { timeout: 20_000 },
     );
+    await champCode.click();
     await champCode.fill(code);
+    await expect(champCode).toHaveValue(code, { timeout: 10_000 });
     await expect(page.getByRole("button", { name: "Enregistrer l'arrivée" })).toBeEnabled({ timeout: 10_000 });
     await page.getByRole("button", { name: "Enregistrer l'arrivée" }).click();
     await expect(
@@ -103,7 +105,10 @@ test.describe("réserver — parcours public puis comptoir", () => {
     // ── 4. Re-saisie du MÊME code : verdict « déjà enregistrée », JAMAIS
     // « fenêtre refermée » — le statut prime sur la fenêtre (docstring
     // `CheckinVerdict`).
+    await champCode.click();
     await champCode.fill(code);
+    await expect(champCode).toHaveValue(code, { timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Enregistrer l'arrivée" })).toBeEnabled({ timeout: 10_000 });
     await page.getByRole("button", { name: "Enregistrer l'arrivée" }).click();
     await expect(page.getByText("Déjà enregistrée")).toBeVisible({
       timeout: 20_000,

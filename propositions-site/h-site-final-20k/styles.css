@@ -804,9 +804,9 @@ header, main, section, footer { position: relative; z-index: 2; }
 .story-caption {
   margin: 0;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 800;
   text-align: center;
-  color: #362f44;
+  color: var(--ink);
 }
 
 /* ==========================================================
@@ -2004,6 +2004,14 @@ header, main, section, footer { position: relative; z-index: 2; }
 .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.4s ease, transform 0.4s var(--spring); }
 .reveal.is-in { opacity: 1 !important; transform: none !important; }
 
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
 /* ==========================================================
    11. AJOUTS ACCUEIL : GRILLE MULTI-JEUX & DUO PASSERELLES DÉDIÉES
    ========================================================== */
@@ -2066,8 +2074,8 @@ header, main, section, footer { position: relative; z-index: 2; }
   white-space: nowrap;
 }
 .sgs-info small {
-  font: 700 0.66rem var(--body);
-  color: #463c57;
+  font: 800 0.66rem var(--body);
+  color: var(--ink);
   line-height: 1.15;
   white-space: nowrap;
 }
