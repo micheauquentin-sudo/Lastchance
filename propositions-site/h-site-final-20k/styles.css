@@ -1558,7 +1558,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 .config-eyebrow {
   display: inline-block;
   background: var(--pink);
-  color: #ffffff;
+  color: var(--ink);
   border: var(--border-thin);
   font: 700 0.72rem var(--fun-font);
   padding: 0.3em 0.9em;
