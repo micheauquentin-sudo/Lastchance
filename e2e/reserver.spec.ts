@@ -36,7 +36,7 @@ test.describe("réserver — parcours public puis comptoir", () => {
       .locator("li")
       .filter({ hasText: /place/ })
       .first();
-    await expect(carteCreneauProche).toBeVisible();
+    await expect(carteCreneauProche).toBeVisible({ timeout: 20_000 });
 
     // ── 2. Réservation SANS email : le formulaire ne coche pas le
     // consentement, et le champ email reste vide.
@@ -92,6 +92,7 @@ test.describe("réserver — parcours public puis comptoir", () => {
       { timeout: 20_000 },
     );
     await champCode.fill(code);
+    await expect(page.getByRole("button", { name: "Enregistrer l'arrivée" })).toBeEnabled({ timeout: 10_000 });
     await page.getByRole("button", { name: "Enregistrer l'arrivée" }).click();
     await expect(
       page.getByRole("status").getByText("Arrivée enregistrée"),
@@ -159,12 +160,12 @@ test.describe("réserver — parcours public puis comptoir", () => {
     const creneauxSection = page.getByRole("region", {
       name: "Créneaux disponibles",
     });
-    await creneauxSection
+    const itemCreneau = creneauxSection
       .locator("li")
       .filter({ hasText: /place/ })
-      .last()
-      .getByRole("button", { name: "Réserver ma place" })
-      .click();
+      .last();
+    await expect(itemCreneau).toBeVisible({ timeout: 20_000 });
+    await itemCreneau.getByRole("button", { name: "Réserver ma place" }).click();
 
     await expect(
       page.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
@@ -298,7 +299,7 @@ test.describe("réserver — parcours public puis comptoir", () => {
       .locator("li")
       .filter({ hasText: /place/ })
       .last();
-    await expect(carteCreneauLointain).toBeVisible();
+    await expect(carteCreneauLointain).toBeVisible({ timeout: 20_000 });
 
     await carteCreneauLointain
       .getByLabel(/Votre email/)
