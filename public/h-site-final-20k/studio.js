@@ -92,65 +92,30 @@
   let currentStepIndex = 0;
   let previewLang = "fr";
 
-  /* ── MISE À JOUR DU BANDEAU D'ÉTAT (Cache / Compte Gratuit / Abonné) ── */
+  /* ── MISE À JOUR DE L'ÉTAT ET ENREGISTREMENT LOCAL ── */
   function triggerAutoSave() {
     CB.saveDrafts(drafts);
+    try {
+      localStorage.setItem("lc_studio_draft", JSON.stringify(drafts));
+      localStorage.setItem("lc_active_module", currentModule);
+    } catch {
+      // Ignore quota errors
+    }
     const statusEl = $("#k-autosave-status");
     if (statusEl) {
       statusEl.textContent = "⏳ Enregistrement…";
       setTimeout(() => {
-        statusEl.textContent = auth.status === "guest"
-          ? "💾 Sauvegardé automatiquement en cache local"
-          : "💾 Modifications enregistrées sur votre compte";
-      }, 280);
+        statusEl.textContent = "💾 Brouillon sauvegardé";
+      }, 250);
     }
     updateHeaderAuthUI();
   }
 
   function updateHeaderAuthUI() {
     auth = CB.loadAuth();
-    const accountLabel = $("#k-account-label");
-    const capBanner = $("#k-capability-banner");
-    const capText = $("#k-cap-text");
-    const capBtn = $("#k-cap-save-account-btn");
     const publishBtn = $("#k-btn-publish");
-
-    const isModulePublished = Boolean(auth.publishedModules && auth.publishedModules[currentModule]);
-
-    if (auth.status === "subscribed") {
-      if (accountLabel) accountLabel.textContent = `${auth.orgName || "Mon Établissement"} · Abonnement Actif 🟢`;
-      if (capBanner) {
-        capBanner.className = "k-capability-banner is-subscribed";
-        capText.innerHTML = isModulePublished
-          ? `<strong>🟢 CE MODULE EST PUBLIÉ :</strong> Votre QR code officiel est actif et accessible par vos clients.`
-          : `<strong>✓ Abonnement actif (${auth.orgName || "Compte Pro"}) :</strong> Vous pouvez publier vos créations en un clic.`;
-        if (capBtn) capBtn.hidden = true;
-      }
-      if (publishBtn) {
-        publishBtn.textContent = isModulePublished ? "📲 Voir mon QR Code publié" : "🚀 Publier maintenant";
-      }
-    } else if (auth.status === "free_account") {
-      if (accountLabel) accountLabel.textContent = `${auth.orgName || auth.email} · Compte Gratuit (Brouillon lié)`;
-      if (capBanner) {
-        capBanner.className = "k-capability-banner is-account";
-        capText.innerHTML = `<strong>✓ Brouillon sauvegardé sur le compte « ${auth.orgName || auth.email} » :</strong> Vous avez accès à tout le Studio pour préparer librement. Pour <b>publier aux clients</b>, activez votre formule.`;
-        if (capBtn) {
-          capBtn.hidden = false;
-          capBtn.textContent = "Activer mon abonnement pour publier →";
-        }
-      }
-      if (publishBtn) publishBtn.textContent = "🚀 Publier (Activer l'abonnement)";
-    } else {
-      if (accountLabel) accountLabel.textContent = "Visiteur · Brouillon gardé en cache";
-      if (capBanner) {
-        capBanner.className = "k-capability-banner";
-        capText.innerHTML = `<strong>✨ Studio en accès libre :</strong> Configurez tout à votre convenance et testez l'aperçu final. Vos choix sont gardés en cache sur votre navigateur. Créez un compte gratuit pour les mémoriser ou abonnez-vous pour publier.`;
-        if (capBtn) {
-          capBtn.hidden = false;
-          capBtn.textContent = "Créer un compte gratuit (Garder en mémoire) →";
-        }
-      }
-      if (publishBtn) publishBtn.textContent = "🚀 Publier & Obtenir mon QR";
+    if (publishBtn) {
+      publishBtn.textContent = "🚀 Publier ma création";
     }
   }
 
@@ -1393,14 +1358,22 @@
   /* ==========================================================================
      MODALE DE PUBLICATION & TUNNEL DE CONVERSION (Guest -> Free Account -> Subscribed)
      ========================================================================== */
-  function openPublishModal(forceAccountOnly = false) {
+  function openPublishModal() {
     const modal = $("#k-modal-publish");
     const badge = $("#k-pub-badge");
     const title = $("#k-pub-title");
     const body = $("#k-pub-body");
     if (!modal || !body) return;
 
-    auth = CB.loadAuth();
+    // Sauvegarde immédiate de tous les réglages actuels
+    CB.saveDrafts(drafts);
+    try {
+      localStorage.setItem("lc_studio_draft", JSON.stringify(drafts));
+      localStorage.setItem("lc_active_module", currentModule);
+    } catch {
+      // Ignore quota errors
+    }
+
     modal.hidden = false;
 
     const modNames = {
@@ -1411,174 +1384,55 @@
     };
     const currentModTitle = modNames[currentModule];
 
-    if (auth.status === "subscribed") {
-      auth.publishedModules = auth.publishedModules || {};
-      auth.publishedModules[currentModule] = true;
-      CB.saveAuth(auth);
-      updateHeaderAuthUI();
-
-      badge.textContent = "🟢 PUBLIÉ AVEC SUCCÈS";
-      title.textContent = `${currentModTitle} est en ligne !`;
-      body.innerHTML = `
-        <div class="k-pub-success-box">
-          <p>Votre création est rattachée à l'abonnement actif de <b>${escapeHtml(auth.orgName)}</b> et est désormais accessible par vos clients !</p>
-          <div class="k-qr-sheet-card">
-            <div class="k-qr-fake-box">🏁 QR OFFICIEL<br/><small>${currentModule.toUpperCase()}</small></div>
-            <div>
-              <strong>Planche QR prête à imprimer</strong>
-              <p style="margin:0.3rem 0;">Posez ce QR code en vitrine, au comptoir, sur vos tables ou vos sacs.</p>
-              <button type="button" class="k-btn k-btn-yellow" id="k-btn-close-after-pub">✓ Retourner au Studio</button>
-            </div>
-          </div>
-        </div>
-      `;
-      $("#k-btn-close-after-pub", body)?.addEventListener("click", () => {
-        modal.hidden = true;
-      });
-      return;
-    }
-
-    if (auth.status === "free_account" && !forceAccountOnly) {
-      badge.textContent = "🔒 COMPTE GRATUIT · BROUILLON MÉMORISÉ";
-      title.textContent = `Activez votre formule pour publier ${currentModTitle}`;
-      body.innerHTML = `
-        <div class="k-conv-offer-stack">
-          <div class="k-conv-saved-notice">
-            ✓ <b>Rien n'est perdu :</b> Votre configuration complète est sauvegardée en mémoire sur le compte gratuit de <b>${escapeHtml(auth.orgName || auth.email)}</b>.
-          </div>
-          <p style="font-weight:700;margin:0.5rem 0;">
-            Conformément au fonctionnement Lastchance : la préparation et l'aperçu sont 100 % libres, seule la <b>publication aux joueurs</b> nécessite une formule active.
-          </p>
-          <div class="k-field-group">
-            <label class="k-label">Choisissez votre formule (Essai gratuit 7 jours inclus) :</label>
-            <select id="k-sub-plan-select" class="k-select">
-              <option value="coup_envoi">Coup d'envoi — 29 € HT/mois (15 Jeux instantanés)</option>
-              <option value="club">Club — 49 € HT/mois (Jeux + Passeport Fidélité + Quiz + Calendrier)</option>
-              <option value="sur_place" selected>Sur Place — 79 € HT/mois (Jeux + Fidélité + Vitrine + Réservation + Moments)</option>
-              <option value="tribune">Tribune — 79 € HT/mois (Jeux + Pronostics + Soirées Live)</option>
-              <option value="quartier_general">Quartier Général — 99 € HT/mois (Fidélité + Parrainage + Jackpot + Chasse QR)</option>
-              <option value="totale">La Totale — 129 € HT/mois (Toutes les expériences réunies)</option>
-            </select>
-          </div>
-          <div class="k-modal-cta-stack">
-            <button type="button" class="k-btn k-btn-orange k-btn-full" id="k-btn-activate-sub-now">
-              🚀 Activer mon abonnement &amp; Publier immédiatement →
-            </button>
-            <button type="button" class="k-btn k-btn-white k-btn-full" id="k-btn-keep-free-draft">
-              Continuer à modifier mon brouillon gratuitement (Publier plus tard)
-            </button>
-          </div>
-        </div>
-      `;
-
-      $("#k-btn-activate-sub-now", body)?.addEventListener("click", () => {
-        auth.status = "subscribed";
-        auth.planKey = $("#k-sub-plan-select", body)?.value || "sur_place";
-        auth.publishedModules = auth.publishedModules || {};
-        auth.publishedModules[currentModule] = true;
-        CB.saveAuth(auth);
-        openPublishModal();
-      });
-      $("#k-btn-keep-free-draft", body)?.addEventListener("click", () => {
-        modal.hidden = true;
-      });
-      return;
-    }
-
-    // Cas Visiteur (guest) : propose (1) Compte + Abonnement direct, (2) Compte Gratuit (garde en mémoire), (3) Garder en cache navigateur
-    badge.textContent = "✨ VOTRE CRÉATION EST PRÊTE";
-    title.textContent = `Comment souhaitez-vous conserver ou publier ${currentModTitle} ?`;
+    badge.textContent = "🔐 ÉTAPE DE PUBLICATION & QR CODE";
+    title.textContent = "Votre configuration est prête !";
     body.innerHTML = `
-      <div class="k-conv-offer-stack">
-        <div class="k-field-group">
-          <div class="k-grid-2">
-            <div>
-              <label class="k-label" for="k-auth-org">Nom de votre établissement</label>
-              <input id="k-auth-org" type="text" class="k-input" value="${escapeAttr(auth.orgName || drafts.vitrine.nom)}" placeholder="Ex : Bistrot L'Étoile" />
+      <div class="k-pub-onboarding-box">
+        <p class="k-pub-lead">
+          Vous venez de personnaliser votre <b>${escapeHtml(currentModTitle)}</b>. Pour débloquer votre QR code officiel haute définition et le déployer auprès de vos clients :
+        </p>
+
+        <div class="k-onboard-steps">
+          <div class="k-onboard-step">
+            <div class="k-onboard-num">1</div>
+            <div class="k-onboard-body">
+              <strong>Créez votre compte commerçant gratuit</strong>
+              <p>Toutes vos personnalisations (textes, offres, couleurs, règles de jeu) sont mémorisées et seront importées directement dans votre espace.</p>
             </div>
-            <div>
-              <label class="k-label" for="k-auth-email">Votre e-mail professionnel</label>
-              <input id="k-auth-email" type="email" class="k-input" value="${escapeAttr(auth.email)}" placeholder="contact@moncommerce.fr" />
+          </div>
+
+          <div class="k-onboard-step">
+            <div class="k-onboard-num">2</div>
+            <div class="k-onboard-body">
+              <strong>Activez la formule adaptée à votre établissement</strong>
+              <p>Profitez de 7 jours d'essai gratuit sans engagement pour générer vos planches de QR codes prêtes à poser et commencer à accueillir vos premiers scans.</p>
             </div>
           </div>
         </div>
 
-        <div class="k-conv-options-grid">
-          <!-- Option 1 : Créer compte + Abonnement pour publier tout de suite -->
-          <div class="k-conv-option-card is-recommended">
-            <span class="k-badge-yellow">⭐ RECOMMANDÉ · ESSAI 7 JOURS GRATUIT</span>
-            <h3>1. Créer mon compte + Activer mon abonnement &amp; Publier</h3>
-            <p>On crée votre compte, on garde en mémoire tout ce que vous venez de configurer et votre QR code est publié immédiatement.</p>
-            <select id="k-guest-plan-select" class="k-select" style="margin-bottom:0.6rem;">
-              <option value="coup_envoi">Formule Coup d'envoi — 29 € HT/mois</option>
-              <option value="club">Formule Club — 49 € HT/mois</option>
-              <option value="sur_place" selected>Formule Sur Place — 79 € HT/mois (Vitrine + RDV + Jeux + Fidélité)</option>
-              <option value="tribune">Formule Tribune — 79 € HT/mois (Jeux + Pronostics)</option>
-              <option value="quartier_general">Formule Quartier Général — 99 € HT/mois (Fidélité + Parrainage + Jackpot)</option>
-              <option value="totale">Formule La Totale — 129 € HT/mois (Tout inclus)</option>
-            </select>
-            <button type="button" class="k-btn k-btn-orange k-btn-full" id="k-btn-guest-subscribe">
-              🚀 Créer mon compte, activer &amp; publier maintenant →
-            </button>
-          </div>
-
-          <!-- Option 2 : Compte gratuit (garde en mémoire sans publier) -->
-          <div class="k-conv-option-card">
-            <span class="k-badge-outline">100 % GRATUIT · SANS CARTE BANCAIRE</span>
-            <h3>2. Créer un compte gratuit (Garder mon brouillon en mémoire)</h3>
-            <p>Votre création est rattachée à votre compte commerçant pour ne jamais la perdre. Vous pourrez continuer à la modifier et prendre un abonnement plus tard au moment de publier.</p>
-            <button type="button" class="k-btn k-btn-yellow k-btn-full" id="k-btn-guest-free-account" style="margin-top:auto;">
-              💾 Créer mon compte gratuit &amp; mémoriser mon projet
-            </button>
-          </div>
-        </div>
-
-        <!-- Option 3 : Rester sans compte, gardé en cache local -->
-        <div class="k-conv-cache-footer">
-          <span>Pas prêt à créer un compte ?</span>
-          <button type="button" class="k-cap-link" id="k-btn-guest-keep-cache">
-            Continuer sans compte (Votre création reste gardée en cache sur votre navigateur pour plus tard) →
+        <div class="k-modal-cta-stack" style="margin-top:1.2rem;display:flex;flex-direction:column;gap:0.65rem;">
+          <button type="button" class="k-btn k-btn-orange k-btn-full" id="k-btn-to-signup" style="padding:0.75rem 1rem;font-size:0.95rem;">
+            Créer mon compte pour publier →
+          </button>
+          <button type="button" class="k-btn k-btn-white k-btn-full" id="k-btn-keep-editing-modal">
+            ← Continuer à personnaliser sans publier
           </button>
         </div>
       </div>
     `;
 
-    $("#k-btn-guest-subscribe", body)?.addEventListener("click", () => {
-      const orgName = ($("#k-auth-org", body)?.value || drafts.vitrine.nom || "Mon Établissement").trim();
-      const email = ($("#k-auth-email", body)?.value || "contact@etablissement.fr").trim();
-      const planKey = $("#k-guest-plan-select", body)?.value || "sur_place";
-      auth = {
-        status: "subscribed",
-        orgName,
-        email,
-        planKey,
-        publishedModules: { ...(auth.publishedModules || {}), [currentModule]: true },
-      };
-      CB.saveAuth(auth);
-      CB.saveDrafts(drafts);
-      openPublishModal();
+    $("#k-btn-to-signup", body)?.addEventListener("click", () => {
+      try {
+        localStorage.setItem("lc_studio_draft", JSON.stringify(drafts));
+        localStorage.setItem("lc_active_module", currentModule);
+      } catch {}
+      window.location.href = `/signup?from=studio&module=${encodeURIComponent(currentModule)}`;
     });
 
-    $("#k-btn-guest-free-account", body)?.addEventListener("click", () => {
-      const orgName = ($("#k-auth-org", body)?.value || drafts.vitrine.nom || "Mon Établissement").trim();
-      const email = ($("#k-auth-email", body)?.value || "contact@etablissement.fr").trim();
-      auth = {
-        status: "free_account",
-        orgName,
-        email,
-        planKey: "sur_place",
-        publishedModules: auth.publishedModules || {},
-      };
-      CB.saveAuth(auth);
-      CB.saveDrafts(drafts);
-      updateHeaderAuthUI();
+    $("#k-btn-keep-editing-modal", body)?.addEventListener("click", () => {
       modal.hidden = true;
     });
-
-    $("#k-btn-guest-keep-cache", body)?.addEventListener("click", () => {
-      CB.saveDrafts(drafts);
-      modal.hidden = true;
-    });
+  }
   }
 
   /* ── UTILITAIRES D'ÉCHAPPEMENT HTML ── */

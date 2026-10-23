@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <base href="/h-site-final-20k/" />
-  <title>Mon Studio Kermesse — Créer, Prévisualiser &amp; Publier — Lastchance</title>
-  <meta name="description" content="Configurez librement votre Vitrine, vos 15 Jeux Instantanés, vos Pronostics et votre Passeport de Fidélité dans le Studio Kermesse Lastchance. Sauvegarde automatique et aperçu en direct." />
+  <title>Studio de Configuration — Préparer &amp; Personnaliser — Lastchance</title>
+  <meta name="description" content="Configurez librement votre Vitrine, vos 15 Jeux Instantanés, vos Pronostics et votre Passeport de Fidélité dans le Studio de Configuration Lastchance. Sauvegarde automatique et aperçu en direct." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;700;800;900&family=Fredoka:wght@600;700&display=swap" rel="stylesheet" />
@@ -16,8 +16,8 @@
   <div class="k-stripe-bar" aria-hidden="true"></div>
 
   <!-- ==========================================================
-       COQUILLE DU STUDIO (Miroir exact de src/components/studio/coquille.tsx)
-       Thème Dashboard & Gestion : « La Kermesse » (#fdf6e3 / #211d16 / #fcca59)
+       COQUILLE DU STUDIO DE CONFIGURATION
+       Topbar compacte 1 ligne + barre d'étapes minimale
        ========================================================== -->
   <header class="k-studio-header">
     <div class="k-studio-top-row">
@@ -25,7 +25,7 @@
         <a class="k-btn-back" href="index.html" id="k-back-link">← Retour au site</a>
         <div class="k-brand-tag">
           <span class="k-dot"></span>
-          <strong>STUDIO KERMESSE</strong>
+          <strong>STUDIO DE CONFIGURATION</strong>
         </div>
 
         <!-- Sélecteur des 4 Studios du projet -->
@@ -33,41 +33,27 @@
           <button type="button" class="k-mod-tab active" data-module="vitrine">📖 Vitrine &amp; Réserver</button>
           <button type="button" class="k-mod-tab" data-module="roue">🎰 15 Jeux Instantanés</button>
           <button type="button" class="k-mod-tab" data-module="pronostics">🏆 Pronostics</button>
-          <button type="button" class="k-mod-tab" data-module="fidelite">🛂 Passeport Fidélité &amp; Jackpot</button>
+          <button type="button" class="k-mod-tab" data-module="fidelite">🛂 Passeport Fidélité</button>
         </nav>
       </div>
 
       <div class="k-studio-right">
         <span class="k-autosave-status" id="k-autosave-status" aria-live="polite">
-          💾 Enregistré automatiquement en cache
+          💾 Brouillon sauvegardé
         </span>
 
-        <button type="button" class="k-account-pill" id="k-account-btn">
-          👤 <span id="k-account-label">Brouillon en cache (Sans compte)</span>
-        </button>
-
         <button type="button" class="k-btn k-btn-white" id="k-btn-preview-fullscreen">
-          👁️ Aperçu final client
+          👁️ Aperçu direct
         </button>
 
         <button type="button" class="k-btn k-btn-orange" id="k-btn-publish">
-          🚀 Publier &amp; Obtenir mon QR
+          🚀 Publier ma création
         </button>
       </div>
     </div>
 
-    <!-- Bandeau d'état de capacité (Miroir de src/components/dashboard/module-capability-notice.tsx) -->
-    <div class="k-capability-banner" id="k-capability-banner">
-      <div class="k-cap-text" id="k-cap-text">
-        <strong>✨ Mode Découverte &amp; Préparation libre :</strong> Configurez l'intégralité de votre expérience et testez l'aperçu final. Vos réglages sont gardés en mémoire automatiquement. Seule la <b>publication aux joueurs</b> nécessite une formule active.
-      </div>
-      <div class="k-cap-actions">
-        <button type="button" class="k-cap-link" id="k-cap-save-account-btn">Sauvegarder sur un compte gratuit →</button>
-      </div>
-    </div>
-
-    <!-- Barre d'étapes numérotées (Miroir de src/components/studio/barre-etapes.tsx) -->
-    <nav class="k-steps-bar" id="k-steps-bar" aria-label="Étapes de préparation"></nav>
+    <!-- Barre d'étapes numérotées -->
+    <nav class="k-steps-bar" id="k-steps-bar" aria-label="Étapes de personnalisation"></nav>
   </header>
 
   <!-- ==========================================================
@@ -148,7 +134,7 @@
               🚀 Publier maintenant &amp; Obtenir mon QR Code →
             </button>
             <button type="button" class="k-btn k-btn-white k-btn-full" id="k-modal-preview-continue">
-              ← Continuer à personnaliser dans le Studio
+              ← Continuer à personnaliser dans le Studio de Configuration
             </button>
           </div>
         </div>

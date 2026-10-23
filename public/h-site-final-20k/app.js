@@ -33,7 +33,6 @@
   /* ── 2. STORYBOARD INTERACTIF 3 ÉCRANS (« 1. ILS SCANNENT · 2. ILS JOUENT · 3. ILS GAGNENT ») ── */
   const storyContainer = $("#storyboard-demo");
   const storyTrigger = $("#demo-story-trigger");
-  const storyWheel = $("#story-mini-wheel");
   const storyPrizeLabel = $("#story-prize-label");
   const storyPrizeCode = $("#story-prize-code");
 
@@ -43,24 +42,16 @@
     "Soin / Produit Découverte",
     "Bon d'achat de 10 €",
   ];
-  let wheelDeg = 0;
 
   if (storyContainer) {
     const cards = $$(".story-phone-card", storyContainer);
-    const smgTiles = $$("#story-multi-games .smg-tile", storyContainer);
+    const sgsCards = $$(".sgs-card", storyContainer);
     const activateStep = (stepNum) => {
       cards.forEach((c) => c.classList.toggle("is-active", Number(c.dataset.step) === stepNum));
-      if (stepNum === 2) {
-        if (storyWheel) {
-          wheelDeg += 1080 + Math.floor(Math.random() * 360);
-          storyWheel.style.animation = "none";
-          storyWheel.style.transform = `rotate(${wheelDeg}deg)`;
-        }
-        if (smgTiles.length) {
-          smgTiles.forEach((t) => t.classList.remove("is-pop"));
-          const randomTile = smgTiles[Math.floor(Math.random() * smgTiles.length)];
-          randomTile.classList.add("is-pop");
-        }
+      if (stepNum === 2 && sgsCards.length) {
+        sgsCards.forEach((c) => c.classList.remove("is-spotlight"));
+        const randomCard = sgsCards[Math.floor(Math.random() * sgsCards.length)];
+        randomCard?.classList.add("is-spotlight");
       }
       if (stepNum === 3 && storyPrizeCode && storyPrizeLabel) {
         storyPrizeLabel.textContent = STORY_PRIZES[Math.floor(Math.random() * STORY_PRIZES.length)];
@@ -365,13 +356,42 @@
   const cfgPlansBox = $("#f-config-plans");
   const cfgAddonsBox = $("#f-config-addons");
   const cfgTotal = $("#f-config-total");
+  const cfgSummaryTotal = $("#f-config-summary-total");
   const cfgPlanName = $("#f-config-plan-name");
   const cfgPlanTagline = $("#f-config-plan-tagline");
   const cfgJauge = $("#f-config-jauge");
   const cfgChips = $("#f-config-chips");
+  const cfgCtaSignup = $("#f-config-cta-signup");
+  const cfgSummaryCta = $("#f-config-summary-cta");
 
   let selectedPlanIdx = 1; // Le Club (59 €) par défaut
   const selectedAddons = new Set();
+
+  const saveCheckoutDraftAndRedirect = (plan, addonsList, total) => {
+    try {
+      const draft = {
+        planId: plan.id,
+        planNom: plan.nom,
+        prix: plan.prix,
+        jauge: plan.jauge,
+        addons: addonsList,
+        totalMensuel: total,
+        interval: "monthly",
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem("lc_checkout_draft", JSON.stringify(draft));
+      localStorage.setItem("lc_selected_plan", plan.id);
+      if (addonsList && addonsList.length) {
+        localStorage.setItem("lc_selected_addons", JSON.stringify(addonsList));
+      } else {
+        localStorage.removeItem("lc_selected_addons");
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+    const addonsParam = addonsList && addonsList.length ? `&addons=${encodeURIComponent(addonsList.join(","))}` : "";
+    window.location.href = `/signup?plan=${encodeURIComponent(plan.id)}${addonsParam}`;
+  };
 
   const updateConfigurator = () => {
     if (!O) return;
@@ -397,6 +417,7 @@
     });
 
     if (cfgTotal) cfgTotal.textContent = `${sum} € / mois`;
+    if (cfgSummaryTotal) cfgSummaryTotal.textContent = `${sum} € / mois`;
     if (cfgPlanName) cfgPlanName.textContent = `Formule ${plan.nom} (${plan.prix} €)`;
     if (cfgPlanTagline) cfgPlanTagline.textContent = plan.tagline;
     if (cfgJauge) cfgJauge.textContent = `👥 Jusqu'à ${plan.jauge} participants en simultané · 7 jours d'essai gratuit`;
@@ -409,6 +430,23 @@
       });
     }
   };
+
+  const handleConfiguratorSignup = () => {
+    if (!O) return;
+    const plan = O.FORMULES[selectedPlanIdx];
+    let sum = plan.prix;
+    const addonsList = [];
+    O.OPTIONS.ligneAbonnement.forEach((a) => {
+      if (!plan.droits.includes(a.id) && selectedAddons.has(a.id)) {
+        sum += a.prix;
+        addonsList.push(a.id);
+      }
+    });
+    saveCheckoutDraftAndRedirect(plan, addonsList, sum);
+  };
+
+  if (cfgCtaSignup) cfgCtaSignup.addEventListener("click", handleConfiguratorSignup);
+  if (cfgSummaryCta) cfgSummaryCta.addEventListener("click", handleConfiguratorSignup);
 
   const PASS_COLORS = ["#FFF0BD", "#CFBCFF", "#84C4FF", "#9EF0C7", "#FFD54F"];
   const deck = $("#plans-deck");
@@ -432,12 +470,23 @@
         <div style="margin-top:auto;display:grid;gap:0.65rem">
           <small style="font-weight:700">Jusqu'à ${f.jauge} participants · Essai 7 jours</small>
           <div class="plan-chips">${chips}</div>
-          <a class="ticket-btn pop-btn-ink choose-plan-cta" style="text-align:center" href="#configurateur">Simuler ${f.nom} →</a>
+          <button type="button" class="ticket-btn pop-btn-ink choose-plan-signup-btn" style="text-align:center;width:100%;cursor:pointer;">
+            Choisir ${f.nom} (Essai 7j) →
+          </button>
+          <a class="plan-custom-link" style="text-align:center;font-size:0.8rem;font-weight:700;color:var(--ink);text-decoration:underline;cursor:pointer;" href="#configurateur">
+            Personnaliser dans le simulateur ↓
+          </a>
         </div>
       `);
-      const cta = $(".choose-plan-cta", card);
-      if (cta) {
-        cta.addEventListener("click", () => {
+      const signupBtn = $(".choose-plan-signup-btn", card);
+      if (signupBtn) {
+        signupBtn.addEventListener("click", () => {
+          saveCheckoutDraftAndRedirect(f, [], f.prix);
+        });
+      }
+      const customLink = $(".plan-custom-link", card);
+      if (customLink) {
+        customLink.addEventListener("click", () => {
           selectedPlanIdx = i;
           updateConfigurator();
         });

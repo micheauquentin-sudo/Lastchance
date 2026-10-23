@@ -1004,7 +1004,13 @@
     try {
       const raw = global.localStorage.getItem(STORAGE_KEY_AUTH);
       if (!raw) return { ...DEFAULT_AUTH };
-      return { ...DEFAULT_AUTH, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      // Sécurité : ne jamais restaurer un statut d'abonnement actif simulé sans session réelle
+      if (parsed.status === "subscribed" && !parsed.realSession) {
+        parsed.status = "guest";
+        parsed.publishedModules = {};
+      }
+      return { ...DEFAULT_AUTH, ...parsed };
     } catch {
       return { ...DEFAULT_AUTH };
     }

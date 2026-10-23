@@ -29,7 +29,7 @@
           <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
           <a href="fidelite-communaute.html">Fidélité &amp; Jackpot</a>
           <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
-          <a href="studio.html" class="nav-highlight-link">🛠️ Studio Kermesse</a>
+          <a href="studio.html" class="nav-highlight-link">🛠️ Studio de Configuration</a>
         </nav>
         <div class="nav-right-actions">
           <div class="nav-circle-badges" aria-hidden="true">
@@ -217,7 +217,7 @@
             <p class="story-caption">En vitrine, à l'accueil, sur un produit, un miroir ou un stand.</p>
           </div>
 
-          <!-- ÉCRAN 2 : LE CHOIX DU JEU (Généraliste : Coffre, Machine à sous, Réflexe, Grattage...) -->
+          <!-- ÉCRAN 2 : LE CHOIX DU JEU (Showcase 4 jeux horizontal et lisible) -->
           <div class="story-phone-card story-step-2" data-step="2">
             <div class="story-step-header">
               <span class="story-badge">ÉTAPE 2</span>
@@ -225,11 +225,35 @@
             </div>
             <div class="story-phone-screen screen-spin-bg">
               <div class="mini-phone-topbar">✨ 15 mécaniques au choix</div>
-              <div class="story-multi-games-grid" id="story-mini-wheel">
-                <div class="smg-tile smg-y">🎰<span>Slots</span></div>
-                <div class="smg-tile smg-p">🧰<span>Coffre</span></div>
-                <div class="smg-tile smg-m">⚡<span>Réflexe</span></div>
-                <div class="smg-tile smg-l">🎟️<span>Grattage</span></div>
+              <div class="story-games-showcase" id="story-games-showcase">
+                <div class="sgs-card sgs-card-yellow">
+                  <span class="sgs-emoji">🎰</span>
+                  <div class="sgs-info">
+                    <strong>Machine à sous</strong>
+                    <small>3 rouleaux &amp; jackpots</small>
+                  </div>
+                </div>
+                <div class="sgs-card sgs-card-pink">
+                  <span class="sgs-emoji">🧰</span>
+                  <div class="sgs-info">
+                    <strong>Coffre mystère</strong>
+                    <small>Suspense instantané</small>
+                  </div>
+                </div>
+                <div class="sgs-card sgs-card-blue">
+                  <span class="sgs-emoji">⚡</span>
+                  <div class="sgs-info">
+                    <strong>Jeu de réflexe</strong>
+                    <small>Défi chrono au centième</small>
+                  </div>
+                </div>
+                <div class="sgs-card sgs-card-purple">
+                  <span class="sgs-emoji">🎫</span>
+                  <div class="sgs-info">
+                    <strong>Carte à gratter</strong>
+                    <small>Frisson tactile au doigt</small>
+                  </div>
+                </div>
               </div>
               <span class="story-spin-pill">🎮 Hasard, adresse, quiz ou défi !</span>
             </div>
@@ -514,9 +538,10 @@
             <div class="config-total-price">
               <small>Abonnement mensuel après les 7 jours d'essai :</small>
               <strong id="f-config-total">59 € / mois</strong>
-              <span id="f-config-note">Sans engagement</span>
+              <span id="f-config-note">Sans engagement · Essai 7 jours offert</span>
             </div>
-            <a class="ticket-btn pop-btn-pink" href="studio.html">Configurer dans le Studio Kermesse →</a>
+            <button type="button" class="ticket-btn pop-btn-pink" id="f-config-cta-signup">Créer mon compte avec cette formule →</button>
+            <a class="ticket-btn pop-btn-white" href="studio.html">🛠️ Tester dans le Studio de Configuration →</a>
           </div>
         </div>
 
@@ -530,6 +555,17 @@
             <div class="config-jauge-badge" id="f-config-jauge">👥 Jusqu'à 100 participants en simultané</div>
             <div class="config-chips-title">Expériences incluses dans votre sélection :</div>
             <div class="config-included-chips" id="f-config-chips"></div>
+
+            <div class="config-summary-footer">
+              <div class="config-summary-total-row">
+                <span>Total mensuel :</span>
+                <strong id="f-config-summary-total">59 € / mois</strong>
+              </div>
+              <button type="button" class="ticket-btn pop-btn-ink w-full" id="f-config-summary-cta">
+                Démarrer mon essai gratuit 7 jours →
+              </button>
+              <small class="config-guarantee-note">🔒 Sans engagement · Vos choix sont sauvegardés · Stripe sécurisé</small>
+            </div>
           </div>
         </div>
       </div>
@@ -558,17 +594,17 @@
         </details>
         <details class="faq-item-pop">
           <summary>Puis-je créer ma Vitrine ou mon Jeu gratuitement avant de m'abonner&nbsp;?</summary>
-          <p>Oui ! Le <b>Studio Kermesse</b> est 100 % ouvert : vous configurez librement vos jeux, vos 18 thèmes officiels, votre vitrine ou votre passeport fidélité avec un aperçu final en direct. Vos créations sont gardées en mémoire (dans votre cache ou sur un compte gratuit), et vous n'activez votre abonnement que lorsque vous souhaitez publier votre QR code officiel. <a href="studio.html" style="font-weight:800;color:#ff358b;">Ouvrir le Studio Kermesse →</a></p>
+          <p>Oui ! Le <b>Studio de Configuration</b> est 100 % ouvert : vous configurez librement vos jeux, vos 18 thèmes officiels, votre vitrine ou votre passeport fidélité avec un aperçu final en direct. Vos créations sont gardées en mémoire (dans votre cache ou sur un compte gratuit), et vous n'activez votre abonnement que lorsque vous souhaitez publier votre QR code officiel. <a href="studio.html" style="font-weight:800;color:#ff358b;">Ouvrir le Studio de Configuration →</a></p>
         </details>
       </div>
     </section>
 
     <!-- BANNIÈRE FINALE -->
     <section class="grand-finale">
-      <h2>PRÊT À CRÉER VOTRE EXPÉRIENCE<br />DANS LE STUDIO KERMESSE&nbsp;?</h2>
+      <h2>PRÊT À CRÉER VOTRE EXPÉRIENCE<br />DANS LE STUDIO DE CONFIGURATION&nbsp;?</h2>
       <p>Testez l'intégralité du Studio gratuitement : configurez tout à votre convenance, obtenez l'aperçu final et publiez quand vous êtes prêt.</p>
       <div class="finale-cta-row">
-        <a class="ticket-btn ticket-btn-large pop-btn-ink" href="studio.html">🛠️ Ouvrir le Studio de Création →</a>
+        <a class="ticket-btn ticket-btn-large pop-btn-ink" href="studio.html">🛠️ Ouvrir le Studio de Configuration →</a>
         <a class="ticket-btn ticket-btn-large pop-btn-white" href="jeux-pronostics.html">🎮 15 Jeux &amp; Pronostics</a>
         <a class="ticket-btn ticket-btn-large pop-btn-white" href="vitrine-reservation.html">📖 Vitrine &amp; Réservation</a>
         <a class="ticket-btn ticket-btn-large pop-btn-white" href="fidelite-communaute.html">🛂 Fidélité &amp; Jackpot</a>
@@ -616,7 +652,7 @@
 
           <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin-top:auto;padding-top:0.5rem;border-top:2px dashed rgba(33,29,22,0.2);">
             <button type="button" class="k-btn k-btn-yellow k-btn-lg" id="hp-open-studio-btn">
-              🛠️ Personnaliser ce thème dans le Studio Kermesse →
+              🛠️ Personnaliser ce thème dans le Studio de Configuration →
             </button>
             <button type="button" class="k-btn k-btn-outline" id="hp-spin-trigger-left">
               🎲 Lancer une partie test
@@ -642,7 +678,7 @@
     <div class="footer-wrap">
       <a class="brand-logo" href="#top">LAST<span class="logo-club">chance</span></a>
       <nav aria-label="Navigation secondaire">
-        <a href="studio.html">🛠️ Studio Kermesse</a>
+        <a href="studio.html">🛠️ Studio de Configuration</a>
         <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
         <a href="fidelite-communaute.html">Fidélité, Parrainage &amp; Jackpot</a>
         <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
