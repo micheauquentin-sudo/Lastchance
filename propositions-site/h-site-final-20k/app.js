@@ -754,6 +754,62 @@
     }
   }
 
+  /* ── 4C. GESTION DES QR CODES IMMERSIFS & PILULES DE MODES DES PAGES ANNEXES ── */
+  const qrModeBtns = $$(".qr-mode-btn");
+  if (qrModeBtns.length) {
+    qrModeBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const parent = btn.closest(".qr-floating-unit");
+        if (!parent) return;
+        $$(".qr-mode-btn", parent).forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        const qrImg = parent.querySelector(".qr-bleed-img");
+        const qrBadge = parent.querySelector(".qr-center-wheel-badge");
+        const qrBubble = parent.querySelector(".qr-call-bubble");
+        const qrBlock = parent.querySelector(".qr-cartoon-3d-block");
+
+        if (btn.dataset.qrSrc && qrImg) qrImg.src = btn.dataset.qrSrc;
+        if (btn.dataset.qrBadge && qrBadge) qrBadge.textContent = btn.dataset.qrBadge;
+        if (btn.dataset.qrBubble && qrBubble) qrBubble.textContent = btn.dataset.qrBubble;
+        if (btn.dataset.target && qrBlock) qrBlock.dataset.target = btn.dataset.target;
+      });
+    });
+  }
+
+  const pageHeroQrBtn = $("#page-hero-qr-btn");
+  if (pageHeroQrBtn) {
+    pageHeroQrBtn.addEventListener("click", () => {
+      const parent = pageHeroQrBtn.closest(".qr-floating-unit");
+      const activeBtn = parent ? parent.querySelector(".qr-mode-btn.active") : null;
+      const targetSel = (activeBtn && activeBtn.dataset.target) || pageHeroQrBtn.dataset.target;
+      if (targetSel) {
+        const el = $(targetSel);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          el.classList.add("highlight-pulse");
+          setTimeout(() => el.classList.remove("highlight-pulse"), 1600);
+        }
+      }
+    });
+  }
+
+  // Boutons CTA du Héro qui scrollent vers le démonstrateur
+  ["#hero-scroll-games-btn", "#hero-scroll-fidelite-btn", "#hero-scroll-vitrine-btn"].forEach((id) => {
+    const b = $(id);
+    if (b) {
+      b.addEventListener("click", () => {
+        const target = b.dataset.target || (id.includes("games") ? "#catalogue-15-jeux" : id.includes("fidelite") ? "#simulateur-trio" : "#simulateur-live");
+        const el = $(target);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          el.classList.add("highlight-pulse");
+          setTimeout(() => el.classList.remove("highlight-pulse"), 1600);
+        }
+      });
+    }
+  });
+
   /* ── 5. DÉMONSTRATEUR INTERACTIF DE LA PAGE VITRINE & RÉSERVATION (7 SECTEURS DU CODE SOURCE) ── */
   const vrSectorBtns = $$(".vr-sector-btn");
   const vrTabBtns = $$(".vr-tab-btn");

@@ -16,9 +16,9 @@
 
   <main>
     <!-- ==========================================================
-         1. HERO ÉDITORIAL SIMPLE & ÉPURÉ (Sans tuiles flottantes)
+         1. HERO AZUR PIXAR 4K + TITRE FUN & QR CODE IMMERSIF
          ========================================================== -->
-    <section class="hero-vr-editorial" id="top">
+    <section class="hero-master-pixar hero-theme-jeux" id="top">
       <header class="header-nav">
         <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
         <nav aria-label="Navigation principale">
@@ -35,34 +35,83 @@
         </div>
       </header>
 
-      <div class="hero-vr-centered">
-        <span class="vr-clean-eyebrow">✦ MINI-JEUX &amp; PRONOSTICS</span>
+      <!-- Grille Héro Cartoon 3D & Titre Simple -->
+      <div class="hero-clean-grid">
+        <div class="hero-left-clean">
+          <span class="hero-fun-badge">✦ MODULE JEUX &amp; COMPÉTITIONS</span>
+          <h1 class="hero-fun-title">
+            15 mini-jeux<br />
+            &amp; concours de<br />
+            <span class="hero-fun-sticker">pronostics !</span>
+          </h1>
 
-        <h1 class="vr-editorial-title">
-          15 jeux instantanés à vos couleurs<br />
-          et vos <span class="pop-mark pop-mark-yellow">concours de pronostics.</span>
-        </h1>
+          <p class="hero-fun-sub">
+            Déployez des tirages en 5 secondes ou des défis d'adresse à vos couleurs, et animez chaque grand match sans rien installer.
+          </p>
 
-        <p class="vr-editorial-lead">
-          Variez les plaisirs avec des mécaniques interactives à votre image et animez chaque grand rendez-vous sans rien installer.
-        </p>
+          <div class="hero-cta-row">
+            <button type="button" class="ticket-btn ticket-btn-large pop-btn-ink" id="hero-scroll-games-btn" data-target="#catalogue-15-jeux">🎮 Explorer les 15 Jeux</button>
+            <a class="wavy-link" href="studio.html?module=roue">configurer dans le Studio →</a>
+          </div>
+        </div>
 
-        <div class="vr-hero-actions">
-          <a class="ticket-btn ticket-btn-large pop-btn-ink" href="studio.html?module=roue">🛠️ Studio de Configuration →</a>
-          <a class="ticket-btn ticket-btn-large pop-btn-white" href="#catalogue-15-jeux">Découvrir les 15 jeux ↓</a>
+        <!-- QR Code Cartoon 3D Flottant & Pilules de modes -->
+        <div class="hero-right-qr-only">
+          <div class="qr-floating-unit">
+            <div class="qr-call-header">
+              <span class="qr-call-bubble" id="qr-bubble-text">📱 Scanne ou clique pour jouer !</span>
+              <svg class="qr-curved-arrow" viewBox="0 0 64 52" aria-hidden="true">
+                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
+                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
+                <polygon points="31,34 43,48 51,33" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              </svg>
+            </div>
+
+            <button type="button" class="qr-cartoon-3d-block" id="page-hero-qr-btn" data-target="#catalogue-15-jeux" title="Scannez avec votre téléphone ou cliquez pour tester en direct">
+              <div class="qr-cartoon-inner">
+                <img src="img/qr-jeux.svg" alt="QR Code 15 Jeux — Scannez pour jouer" width="180" height="180" class="qr-bleed-img" id="page-hero-qr-img" />
+                <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">🎮</div>
+              </div>
+            </button>
+
+            <div class="qr-mode-switch" role="tablist" aria-label="Choisir l'expérience à scanner">
+              <button type="button" class="qr-mode-btn active" data-qr-src="img/qr-jeux.svg" data-qr-badge="🎮" data-qr-bubble="📱 Scanne ou clique pour jouer !" data-target="#catalogue-15-jeux">
+                🎲 15 Jeux
+              </button>
+              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-pronos.svg" data-qr-badge="🏆" data-qr-bubble="📱 Scanne pour les Pronos !" data-target="#pronostics-championnats">
+                🏆 Pronostics
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sol Damier 3D Perspective -->
+      <div class="lottie-stage-wrapper">
+        <div class="perspective-checkerboard-floor" aria-hidden="true">
+          <div class="checkerboard-surface"></div>
+          <div class="checkerboard-mint-ledge"></div>
         </div>
       </div>
     </section>
+
+    <!-- Bandeau Défilant Pixar -->
+    <div class="ticker-banner" aria-hidden="true">
+      <div class="ticker-content">
+        <span>15 JEUX INSTANTANÉS INCLUS</span><b>★</b><span>9 JEUX DE HASARD EN 5 SECONDES</span><b>★</b><span>6 DÉFIS D'ADRESSE INTERACTIFS</span><b>★</b><span>18 THÈMES OFFICIELS DU CODE SOURCE</span><b>★</b><span>PRONOSTICS LIGUE DES CHAMPIONS &amp; TOP 14</span><b>★</b>
+        <span>15 JEUX INSTANTANÉS INCLUS</span><b>★</b><span>9 JEUX DE HASARD EN 5 SECONDES</span><b>★</b><span>6 DÉFIS D'ADRESSE INTERACTIFS</span><b>★</b><span>18 THÈMES OFFICIELS DU CODE SOURCE</span><b>★</b><span>PRONOSTICS LIGUE DES CHAMPIONS &amp; TOP 14</span><b>★</b>
+      </div>
+    </div>
 
     <!-- ==========================================================
          2. LES 15 JEUX INSTANTANÉS : 9 HASARD + 6 ADRESSE
          ========================================================== -->
     <section class="organic-pillars-section" id="catalogue-15-jeux">
       <div class="center">
-        <p class="section-script">un seul module « Jeux instantanés », 15 façons de surprendre vos clients</p>
-        <h2 class="section-title">9 JEUX DE HASARD &amp; <mark class="pop-mark pop-mark-yellow">6 JEUX D'ADRESSE</mark></h2>
+        <p class="section-script">testez toutes les mécaniques en direct</p>
+        <h2 class="section-title">EXPLOREZ LE <mark class="pop-mark pop-mark-yellow">CATALOGUE DES 15 JEUX</mark></h2>
         <p class="section-lead">
-          Ne lassez jamais votre clientèle : vous pouvez changer de mécanique de jeu en un clic selon la saison, votre humeur ou votre opération commerciale.
+          Alternez entre les 9 tirages de hasard et les 6 défis d'adresse selon le rythme et l'ambiance de votre établissement.
         </p>
       </div>
 

@@ -16,16 +16,16 @@
 
   <main>
     <!-- ==========================================================
-         1. HERO ÉDITORIAL SIMPLE & ÉPURÉ (Sans tuiles flottantes)
+         1. HERO AZUR PIXAR 4K + TITRE FUN & QR CODE IMMERSIF
          ========================================================== -->
-    <section class="hero-vr-editorial" id="top">
+    <section class="hero-master-pixar hero-theme-fidelite" id="top">
       <header class="header-nav">
         <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
         <nav aria-label="Navigation principale">
           <a href="index.html">← Accueil</a>
-          <a href="#boucle-vertueuse">Pourquoi ils sont liés</a>
+          <a href="#boucle-vertueuse">La Boucle Fidélité</a>
           <a href="#simulateur-trio">10 Fonds &amp; Démo</a>
-          <a href="#fonctionnement-detail">Fonctionnement détaillé</a>
+          <a href="#fonctionnement-detail">Détails des Paliers</a>
           <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
           <a href="vitrine-reservation.html">Vitrine &amp; RDV</a>
           <a href="studio.html?module=fidelite" class="nav-highlight-link">🛠️ Studio de Configuration</a>
@@ -35,32 +35,84 @@
         </div>
       </header>
 
-      <div class="hero-vr-centered">
-        <span class="vr-clean-eyebrow">✦ LE TRIO FIDÉLITÉ</span>
+      <!-- Grille Héro Cartoon 3D & Titre Simple -->
+      <div class="hero-clean-grid">
+        <div class="hero-left-clean">
+          <span class="hero-fun-badge">✦ LE TRIO COMMUNAUTÉ</span>
+          <h1 class="hero-fun-title">
+            Passeport fidélité,<br />
+            parrainage &amp;<br />
+            <span class="hero-fun-sticker">jackpot collectif !</span>
+          </h1>
 
-        <h1 class="vr-editorial-title">
-          Un seul écosystème pour fidéliser,<br />
-          faire parrainer et <span class="pop-mark pop-mark-yellow">fédérer vos clients.</span>
-        </h1>
+          <p class="hero-fun-sub">
+            Le trio connecté qui transforme chaque passage en points Google Wallet, récompense le bouche-à-oreille et fait grimper la jauge commune de votre cagnotte.
+          </p>
 
-        <p class="vr-editorial-lead">
-          Un passeport mobile dans le Wallet, un parrainage naturel entre amis et une cagnotte collective qui rassemble toute votre communauté.
-        </p>
+          <div class="hero-cta-row">
+            <button type="button" class="ticket-btn ticket-btn-large pop-btn-ink" id="hero-scroll-fidelite-btn" data-target="#simulateur-trio">🛂 Tester le simulateur en direct</button>
+            <a class="wavy-link" href="studio.html?module=fidelite">créer mon Passeport gratuit →</a>
+          </div>
+        </div>
 
-        <div class="vr-hero-actions">
-          <a class="ticket-btn ticket-btn-large pop-btn-ink" href="studio.html?module=fidelite">🛠️ Studio de Configuration →</a>
-          <a class="ticket-btn ticket-btn-large pop-btn-white" href="#boucle-vertueuse">Comprendre le fonctionnement ↓</a>
+        <!-- QR Code Cartoon 3D Flottant & Pilules de modes -->
+        <div class="hero-right-qr-only">
+          <div class="qr-floating-unit">
+            <div class="qr-call-header">
+              <span class="qr-call-bubble" id="qr-bubble-text">📱 Scanne pour tester le Passeport !</span>
+              <svg class="qr-curved-arrow" viewBox="0 0 64 52" aria-hidden="true">
+                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
+                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
+                <polygon points="31,34 43,48 51,33" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              </svg>
+            </div>
+
+            <button type="button" class="qr-cartoon-3d-block" id="page-hero-qr-btn" data-target="#simulateur-trio" title="Scannez avec votre téléphone ou cliquez pour tester en direct">
+              <div class="qr-cartoon-inner">
+                <img src="img/qr-passeport.svg" alt="QR Code Passeport Fidélité — Scannez pour tester" width="180" height="180" class="qr-bleed-img" id="page-hero-qr-img" />
+                <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">🛂</div>
+              </div>
+            </button>
+
+            <div class="qr-mode-switch" role="tablist" aria-label="Choisir l'expérience à scanner">
+              <button type="button" class="qr-mode-btn active" data-qr-src="img/qr-passeport.svg" data-qr-badge="🛂" data-qr-bubble="📱 Scanne pour le Passeport !" data-target="#simulateur-trio">
+                🛂 Passeport
+              </button>
+              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-jackpot.svg" data-qr-badge="🎰" data-qr-bubble="📱 Scanne pour le Jackpot !" data-target="#simulateur-trio">
+                🎰 Jackpot
+              </button>
+              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-parrainage.svg" data-qr-badge="🤝" data-qr-bubble="📱 Scanne pour le Parrainage !" data-target="#simulateur-trio">
+                🤝 Parrainage
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sol Damier 3D Perspective -->
+      <div class="lottie-stage-wrapper">
+        <div class="perspective-checkerboard-floor" aria-hidden="true">
+          <div class="checkerboard-surface"></div>
+          <div class="checkerboard-mint-ledge"></div>
         </div>
       </div>
     </section>
+
+    <!-- Bandeau Défilant Pixar -->
+    <div class="ticker-banner" aria-hidden="true">
+      <div class="ticker-content">
+        <span>PASSEPORT FIDÉLITÉ DANS GOOGLE WALLET</span><b>★</b><span>1 VISITE = 100 POINTS</span><b>★</b><span>PALIERS CADEAUX DÈS 200 PTS</span><b>★</b><span>PARRAINAGE D'AMIS EN 1 CLIC</span><b>★</b><span>CAGNOTTE DU JACKPOT COLLECTIF</span><b>★</b><span>10 FONDS OFFICIELS DU CODE SOURCE</span><b>★</b>
+        <span>PASSEPORT FIDÉLITÉ DANS GOOGLE WALLET</span><b>★</b><span>1 VISITE = 100 POINTS</span><b>★</b><span>PALIERS CADEAUX DÈS 200 PTS</span><b>★</b><span>PARRAINAGE D'AMIS EN 1 CLIC</span><b>★</b><span>CAGNOTTE DU JACKPOT COLLECTIF</span><b>★</b><span>10 FONDS OFFICIELS DU CODE SOURCE</span><b>★</b>
+      </div>
+    </div>
 
     <!-- ==========================================================
          2. SCHÉMA DE LA BOUCLE VERTUEUSE : POURQUOI LES 3 SONT LIÉS
          ========================================================== -->
     <section class="organic-pillars-section" id="boucle-vertueuse">
       <div class="center">
-        <p class="section-script">trois moteurs qui s'alimentent mutuellement à chaque scan</p>
-        <h2 class="section-title">POURQUOI CES 3 EXPÉRIENCES <mark class="pop-mark pop-mark-yellow">FONCTIONNENT ENSEMBLE ?</mark></h2>
+        <p class="section-script">un cercle vertueux automatique</p>
+        <h2 class="section-title">COMMENT FONCTIONNE <mark class="pop-mark pop-mark-yellow">LA BOUCLE DU TRIO ?</mark></h2>
         <p class="section-lead">
           Plutôt que d'utiliser trois outils isolés, chaque action d'un client déclenche la suivante et fait grimper l'énergie de toute votre communauté :
         </p>

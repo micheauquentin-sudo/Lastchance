@@ -16,9 +16,9 @@
 
   <main>
     <!-- ==========================================================
-         1. HERO ÉDITORIAL SIMPLE & ÉPURÉ (Sans nuages Pixar ni tuiles flottantes)
+         1. HERO AZUR PIXAR 4K + TITRE FUN & QR CODE IMMERSIF
          ========================================================== -->
-    <section class="hero-vr-editorial" id="top">
+    <section class="hero-master-pixar hero-theme-vitrine" id="top">
       <header class="header-nav">
         <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
         <nav aria-label="Navigation principale">
@@ -34,24 +34,76 @@
         </div>
       </header>
 
-      <div class="hero-vr-centered">
-        <span class="vr-clean-eyebrow">✦ VITRINE &amp; RENDEZ-VOUS</span>
+      <!-- Grille Héro Cartoon 3D & Titre Simple -->
+      <div class="hero-clean-grid">
+        <div class="hero-left-clean">
+          <span class="hero-fun-badge">✦ VITRINE DIGITALE &amp; AGENDA</span>
+          <h1 class="hero-fun-title">
+            Votre vitrine &amp;<br />
+            vos réservations<br />
+            <span class="hero-fun-sticker">sans commission !</span>
+          </h1>
 
-        <h1 class="vr-editorial-title">
-          Votre vitrine et votre agenda,<br />
-          réunis dans <span class="pop-mark pop-mark-yellow">un seul QR code.</span>
-        </h1>
+          <p class="hero-fun-sub">
+            Affichez votre carte ou vos tarifs bilingues (FR/EN) et recevez des réservations directes ajoutées au calendrier en 1 clic — sans aucune application.
+          </p>
 
-        <p class="vr-editorial-lead">
-          Présentez votre carte ou vos tarifs et prenez des réservations directes sans commission, accessibles instantanément sur mobile.
-        </p>
+          <div class="hero-cta-row">
+            <button type="button" class="ticket-btn ticket-btn-large pop-btn-ink" id="hero-scroll-vitrine-btn" data-target="#simulateur-live">📖 Tester la Vitrine Métier</button>
+            <a class="wavy-link" href="studio.html?module=vitrine">configurer ma Vitrine gratuite →</a>
+          </div>
+        </div>
 
-        <div class="vr-hero-actions">
-          <a class="ticket-btn ticket-btn-large pop-btn-ink" href="studio.html?module=vitrine">🛠️ Studio de Configuration →</a>
-          <a class="ticket-btn ticket-btn-large pop-btn-white" href="#trois-briques">Découvrir les 3 briques ↓</a>
+        <!-- QR Code Cartoon 3D Flottant & Pilules de modes -->
+        <div class="hero-right-qr-only">
+          <div class="qr-floating-unit">
+            <div class="qr-call-header">
+              <span class="qr-call-bubble" id="qr-bubble-text">📱 Scanne pour tester la Vitrine !</span>
+              <svg class="qr-curved-arrow" viewBox="0 0 64 52" aria-hidden="true">
+                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
+                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
+                <polygon points="31,34 43,48 51,33" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              </svg>
+            </div>
+
+            <button type="button" class="qr-cartoon-3d-block" id="page-hero-qr-btn" data-target="#simulateur-live" title="Scannez avec votre téléphone ou cliquez pour tester en direct">
+              <div class="qr-cartoon-inner">
+                <img src="img/qr-vitrine.svg" alt="QR Code Vitrine & Réservation — Scannez pour tester" width="180" height="180" class="qr-bleed-img" id="page-hero-qr-img" />
+                <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">📖</div>
+              </div>
+            </button>
+
+            <div class="qr-mode-switch" role="tablist" aria-label="Choisir l'expérience à scanner">
+              <button type="button" class="qr-mode-btn active" data-qr-src="img/qr-vitrine.svg" data-qr-badge="📖" data-qr-bubble="📱 Scanne pour la Vitrine !" data-target="#simulateur-live">
+                📖 Carte &amp; Tarifs
+              </button>
+              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-rdv.svg" data-qr-badge="📅" data-qr-bubble="📱 Scanne pour les RDV !" data-target="#simulateur-live">
+                📅 Rendez-vous
+              </button>
+              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-moments.svg" data-qr-badge="⚡" data-qr-bubble="📱 Scanne pour les Moments !" data-target="#simulateur-live">
+                ⚡ Moments VIP
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sol Damier 3D Perspective -->
+      <div class="lottie-stage-wrapper">
+        <div class="perspective-checkerboard-floor" aria-hidden="true">
+          <div class="checkerboard-surface"></div>
+          <div class="checkerboard-mint-ledge"></div>
         </div>
       </div>
     </section>
+
+    <!-- Bandeau Défilant Pixar -->
+    <div class="ticker-banner" aria-hidden="true">
+      <div class="ticker-content">
+        <span>VITRINE DIGITALE BILINGUE FR / EN</span><b>★</b><span>7 UNIVERS MÉTIERS DU CODE SOURCE</span><b>★</b><span>PRISE DE RENDEZ-VOUS À 0 % DE COMMISSION</span><b>★</b><span>AJOUT CALENDRIER APPLE &amp; GOOGLE</span><b>★</b><span>ÉVÉNEMENTS &amp; MOMENTS VIP</span><b>★</b>
+        <span>VITRINE DIGITALE BILINGUE FR / EN</span><b>★</b><span>7 UNIVERS MÉTIERS DU CODE SOURCE</span><b>★</b><span>PRISE DE RENDEZ-VOUS À 0 % DE COMMISSION</span><b>★</b><span>AJOUT CALENDRIER APPLE &amp; GOOGLE</span><b>★</b><span>ÉVÉNEMENTS &amp; MOMENTS VIP</span><b>★</b>
+      </div>
+    </div>
 
     <!-- ==========================================================
          2. EXPLICATION CLAIRE DES 3 BRIQUES (Cartes Organiques Découpées)
@@ -59,7 +111,10 @@
     <section class="organic-pillars-section" id="trois-briques">
       <div class="center">
         <p class="section-script">trois outils complémentaires sur le même QR code</p>
-        <h2 class="section-title">À QUOI ÇA SERT <mark class="pop-mark pop-mark-yellow">CONCRÈTEMENT ?</mark></h2>
+        <h2 class="section-title">VOS SERVICES ACCESSIBLES <mark class="pop-mark pop-mark-yellow">EN UN CLIN D'ŒIL</mark></h2>
+        <p class="section-lead">
+          Vos clients consultent vos offres, réservent un créneau et s'inscrivent à vos événements directement depuis leur mobile.
+        </p>
       </div>
 
       <div class="refeel-organic-trio">
