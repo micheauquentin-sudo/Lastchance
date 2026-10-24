@@ -153,19 +153,25 @@ header, main, section, footer { position: relative; z-index: 2; }
   z-index: 50;
   display: flex;
   align-items: center;
-  gap: 1.2rem;
+  justify-content: space-between;
+  gap: 1.1rem;
   width: min(var(--max), 94vw);
   margin: 0.35rem auto 0.75rem;
   padding: 0.52rem 1.35rem;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(12px);
   border: var(--border);
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow);
+  color: var(--ink) !important;
 }
 .brand-logo {
   font: 800 1.45rem/1 var(--fun-font);
   text-decoration: none;
+  color: var(--ink) !important;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 .logo-club {
   font: 700 1.55rem var(--script);
@@ -175,25 +181,41 @@ header, main, section, footer { position: relative; z-index: 2; }
 .header-nav nav {
   display: flex;
   align-items: center;
-  gap: 1.35rem;
+  gap: 1.15rem;
   margin-left: auto;
+  margin-right: 0.5rem;
 }
 .header-nav nav a {
   font: 700 0.88rem var(--fun-font);
   text-decoration: none;
-  transition: color 0.15s ease;
+  color: var(--ink) !important;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+  padding: 0.2em 0.15em;
 }
-.header-nav nav a:hover { color: var(--pink-hot); }
+.header-nav nav a:hover {
+  color: var(--pink-hot) !important;
+}
+.header-nav nav a.nav-active {
+  color: var(--pink-hot) !important;
+  border-bottom: 2.5px solid var(--pink-hot);
+}
 .nav-highlight-link {
   background: var(--vanilla-card);
   border: 1.5px solid var(--ink);
-  padding: 0.25em 0.75em;
+  padding: 0.28em 0.75em !important;
   border-radius: 999px;
+  color: var(--ink) !important;
+}
+.nav-highlight-link:hover {
+  background: #ffffff;
+  color: var(--pink-hot) !important;
 }
 .nav-right-actions {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  flex-shrink: 0;
 }
 .nav-circle-badges { display: flex; gap: 0.3rem; }
 .c-dot {
@@ -262,12 +284,24 @@ header, main, section, footer { position: relative; z-index: 2; }
 
 /* Header adapté aux héros sombres/colorés des pages annexes */
 .header-nav-annex {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border: var(--border-thick);
   border-radius: 999px;
   margin: 0.5rem auto 1.5rem;
   width: min(var(--max), 94vw);
+  color: var(--ink) !important;
+}
+.header-nav-annex a {
+  color: var(--ink) !important;
+}
+.header-nav-annex a:hover {
+  color: var(--pink-hot) !important;
+}
+.header-nav-annex a.nav-active {
+  color: var(--pink-hot) !important;
+  border-bottom: 2.5px solid var(--pink-hot);
 }
 
 /* Fil d'Ariane épuré */
