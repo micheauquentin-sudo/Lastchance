@@ -814,10 +814,7 @@ header, main, section, footer { position: relative; z-index: 2; }
    ========================================================== */
 .vitrine-spotlight-section {
   width: min(var(--max), 92vw);
-  margin: 4.5rem auto 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: 3.5rem;
+  margin: 3.5rem auto 2.5rem;
   position: relative;
   z-index: 2;
 }
@@ -1756,10 +1753,11 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 .vr-editorial-lead {
   max-width: 660px;
-  margin: 0 auto 1.25rem;
-  font-size: 1rem;
+  margin: 0 auto 1.75rem;
+  font-size: 1.05rem;
+  line-height: 1.5;
   font-weight: 600;
-  color: #362f44;
+  color: var(--ink);
 }
 .vr-clean-pills-row {
   display: flex;
