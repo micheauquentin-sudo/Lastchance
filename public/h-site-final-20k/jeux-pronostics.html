@@ -16,10 +16,10 @@
 
   <main>
     <!-- ==========================================================
-         1. HERO AZUR PIXAR 4K + TITRE FUN & QR CODE IMMERSIF
+         1. HERO THÉMATIQUE : UNIVERS ARCADE & COMPÉTITIONS
          ========================================================== -->
-    <section class="hero-master-pixar hero-theme-jeux" id="top">
-      <header class="header-nav">
+    <section class="hero-annex-portal hero-portal-jeux" id="top">
+      <header class="header-nav header-nav-annex">
         <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
         <nav aria-label="Navigation principale">
           <a href="index.html">← Accueil</a>
@@ -35,73 +35,63 @@
         </div>
       </header>
 
-      <!-- Grille Héro Cartoon 3D & Titre Simple -->
-      <div class="hero-clean-grid">
-        <div class="hero-left-clean">
-          <span class="hero-fun-badge">✦ MODULE JEUX &amp; COMPÉTITIONS</span>
-          <h1 class="hero-fun-title">
-            15 mini-jeux<br />
-            &amp; concours de<br />
-            <span class="hero-fun-sticker">pronostics !</span>
+      <!-- Fil d'Ariane -->
+      <div class="annex-breadcrumb-wrap">
+        <nav class="annex-breadcrumb" aria-label="Fil d'Ariane">
+          <a href="index.html">Accueil</a>
+          <span aria-hidden="true">›</span>
+          <span class="bc-current">Module 15 Jeux &amp; Pronostics</span>
+        </nav>
+      </div>
+
+      <!-- Grille Héro Arcade -->
+      <div class="hero-annex-grid">
+        <div class="hero-annex-left">
+          <span class="hero-fun-badge">🎲 15 JEUX INSTANTANÉS · 🏆 CONCOURS PRONOSTICS</span>
+
+          <h1 class="hero-fun-title annex-white-title">
+            Des mini-jeux &amp;<br />
+            des pronostics qui<br />
+            <span class="hero-fun-sticker">captivent vos clients !</span>
           </h1>
 
-          <p class="hero-fun-sub">
-            Déployez des tirages en 5 secondes ou des défis d'adresse à vos couleurs, et animez chaque grand match sans rien installer.
+          <p class="hero-annex-sub">
+            Hasard immédiat en 5 secondes ou défis d'adresse : captivez vos visiteurs aux heures de pointe et animez chaque grand match sportif sans rien installer.
           </p>
 
           <div class="hero-cta-row">
-            <button type="button" class="ticket-btn ticket-btn-large pop-btn-ink" id="hero-scroll-games-btn" data-target="#catalogue-15-jeux">🎮 Explorer les 15 Jeux</button>
-            <a class="wavy-link" href="studio.html?module=roue">configurer dans le Studio →</a>
+            <button type="button" class="ticket-btn ticket-btn-large pop-btn-yellow" id="hero-scroll-games-btn" data-target="#catalogue-15-jeux">🎮 Explorer le catalogue ↓</button>
+            <a class="ticket-btn ticket-btn-large pop-btn-white" href="studio.html?module=roue">🛠️ Studio de Configuration →</a>
           </div>
         </div>
 
-        <!-- QR Code Cartoon 3D Flottant & Pilules de modes -->
-        <div class="hero-right-qr-only">
-          <div class="qr-floating-unit">
-            <div class="qr-call-header">
-              <span class="qr-call-bubble" id="qr-bubble-text">📱 Scanne ou clique pour jouer !</span>
-              <svg class="qr-curved-arrow" viewBox="0 0 64 52" aria-hidden="true">
-                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
-                <path d="M10,10 Q52,12 42,38" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
-                <polygon points="31,34 43,48 51,33" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
-              </svg>
+        <!-- Colonne Droite : Carte Objet 3D Pass Joueur -->
+        <div class="hero-annex-right">
+          <div class="annex-device-card">
+            <div class="device-card-header">
+              <span class="device-tag">📱 PASS TEST JOUEUR</span>
+              <span class="device-live-dot" aria-hidden="true"></span>
             </div>
 
-            <button type="button" class="qr-cartoon-3d-block" id="page-hero-qr-btn" data-target="#catalogue-15-jeux" title="Scannez avec votre téléphone ou cliquez pour tester en direct">
-              <div class="qr-cartoon-inner">
-                <img src="img/qr-jeux.svg" alt="QR Code 15 Jeux — Scannez pour jouer" width="180" height="180" class="qr-bleed-img" id="page-hero-qr-img" />
-                <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">🎮</div>
-              </div>
+            <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-target="#catalogue-15-jeux" title="Scannez avec votre téléphone ou cliquez pour tester en direct">
+              <img src="img/qr-jeux.svg" alt="QR Code 15 Jeux — Scannez pour jouer" width="168" height="168" class="qr-bleed-img" id="page-hero-qr-img" />
+              <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">🎮</div>
             </button>
 
-            <div class="qr-mode-switch" role="tablist" aria-label="Choisir l'expérience à scanner">
-              <button type="button" class="qr-mode-btn active" data-qr-src="img/qr-jeux.svg" data-qr-badge="🎮" data-qr-bubble="📱 Scanne ou clique pour jouer !" data-target="#catalogue-15-jeux">
+            <p class="device-callout" id="qr-bubble-text">📱 Scannez pour tester sur mobile ou cliquez</p>
+
+            <div class="qr-mode-switch" role="tablist" aria-label="Choisir l'expérience à tester">
+              <button type="button" class="qr-mode-btn active" data-qr-src="img/qr-jeux.svg" data-qr-badge="🎮" data-qr-bubble="📱 Scannez pour tester les 15 jeux !" data-target="#catalogue-15-jeux">
                 🎲 15 Jeux
               </button>
-              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-pronos.svg" data-qr-badge="🏆" data-qr-bubble="📱 Scanne pour les Pronos !" data-target="#pronostics-championnats">
+              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-pronos.svg" data-qr-badge="🏆" data-qr-bubble="📱 Scannez pour tester un pronostic !" data-target="#pronostics-championnats">
                 🏆 Pronostics
               </button>
             </div>
           </div>
         </div>
       </div>
-
-      <!-- Sol Damier 3D Perspective -->
-      <div class="lottie-stage-wrapper">
-        <div class="perspective-checkerboard-floor" aria-hidden="true">
-          <div class="checkerboard-surface"></div>
-          <div class="checkerboard-mint-ledge"></div>
-        </div>
-      </div>
     </section>
-
-    <!-- Bandeau Défilant Pixar -->
-    <div class="ticker-banner" aria-hidden="true">
-      <div class="ticker-content">
-        <span>15 JEUX INSTANTANÉS INCLUS</span><b>★</b><span>9 JEUX DE HASARD EN 5 SECONDES</span><b>★</b><span>6 DÉFIS D'ADRESSE INTERACTIFS</span><b>★</b><span>18 THÈMES OFFICIELS DU CODE SOURCE</span><b>★</b><span>PRONOSTICS LIGUE DES CHAMPIONS &amp; TOP 14</span><b>★</b>
-        <span>15 JEUX INSTANTANÉS INCLUS</span><b>★</b><span>9 JEUX DE HASARD EN 5 SECONDES</span><b>★</b><span>6 DÉFIS D'ADRESSE INTERACTIFS</span><b>★</b><span>18 THÈMES OFFICIELS DU CODE SOURCE</span><b>★</b><span>PRONOSTICS LIGUE DES CHAMPIONS &amp; TOP 14</span><b>★</b>
-      </div>
-    </div>
 
     <!-- ==========================================================
          2. LES 15 JEUX INSTANTANÉS : 9 HASARD + 6 ADRESSE

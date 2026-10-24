@@ -220,14 +220,209 @@ header, main, section, footer { position: relative; z-index: 2; }
   padding: 0.35rem 0 0;
   overflow: hidden;
 }
-.hero-theme-jeux {
-  background: #4ea8ff url("img/pixar_clouds.jpg") no-repeat center bottom / 100% 100%;
+
+/* ==========================================================
+   NOUVEAUX HÉROS THÉMATIQUES DES PAGES ANNEXES (PORTAILS DÉDIÉS)
+   Identité visuelle propre à chaque univers, sans nuages ni damier
+   ========================================================== */
+.hero-annex-portal {
+  position: relative;
+  overflow: hidden;
+  border-bottom: var(--border-thick);
+  padding: 0.5rem 0 3.2rem;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #ffffff;
 }
-.hero-theme-fidelite {
-  background: #e6a742 url("img/sky-golden.jpg") no-repeat center bottom / 100% 100%;
+
+/* 1. Thème Jeux & Pronostics : Arcade & Arène festive */
+.hero-portal-jeux {
+  background-color: #21123d;
+  background-image: 
+    linear-gradient(135deg, rgba(23, 14, 46, 0.88) 0%, rgba(56, 24, 102, 0.80) 50%, rgba(18, 10, 36, 0.92) 100%),
+    url("img/hero_jeux_arcade.jpg");
 }
-.hero-theme-vitrine {
-  background: #db767f url("img/sky-sunset.jpg") no-repeat center bottom / 100% 100%;
+
+/* 2. Thème Fidélité & Jackpot : Coffre doré & Wallet */
+.hero-portal-fidelite {
+  background-color: #172a24;
+  background-image: 
+    linear-gradient(135deg, rgba(14, 33, 27, 0.88) 0%, rgba(26, 62, 51, 0.80) 50%, rgba(13, 28, 23, 0.92) 100%),
+    url("img/hero_fidelite_vault.jpg");
+}
+
+/* 3. Thème Vitrine & Réservation : Bistro, Terrasse & Boutique */
+.hero-portal-vitrine {
+  background-color: #3b231e;
+  background-image: 
+    linear-gradient(135deg, rgba(46, 26, 20, 0.88) 0%, rgba(82, 45, 34, 0.80) 50%, rgba(38, 20, 16, 0.92) 100%),
+    url("img/hero_vitrine_bistro.jpg");
+}
+
+/* Header adapté aux héros sombres/colorés des pages annexes */
+.header-nav-annex {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
+  border-radius: 999px;
+  margin: 0.5rem auto 1.5rem;
+  width: min(var(--max), 94vw);
+}
+
+/* Fil d'Ariane épuré */
+.annex-breadcrumb-wrap {
+  width: min(var(--max), 92vw);
+  margin: 0 auto 1.2rem;
+}
+.annex-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 0.3em 0.95em;
+  font: 700 0.8rem var(--fun-font);
+  color: #ffffff;
+  backdrop-filter: blur(6px);
+}
+.annex-breadcrumb a {
+  color: #ffd93d;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+.annex-breadcrumb a:hover {
+  text-decoration: underline;
+  opacity: 0.9;
+}
+.annex-breadcrumb .bc-current {
+  color: #ffffff;
+  opacity: 0.95;
+}
+
+/* Grille du Héro de page annexe */
+.hero-annex-grid {
+  width: min(var(--max), 92vw);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 3rem;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .hero-annex-grid {
+    grid-template-columns: 1fr;
+    gap: 2.2rem;
+    text-align: center;
+  }
+  .hero-annex-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .annex-breadcrumb-wrap {
+    text-align: center;
+  }
+}
+
+.hero-annex-left {
+  max-width: 580px;
+}
+.annex-white-title {
+  color: #ffffff;
+  -webkit-text-stroke: 2.4px #161317;
+  paint-order: stroke fill;
+  text-shadow:
+    0 5px 0 #161317,
+    0 12px 28px rgba(0, 0, 0, 0.35);
+  margin-bottom: 0.9rem;
+}
+.hero-annex-sub {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  font-weight: 600;
+  color: #f7f5ff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  margin-bottom: 1.6rem;
+  max-width: 500px;
+}
+
+/* Carte Objet 3D du QR Code spécifique à chaque page */
+.hero-annex-right {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.annex-device-card {
+  background: #ffffff;
+  color: var(--ink);
+  border: 3.5px solid var(--ink);
+  border-radius: 26px;
+  padding: 1.25rem 1.4rem 1.1rem;
+  box-shadow:
+    0 12px 0 var(--ink),
+    0 22px 35px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 290px;
+  width: 100%;
+  position: relative;
+  transition: transform 0.25s var(--spring);
+}
+.annex-device-card:hover {
+  transform: translateY(-4px);
+}
+.device-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1.5px solid #eae5f2;
+}
+.device-tag {
+  font: 700 0.72rem var(--fun-font);
+  letter-spacing: 0.05em;
+  color: #5d546f;
+  text-transform: uppercase;
+}
+.device-live-dot {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulseDot 2s infinite ease-in-out;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.annex-qr-frame {
+  background: #ffffff;
+  border: 2.5px solid var(--ink);
+  border-radius: 18px;
+  padding: 8px;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink);
+  position: relative;
+  display: block;
+  transition: transform 0.2s ease;
+  width: 184px;
+  height: 184px;
+}
+.annex-qr-frame:hover {
+  transform: scale(1.03);
+}
+.device-callout {
+  margin: 0.75rem 0 0.45rem;
+  font: 700 0.78rem var(--fun-font);
+  color: var(--ink);
+  text-align: center;
 }
 
 .hero-fun-badge {
