@@ -983,7 +983,7 @@
   // Testeur des 18 thèmes officiels en direct sur jeux-pronostics.html
   const jpPhone = $("#jp-custom-phone");
   const jpPhoneStage = $("#jp-phone-stage");
-  const jpPhoneSub = $("#jp-phone-sub");
+  // const jpPhoneSub = $("#jp-phone-sub");
   const jpPhoneThemeName = $("#jp-phone-theme-name");
   const jpPrizeText = $("#jp-phone-prize-text");
   const jpPlayBtn = $("#jp-play-test-btn");
@@ -1025,7 +1025,9 @@
     });
   };
 
-  const renderJpStage = (isWin = false) => {
+  let jpSim = null;
+
+  const renderJpStage = () => {
     if (!jpPhoneStage || !jpPhone) return;
     const p = getJpPreset();
     const st = p ? p.style || {} : {};
@@ -1043,106 +1045,30 @@
       }
     }
 
-    const cols = p && p.swatch ? [...p.swatch, "#99b7f5"] : ["#e63946", "#fcca59", "#267f53", "#99b7f5"];
-    const conic = cols
-      .map((c, i) => `${c} ${(i * 100) / cols.length}% ${((i + 1) * 100) / cols.length}%`)
-      .join(", ");
+    if (jpSim) {
+      jpSim.destroy();
+      jpSim = null;
+    }
 
-    const JP_MECH_STAGE = {
-      wheel: {
-        sub: "Roue de la fortune (Hasard)",
-        html: `
-          <div style="width:118px;height:118px;border-radius:50%;background:conic-gradient(${conic});border:4px solid #211d16;box-shadow:3px 3px 0 #211d16;display:grid;place-items:center;">
-            <span style="width:32px;height:32px;border-radius:50%;background:#fff;border:2px solid #211d16;display:grid;place-items:center;">🎡</span>
-          </div>
-          <small style="font-weight:700;">Roue aux couleurs du thème « ${p ? p.label : "Kermesse"} »</small>
-        `,
-        winHtml: `
-          <div style="width:118px;height:118px;border-radius:50%;background:conic-gradient(${conic});border:4px solid #211d16;transform:rotate(745deg);transition:transform 0.6s ease;display:grid;place-items:center;">
-            <span style="width:36px;height:36px;border-radius:50%;background:#fcca59;border:2px solid #211d16;display:grid;place-items:center;">🎉</span>
-          </div>
-          <small style="font-weight:800;color:#12805c;">🎉 Case gagnante verrouillée !</small>
-        `,
-      },
-      slots: {
-        sub: "Machine à sous (Hasard)",
-        html: `
-          <div class="jp-stage-slots">
-            <span class="jp-slot-reel" style="background:${cols[0]}33">🍒</span>
-            <span class="jp-slot-reel" style="background:${cols[1] || cols[0]}33">💎</span>
-            <span class="jp-slot-reel" style="background:${cols[2] || cols[0]}33">⭐</span>
-          </div>
-          <small style="font-weight:700;">Alignez 3 symboles identiques pour gagner !</small>
-        `,
-        winHtml: `
-          <div class="jp-stage-slots">
-            <span class="jp-slot-reel" style="background:#ffd93d">💎</span>
-            <span class="jp-slot-reel" style="background:#ffd93d">💎</span>
-            <span class="jp-slot-reel" style="background:#ffd93d">💎</span>
-          </div>
-          <small style="font-weight:800;color:#12805c;">🎉 JACKPOT ALIGNÉ !</small>
-        `,
-      },
-      scratch: {
-        sub: "Carte à gratter (Hasard)",
-        html: `
-          <div style="background:linear-gradient(135deg,${cols[0]},${cols[1] || "#ffd93d"});color:#fff;border:2px dashed #161317;border-radius:14px;padding:1rem 1.4rem;font-weight:800;text-shadow:0 1px 2px rgba(0,0,0,0.4);">
-            ✨ GRATTEZ ICI DU BOUT DU DOIGT ✨
-          </div>
-          <small style="font-weight:700;">Surface tactile personnalisée</small>
-        `,
-        winHtml: `
-          <div style="background:#98f5d4;border:2px solid #161317;border-radius:14px;padding:1rem 1.4rem;font-weight:900;">
-            🎁 TICKET GAGNANT DÉVOILÉ !
-          </div>
-          <small style="font-weight:800;color:#12805c;">🎉 Bravo, lot débloqué !</small>
-        `,
-      },
-      chest: {
-        sub: "Coffre à choisir (Hasard)",
-        html: `
-          <div class="jp-stage-slots">
-            <span class="jp-slot-reel">🧰</span>
-            <span class="jp-slot-reel">🧰</span>
-            <span class="jp-slot-reel">🧰</span>
-          </div>
-          <small style="font-weight:700;">Choisissez le bon coffre parmi les 3</small>
-        `,
-        winHtml: `
-          <div class="jp-stage-slots">
-            <span class="jp-slot-reel">🔒</span>
-            <span class="jp-slot-reel" style="background:#ffd93d">👑</span>
-            <span class="jp-slot-reel">🔒</span>
-          </div>
-          <small style="font-weight:800;color:#12805c;">🎉 Coffre central ouvert avec succès !</small>
-        `,
-      },
-      gauge: {
-        sub: "Jauge à arrêter (Adresse)",
-        html: `
-          <div style="width:100%;background:#fcf7eb;border:2px solid #161317;border-radius:999px;height:24px;position:relative;overflow:hidden;">
-            <div style="position:absolute;left:38%;width:24%;height:100%;background:#5de4b3;border-left:2px solid #161317;border-right:2px solid #161317;"></div>
-            <div style="position:absolute;left:48%;top:2px;width:8px;height:16px;background:#ff4fa3;border-radius:4px;"></div>
-          </div>
-          <small style="font-weight:700;">🎯 Défi : bloquez l'aiguille dans la zone verte !</small>
-        `,
-        winHtml: `
-          <div style="width:100%;background:#5de4b3;border:2px solid #161317;border-radius:999px;padding:0.35rem;font-weight:900;">
-            🎯 CIBLE VERTE VERROUILLÉE À 100 % !
-          </div>
-          <small style="font-weight:800;color:#12805c;">🎉 Défi d'adresse réussi · Tirage ouvert !</small>
-        `,
-      },
-    };
-
-    const d = JP_MECH_STAGE[currentJpMech] || JP_MECH_STAGE.wheel;
-    if (jpPhoneSub) jpPhoneSub.textContent = d.sub;
-    jpPhoneStage.innerHTML = isWin ? d.winHtml : d.html;
+    const GE = window.LC_GAMES_ENGINE;
+    if (GE && typeof GE.createSimulator === "function") {
+      const prize = jpPrizeText ? jpPrizeText.textContent : "Café offert ☕";
+      jpSim = GE.createSimulator(jpPhoneStage, {
+        gameKey: currentJpMech,
+        prize: prize,
+        onWin: (res) => {
+          if (jpPlayFeedback) {
+            jpPlayFeedback.hidden = false;
+            jpPlayFeedback.innerHTML = `🎉 <b>Gain débloqué : ${res.prize}</b> · Code caisse : <b>${res.code}</b>`;
+          }
+        },
+      });
+    }
   };
 
   if (jpPhone) {
     renderJpThemeButtons();
-    renderJpStage(false);
+    renderJpStage();
 
     $$("[data-jp-group]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1157,7 +1083,7 @@
         currentJpMech = btn.dataset.mech;
         $$("#jp-sim-mechanic .jp-choice-btn").forEach((b) => b.classList.toggle("active", b === btn));
         if (jpPlayFeedback) jpPlayFeedback.hidden = true;
-        renderJpStage(false);
+        renderJpStage();
       });
     });
 
@@ -1165,16 +1091,17 @@
       btn.addEventListener("click", () => {
         if (jpPrizeText) jpPrizeText.textContent = btn.dataset.prize;
         $$("#jp-sim-prize .jp-choice-btn").forEach((b) => b.classList.toggle("active", b === btn));
+        renderJpStage();
       });
     });
 
     if (jpPlayBtn) {
       jpPlayBtn.addEventListener("click", () => {
-        renderJpStage(true);
-        const code = "LC-" + Math.random().toString(36).substring(2, 6).toUpperCase();
-        if (jpPlayFeedback) {
-          jpPlayFeedback.hidden = false;
-          jpPlayFeedback.innerHTML = `🎉 <b>Gain débloqué : ${jpPrizeText ? jpPrizeText.textContent : "Cadeau"}</b> · Code caisse : <b>${code}</b>`;
+        const actionBtn = jpPhoneStage ? jpPhoneStage.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube") : null;
+        if (actionBtn) {
+          actionBtn.click();
+        } else if (jpSim) {
+          jpSim.triggerWin();
         }
       });
     }
@@ -1198,6 +1125,24 @@
       });
     }
   }
+
+  // Catalogue interactif des 15 mini-jeux : ouverture de la modale en direct
+  $$(".jp-game-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const gameKey = card.dataset.gameKey || "wheel";
+      const GE = window.LC_GAMES_ENGINE;
+      if (GE && typeof GE.openGameModal === "function") {
+        GE.openGameModal(gameKey);
+      }
+    });
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        card.click();
+      }
+    });
+  });
+
 
   // Simulateur de Pronostics & 11 Thèmes Saisonniers (CONTEST_THEME_ORDER)
   const pronoThemeSwitcher = $("#prono-theme-switcher");

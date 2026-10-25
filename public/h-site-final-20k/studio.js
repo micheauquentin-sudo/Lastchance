@@ -1157,7 +1157,7 @@
     const r = drafts.roue;
     const isKermesse = r.pageTheme === "kermesse";
     const hasFond = r.fond && r.fond !== "aucun";
-    const mech = CB.INSTANT_MECHANICS.find((m) => m.key === r.gameType) || CB.INSTANT_MECHANICS[0];
+    // const mech = CB.INSTANT_MECHANICS.find((m) => m.key === r.gameType) || CB.INSTANT_MECHANICS[0];
 
     const bgStyle = hasFond
       ? `background-image: linear-gradient(180deg, rgba(253,246,227,0.78), rgba(253,246,227,0.88)), url('fonds/${r.fond}-640.webp'); background-size: cover; background-position: center;`
@@ -1168,68 +1168,16 @@
     const textColor = isKermesse || hasFond ? "#211d16" : "#ffffff";
     const subColor = isKermesse || hasFond ? "#3d382f" : "#d4d4d8";
 
-    let mechVisual = "";
-    if (r.gameType === "wheel") {
-      const colors = r.lots.map((l) => l.color || "#fcca59");
-      mechVisual = `
-        <div class="kp-wheel-wrap">
-          <div class="kp-wheel-pointer" style="border-top-color:${r.pointerColor}"></div>
-          <svg viewBox="0 0 100 100" class="kp-wheel-svg" id="kp-live-wheel-svg" style="border:3px solid ${r.ringColor || "#211d16"}">
-            <circle cx="50" cy="50" r="48" fill="${colors[0] || "#fcca59"}" stroke="#211d16" stroke-width="2"/>
-            <path d="M50 50 L50 2 A48 48 0 0 1 98 50 Z" fill="${colors[1] || "#f296bd"}" stroke="#211d16" stroke-width="2"/>
-            <path d="M50 50 L98 50 A48 48 0 0 1 50 98 Z" fill="${colors[2] || "#99b7f5"}" stroke="#211d16" stroke-width="2"/>
-            <path d="M50 50 L50 98 A48 48 0 0 1 2 50 Z" fill="${colors[3] || "#267f53"}" stroke="#211d16" stroke-width="2"/>
-            <circle cx="50" cy="50" r="10" fill="#fdf6e3" stroke="#211d16" stroke-width="2.5"/>
-          </svg>
-        </div>
-      `;
-    } else if (r.gameType === "slot") {
-      const syms = (CB.SLOT_SYMBOL_SETS[r.slotSymbols] || CB.SLOT_SYMBOL_SETS.fruits).symbols;
-      mechVisual = `
-        <div class="kp-mech-card">
-          <div class="jp-stage-slots" id="kp-live-slots">
-            <span class="jp-slot-reel">${syms[0]}</span>
-            <span class="jp-slot-reel">${syms[1]}</span>
-            <span class="jp-slot-reel">${syms[2]}</span>
-          </div>
-          <small style="color:#211d16;font-weight:800;">Machine à sous · ${CB.SLOT_SYMBOL_SETS[r.slotSymbols]?.label}</small>
-        </div>
-      `;
-    } else if (r.gameType === "scratch") {
-      mechVisual = `
-        <div class="kp-mech-card" id="kp-live-scratch">
-          <div style="background:linear-gradient(135deg,#d4d4d8,#f4f4f5,#a1a1aa);border:2px solid #211d16;border-radius:14px;padding:1.1rem;font-weight:900;color:#211d16;box-shadow:3px 3px 0 #211d16;">
-            🎟️ GRATTEZ LA COUCHE MÉTALLISÉE
-          </div>
-        </div>
-      `;
-    } else {
-      mechVisual = `
-        <div class="kp-mech-card" id="kp-live-generic">
-          <div style="font-size:2.6rem;">${mech.emoji}</div>
-          <strong style="color:#211d16;">${mech.label}</strong>
-          <small style="color:#3d382f;font-weight:700;">${mech.desc}</small>
-        </div>
-      `;
-    }
-
     return `
       <div class="kp-play-surface" style="${bgStyle};color:${textColor};">
         ${isKermesse ? `<div class="k-stripe-bar" style="height:10px;"></div>` : ""}
         <div class="kp-play-inner">
           <span class="kp-play-kicker" style="color:${subColor}">${auth.orgName || drafts.vitrine.nom || "VOTRE ÉTABLISSEMENT"}</span>
           <h3 class="kp-play-title" style="color:${textColor}">${escapeHtml(r.name)}</h3>
-          <span class="kp-play-mech-badge">${mech.emoji} ${mech.label} (${mech.family === "adresse" ? "Défi d'adresse" : "Tirage hasard"})</span>
 
-          <div class="kp-play-stage" id="kp-play-stage">
-            ${mechVisual}
+          <div class="kp-play-stage" id="kp-play-stage" style="width:100%;min-height:280px;display:flex;align-items:center;justify-content:center;">
+            <!-- Rendu interactif réel animé par LC_GAMES_ENGINE -->
           </div>
-
-          <button type="button" class="kp-play-btn" id="kp-trigger-play-btn" style="background:linear-gradient(135deg, ${r.buttonFrom}, ${r.buttonTo});">
-            ▶ Tester une partie en direct !
-          </button>
-
-          <div class="kp-play-win-box" id="kp-play-win-box" hidden></div>
 
           <small class="kp-play-footer" style="color:${subColor}">
             Limite : ${r.playLimit === "once" ? "1 participation par navigateur" : r.playLimit === "daily" ? "1 participation / jour / navigateur" : "1 participation / semaine"} · Code valable ${r.codeTtlDays}j
@@ -1240,27 +1188,20 @@
   }
 
   function bindInteractivePlayInside(root) {
-    const btn = $("#kp-trigger-play-btn", root);
-    const winBox = $("#kp-play-win-box", root);
-    const wheelSvg = $("#kp-live-wheel-svg", root);
-    if (!btn) return;
-    let deg = 0;
-    btn.addEventListener("click", () => {
-      if (wheelSvg) {
-        deg += 1080 + Math.floor(Math.random() * 360);
-        wheelSvg.style.transition = "transform 1.2s cubic-bezier(0.2, 0.85, 0.25, 1)";
-        wheelSvg.style.transform = `rotate(${deg}deg)`;
-      }
-      const winningLots = drafts.roue.lots.filter((l) => l.isWinning);
-      const chosen = winningLots[Math.floor(Math.random() * winningLots.length)] || drafts.roue.lots[0];
-      const code = "LC-" + Math.random().toString(36).substring(2, 6).toUpperCase();
-      setTimeout(() => {
-        if (winBox) {
-          winBox.hidden = false;
-          winBox.innerHTML = `🎉 <strong>GAGNÉ : ${escapeHtml(chosen.label)}</strong><br/>Code caisse : <code>${code}</code>`;
-        }
-      }, wheelSvg ? 900 : 150);
-    });
+    const stage = $("#kp-play-stage", root);
+    if (!stage) return;
+    const r = drafts.roue;
+    const GE = window.LC_GAMES_ENGINE;
+    if (GE && typeof GE.createSimulator === "function") {
+      const winningLots = (r.lots || []).filter((l) => l.isWinning);
+      const chosen = winningLots[0] || (r.lots && r.lots[0]) || { label: "-15 % sur l'addition ☕" };
+
+      GE.createSimulator(stage, {
+        gameKey: r.gameType,
+        lots: r.lots,
+        prize: chosen.label,
+      });
+    }
   }
 
   function buildPronosticsPreviewHTML() {
