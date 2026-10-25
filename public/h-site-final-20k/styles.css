@@ -5628,3 +5628,98 @@ header, main, section, footer { position: relative; z-index: 2; }
     gap: 1.2rem;
   }
 }
+
+
+/* -- CORRECTIFS ERGONOMIE STUDIO & JEUX -- */
+.lc-loss-card {
+  background: linear-gradient(135deg, #fff5f5, #fee2e2) !important;
+  border: 2.5px solid #ef4444 !important;
+}
+.lc-loss-badge {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+}
+.lc-win-code-box {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.6rem !important;
+  background: #ffffff !important;
+  color: #181512 !important;
+  border: 2px dashed #181512 !important;
+  border-radius: 12px !important;
+  padding: 0.4rem 1rem !important;
+  font-size: 0.85rem !important;
+  font-weight: 800 !important;
+  margin: 0.5rem auto !important;
+  max-width: 250px !important;
+  width: fit-content !important;
+}
+.lc-win-code-box span {
+  color: #181512 !important;
+  font-size: 0.82rem !important;
+  font-weight: 800 !important;
+  display: inline-block !important;
+}
+.lc-win-code-box code {
+  background: #ffd93d !important;
+  color: #181512 !important;
+  border: 1.5px solid #181512 !important;
+  border-radius: 8px !important;
+  padding: 0.18rem 0.55rem !important;
+  font-size: 0.95rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.05em !important;
+  font-family: monospace, monospace !important;
+  display: inline-block !important;
+}
+.kp-play-surface.is-dark-theme .lc-game-title,
+.kp-play-surface[data-theme="nuit"] .lc-game-title,
+.lc-sim-root.is-dark .lc-game-title {
+  color: #ffffff !important;
+}
+.kp-play-surface.is-dark-theme .lc-game-tagline,
+.kp-play-surface[data-theme="nuit"] .lc-game-tagline,
+.lc-sim-root.is-dark .lc-game-tagline {
+  color: #d1c7bd !important;
+}
+.kp-play-surface.is-dark-theme .lc-game-badge,
+.kp-play-surface[data-theme="nuit"] .lc-game-badge,
+.lc-sim-root.is-dark .lc-game-badge {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+}
+.kp-play-surface.is-dark-theme .lc-hint-text,
+.kp-play-surface[data-theme="nuit"] .lc-hint-text,
+.lc-sim-root.is-dark .lc-hint-text {
+  color: #fdf6e3 !important;
+}
+.kp-play-surface.is-dark-theme .kp-play-kicker,
+.kp-play-surface[data-theme="nuit"] .kp-play-kicker {
+  color: #d4d4d8 !important;
+}
+.kp-play-surface.is-dark-theme .kp-play-title,
+.kp-play-surface[data-theme="nuit"] .kp-play-title {
+  color: #ffffff !important;
+}
+.kp-play-surface.is-dark-theme .kp-play-footer,
+.kp-play-surface[data-theme="nuit"] .kp-play-footer {
+  color: #a1a1aa !important;
+}
+.k-preview-phone {
+  border-radius: 32px !important;
+  overflow: hidden !important;
+}
+.kp-play-surface {
+  border-radius: 26px !important;
+  overflow: hidden !important;
+}
+.kp-play-inner {
+  padding: 0.9rem 0.9rem 1.4rem !important;
+}
+.lc-modal-phone-screen {
+  border-radius: 24px !important;
+  overflow: hidden !important;
+  padding-bottom: 0.8rem !important;
+}

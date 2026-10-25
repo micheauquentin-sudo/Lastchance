@@ -68,7 +68,7 @@
       { cle: "jeu", titre: "Le jeu (15 mécaniques)", resume: "Choisissez parmi les 9 jeux de hasard et les 6 jeux d'adresse + limite par navigateur." },
       { cle: "lots", titre: "Les gains", resume: "Ce que vos clients peuvent gagner, à quelle fréquence et en quelle quantité (stock)." },
       { cle: "allure", titre: "L'habillage (18 Presets & 10 Fonds)", resume: "Les 8 Ambiances, les 10 Univers illustrés et les 10 fonds d'écran thématiques du code source." },
-      { cle: "couleurs", titre: "Les couleurs & Objets", resume: "Thème de page (Kermesse ou Nuit), symboles Machine à sous (Fruits, Fête, Bijoux), anneau et bouton." },
+      { cle: "couleurs", titre: "Les couleurs & Objets", resume: "Thème de page (Kermesse ou Nuit), bouton d'action et éléments visuels propres à votre jeu." },
       { cle: "apres", titre: "Après le gain & Validité", resume: "Coordonnées demandées au gagnant et durée de validité du code de retrait en caisse." },
       { cle: "verification", titre: "Dernière vérification", resume: "Testez une partie complète et publiez votre jeu instantané." },
     ],
@@ -87,6 +87,18 @@
       { cle: "parrainage", titre: "Le parrainage", resume: "Proposez à vos habitués d'inviter leurs proches et choisissez la double récompense." },
       { cle: "allure", titre: "L'allure du passeport", resume: "Choisissez l'un des 10 fonds d'écran illustrés derrière la carte de fidélité." },
     ],
+  };
+
+    /* ── PALETTES OFFICIELLES DES PRESETS DE LA ROUE ── */
+  const WHEEL_PALETTES = {
+    kermesse: ["#fcca59", "#f296bd", "#99b7f5", "#80ed99", "#ffd166", "#f3ead3"],
+    classic: ["#7c3aed", "#d946ef", "#ffd34d", "#06b6d4", "#a78bfa", "#f43f5e"],
+    neon: ["#22d3ee", "#f0abfc", "#06b6d4", "#ec4899", "#3b82f6", "#a855f7"],
+    luxe: ["#d4af37", "#262626", "#f3e5ab", "#3f3f46", "#b45309", "#fafafa"],
+    candy: ["#ffb3ba", "#baffc9", "#bae1ff", "#ffffba", "#ffdfba", "#e8d7ff"],
+    minimal: ["#18181b", "#f4f4f5", "#3f3f46", "#e4e4e7", "#71717a", "#d4d4d8"],
+    fiesta: ["#ff5722", "#ffeb3b", "#4caf50", "#e91e63", "#00bcd4", "#ff9800"],
+    cartoon: ["#ff3366", "#ffcc00", "#33ccff", "#33cc66", "#cc33ff", "#ff9933"],
   };
 
   let currentStepIndex = 0;
@@ -362,244 +374,103 @@
     }
 
     if (cle === "couleurs") {
-      return `
-        <div class="k-field-group">
-          <label class="k-label">Couleurs de votre vitrine (Contraste calculé automatiquement via <code>texteSur()</code>)</label>
-          <div class="k-grid-2">
-            <div class="k-color-picker-box">
-              <span>Couleur d'accent (Primary)</span>
-              <input type="color" value="${v.primary}" data-bind="vitrine.primary" />
-              <code>${v.primary}</code>
-            </div>
-            <div class="k-color-picker-box">
-              <span>Fond de page (Secondary)</span>
-              <input type="color" value="${v.secondary}" data-bind="vitrine.secondary" />
-              <code>${v.secondary}</code>
-            </div>
-          </div>
-        </div>
-        <div class="k-field-group">
-          <label class="k-label">Police des titres (<code>FONT_KEYS</code>)</label>
-          <div class="k-choice-grid-3">
-            ${[
-              ["elegant", "Élégante (Serif)"],
-              ["sans", "Sans-serif (Classique)"],
-              ["impact", "Impact (Forte)"],
-              ["rounded", "Arrondie (Chaleureuse)"],
-              ["modern", "Moderne (Épurée)"],
-              ["script", " Manuscrite (Artisan)"],
-            ].map(([fk, flbl]) => `
-              <button type="button" class="k-choice-tile ${v.heading === fk ? "active" : ""}" data-action="set-field" data-path="vitrine.heading" data-val="${fk}">
-                <strong>${flbl}</strong>
-              </button>
-            `).join("")}
-          </div>
-        </div>
-      `;
-    }
+      let specificField = "";
 
-    if (cle === "allure") {
-      return `
-        <div class="k-field-group">
-          <label class="k-label">Disposition des fiches (<code>style_cartes</code>)</label>
-          <div class="k-choice-grid-3">
-            ${[
-              ["liste", "📋 Liste (Classique)"],
-              ["grille", "🔲 Grille (2 colonnes)"],
-              ["magazine", "📰 Magazine (Éditorial)"],
-            ].map(([sk, slbl]) => `
-              <button type="button" class="k-choice-tile ${v.styleCartes === sk ? "active" : ""}" data-action="set-field" data-path="vitrine.styleCartes" data-val="${sk}">
-                <strong>${slbl}</strong>
-              </button>
-            `).join("")}
-          </div>
-        </div>
-
-        <div class="k-field-group">
-          <label class="k-label">Motif de fond (<code>allure.motif</code>)</label>
-          <div class="k-choice-grid-4">
-            ${[
-              ["diagonales", "╱ Diagonales"],
-              ["points", "⋯ Points"],
-              ["damier", "🏁 Damier"],
-              ["aucun", "⬜ Aucun"],
-            ].map(([mk, mlbl]) => `
-              <button type="button" class="k-choice-tile ${v.motif === mk ? "active" : ""}" data-action="set-field" data-path="vitrine.motif" data-val="${mk}">
-                <strong>${mlbl}</strong>
-              </button>
-            `).join("")}
-          </div>
-        </div>
-
-        <div class="k-field-group">
-          <label class="k-label">Style d'affichage des prix (<code>allure.style_prix</code>)</label>
-          <div class="k-choice-grid-3">
-            ${[
-              ["accent", "Couleur d'accent"],
-              ["pastille", "Pastille encadrée"],
-              ["simple", "Texte sobre"],
-            ].map(([pk, plbl]) => `
-              <button type="button" class="k-choice-tile ${v.stylePrix === pk ? "active" : ""}" data-action="set-field" data-path="vitrine.stylePrix" data-val="${pk}">
-                <strong>${plbl}</strong>
-              </button>
-            `).join("")}
-          </div>
-        </div>
-
-        <div class="k-field-group">
-          <label class="k-label">Barre d'action basse (<code>allure.barre_basse</code>)</label>
-          <div class="k-choice-grid-3">
-            ${[
-              ["flottante", "Flottante"],
-              ["pleine", "Pleine largeur"],
-              ["masquee", "Masquée"],
-            ].map(([bk, blbl]) => `
-              <button type="button" class="k-choice-tile ${v.barreBasse === bk ? "active" : ""}" data-action="set-field" data-path="vitrine.barreBasse" data-val="${bk}">
-                <strong>${blbl}</strong>
-              </button>
-            `).join("")}
-          </div>
-        </div>
-      `;
-    }
-
-    return renderVerificationStepSummary("vitrine", "Votre Vitrine Digitale & Réservation est prête !");
-  }
-
-  /* ==========================================================================
-     2. ÉTAPES DU STUDIO 15 JEUX INSTANTANÉS (src/lib/wheel-style.ts & catalog.ts)
-     ========================================================================== */
-  function renderRoueStep(cle) {
-    const r = drafts.roue;
-    if (cle === "jeu") {
-      const hasardCards = CB.INSTANT_MECHANICS.filter((m) => m.family === "hasard").map((m) => `
-        <button type="button" class="k-choice-tile ${r.gameType === m.key ? "active" : ""}" data-action="set-field" data-path="roue.gameType" data-val="${m.key}">
-          <span style="font-size:1.35rem">${m.emoji}</span>
-          <strong>${m.label}</strong>
-          <small>Hasard · Tirage immédiat</small>
-        </button>
-      `).join("");
-
-      const adresseCards = CB.INSTANT_MECHANICS.filter((m) => m.family === "adresse").map((m) => `
-        <button type="button" class="k-choice-tile ${r.gameType === m.key ? "active" : ""}" data-action="set-field" data-path="roue.gameType" data-val="${m.key}">
-          <span style="font-size:1.35rem">${m.emoji}</span>
-          <strong>${m.label}</strong>
-          <small>Adresse · Défi avant tirage</small>
-        </button>
-      `).join("");
-
-      return `
-        <div class="k-field-group">
-          <label class="k-label" for="r-name">Titre affiché en haut de votre jeu</label>
-          <input id="r-name" type="text" class="k-input" value="${escapeAttr(r.name)}" data-bind="roue.name" />
-        </div>
-        <div class="k-field-group">
-          <label class="k-label">🎲 Famille 1 : Les 9 Jeux de Hasard (Tirage immédiat)</label>
-          <div class="k-choice-grid-3">${hasardCards}</div>
-        </div>
-        <div class="k-field-group">
-          <label class="k-label">🎯 Famille 2 : Les 6 Jeux d'Adresse (Le joueur doit réussir un défi avant que le tirage s'ouvre)</label>
-          <div class="k-choice-grid-3">${adresseCards}</div>
-        </div>
-        <div class="k-field-group">
-          <label class="k-label">Limite de participation par navigateur (<code>play_limit</code> — ADR-183)</label>
-          <div class="k-choice-grid-3">
-            ${[
-              ["once", "1 seule fois par navigateur"],
-              ["daily", "1 fois par jour / navigateur"],
-              ["weekly", "1 fois par semaine / navigateur"],
-            ].map(([lk, llbl]) => `
-              <button type="button" class="k-choice-tile ${r.playLimit === lk ? "active" : ""}" data-action="set-field" data-path="roue.playLimit" data-val="${lk}">
-                <strong>${llbl}</strong>
-              </button>
-            `).join("")}
-          </div>
-        </div>
-      `;
-    }
-
-    if (cle === "lots") {
-      const lotsHtml = (r.lots || []).map((l, idx) => `
-        <div class="k-item-editor-row">
-          <div style="display:flex;align-items:center;gap:0.6rem;">
-            <input type="color" value="${l.color || "#fcca59"}" data-action="lot-color" data-idx="${idx}" style="width:28px;height:28px;border:2px solid #211d16;border-radius:6px;cursor:pointer;" />
-            <div>
-              <strong>${escapeHtml(l.label)}</strong>
-              <small style="display:block;">Poids : ${l.weight}% · Stock : ${l.stock} · ${l.isWinning ? "🎁 Lot gagnant" : "Perdant"}</small>
+      if (r.gameType === "slot") {
+        specificField = `
+          <div class="k-field-group">
+            <label class="k-label">Jeu de symboles de la Machine à sous (<code>SLOT_SYMBOL_SETS</code>)</label>
+            <div class="k-choice-grid-3">
+              ${Object.entries(CB.SLOT_SYMBOL_SETS).map(([sk, sObj]) => `
+                <button type="button" class="k-choice-tile ${r.slotSymbols === sk ? "active" : ""}" data-action="set-field" data-path="roue.slotSymbols" data-val="${sk}">
+                  <span style="font-size:1.15rem">${sObj.symbols.join(" ")}</span>
+                  <strong>${sObj.label}</strong>
+                </button>
+              `).join("")}
             </div>
           </div>
-          <button type="button" class="k-btn-mini-del" data-action="del-roue-lot" data-idx="${idx}">Retirer</button>
-        </div>
-      `).join("");
-
-      return `
-        <div class="k-field-group">
-          <label class="k-label">Vos lots et probabilités (Stock fini & garde de valeur atomique)</label>
-          <div class="k-items-stack">${lotsHtml}</div>
-        </div>
-        <div class="k-field-group k-add-box">
-          <strong>+ Ajouter un lot à faire gagner</strong>
-          <div class="k-grid-2" style="margin-top:0.5rem;">
-            <input type="text" id="new-lot-label" class="k-input" placeholder="Ex : Dessert offert, -20 %, Soin découverte…" />
-            <input type="number" id="new-lot-stock" class="k-input" placeholder="Stock (ex: 50)" value="50" min="1" />
+        `;
+      } else if (r.gameType === "wheel") {
+        specificField = `
+          <div class="k-field-group">
+            <label class="k-label">Anneau & Aiguille de la Roue de la Fortune</label>
+            <div class="k-grid-2">
+              <div class="k-color-picker-box">
+                <span>Couleur de l'anneau</span>
+                <input type="color" value="${r.ringColor || "#fcca59"}" data-bind="roue.ringColor" />
+              </div>
+              <div class="k-color-picker-box">
+                <span>Couleur du curseur</span>
+                <input type="color" value="${r.pointerColor || "#f5793b"}" data-bind="roue.pointerColor" />
+              </div>
+            </div>
           </div>
-          <button type="button" class="k-btn k-btn-yellow" id="btn-add-roue-lot" style="margin-top:0.6rem;">+ Ajouter ce lot</button>
-        </div>
-      `;
-    }
-
-    if (cle === "allure") {
-      const ambiancesHtml = CB.WHEEL_PRESETS_AMBIANCE.map((p) => `
-        <button type="button" class="k-choice-tile ${r.preset === p.key ? "active" : ""}" data-action="apply-wheel-preset" data-val="${p.key}">
-          <div class="k-swatch-row">
-            <span style="background:${p.swatch[0]}"></span>
-            <span style="background:${p.swatch[1]}"></span>
-            <span style="background:${p.swatch[2]}"></span>
+        `;
+      } else if (r.gameType === "scratch") {
+        specificField = `
+          <div class="k-field-group">
+            <label class="k-label">Finition du Ticket à Gratter</label>
+            <div class="k-choice-grid-4">
+              ${[
+                ["#fcca59", "Ticket Or"],
+                ["#e2e8f0", "Argent Métal"],
+                ["#22d3ee", "Néon Laser"],
+                ["#181512", "Velours Sombre"],
+              ].map(([col, lbl]) => `
+                <button type="button" class="k-choice-tile ${(r.objectColor || "#fcca59") === col ? "active" : ""}" data-action="set-field" data-path="roue.objectColor" data-val="${col}">
+                  <span style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${col};border:1.5px solid #181512;"></span>
+                  <strong>${lbl}</strong>
+                </button>
+              `).join("")}
+            </div>
           </div>
-          <strong>${p.label}</strong>
-          <small>Ambiance (${p.style.pageTheme})</small>
-        </button>
-      `).join("");
+        `;
+      } else if (r.gameType === "dice") {
+        specificField = `
+          <div class="k-field-group">
+            <label class="k-label">Teinte & Ambiance du Dé</label>
+            <div class="k-choice-grid-4">
+              ${[
+                ["#ffffff", "Ivoire Casino"],
+                ["#dc2626", "Rouge Vegas"],
+                ["#ffd700", "Or Royal"],
+                ["#181512", "Noir Onyx"],
+              ].map(([col, lbl]) => `
+                <button type="button" class="k-choice-tile ${(r.objectColor || "#ffffff") === col ? "active" : ""}" data-action="set-field" data-path="roue.objectColor" data-val="${col}">
+                  <span style="display:inline-block;width:20px;height:20px;border-radius:50%;background:${col};border:1.5px solid #181512;"></span>
+                  <strong>${lbl}</strong>
+                </button>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      } else if (r.gameType === "cups") {
+        specificField = `
+          <div class="k-field-group">
+            <label class="k-label">Style des Gobelets</label>
+            <div class="k-choice-grid-3">
+              ${[
+                ["gold", "🏆 Gobelets d'Or"],
+                ["wood", "🪵 Chopes en Bois"],
+                ["kermesse", "🥤 Kermesse Festif"],
+              ].map(([sk, lbl]) => `
+                <button type="button" class="k-choice-tile ${(r.objectColor || "kermesse") === sk ? "active" : ""}" data-action="set-field" data-path="roue.objectColor" data-val="${sk}">
+                  <strong>${lbl}</strong>
+                </button>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      }
 
-      const universHtml = CB.WHEEL_PRESETS_UNIVERS.map((p) => `
-        <button type="button" class="k-choice-tile ${r.preset === p.key ? "active" : ""}" data-action="apply-wheel-preset" data-val="${p.key}">
-          <img src="fonds/${p.style.fond}-vignette.webp" alt="${escapeAttr(p.label)}" class="k-fond-thumb" loading="lazy" />
-          <strong>${p.label}</strong>
-          <small>Univers + Fond illustré</small>
-        </button>
-      `).join("");
-
-      const fondsHtml = ["aucun", ...CB.FOND_KEYS].map((fk) => `
-        <button type="button" class="k-choice-tile ${(r.fond || "aucun") === fk ? "active" : ""}" data-action="set-field" data-path="roue.fond" data-val="${fk}">
-          ${fk === "aucun" ? `<span style="font-size:1.3rem">🚫</span><strong>Aucun fond</strong>` : `<img src="fonds/${fk}-vignette.webp" alt="${CB.FOND_LABELS[fk]}" class="k-fond-thumb" loading="lazy" /><strong>${CB.FOND_LABELS[fk]}</strong>`}
-        </button>
-      `).join("");
-
-      return `
-        <div class="k-field-group">
-          <label class="k-label">1. Les 8 Ambiances de couleurs (<code>WHEEL_PRESETS_AMBIANCE</code>)</label>
-          <div class="k-choice-grid-4">${ambiancesHtml}</div>
-        </div>
-        <div class="k-field-group">
-          <label class="k-label">2. Les 10 Univers thématiques avec fond illustré (<code>WHEEL_PRESETS_UNIVERS</code>)</label>
-          <div class="k-choice-grid-3">${universHtml}</div>
-        </div>
-        <div class="k-field-group">
-          <label class="k-label">3. Choix explicite du fond d'écran (<code>FOND_KEYS</code> dans <code>src/lib/fonds-ecran.ts</code>)</label>
-          <div class="k-choice-grid-4">${fondsHtml}</div>
-        </div>
-      `;
-    }
-
-    if (cle === "couleurs") {
       return `
         <div class="k-field-group">
           <label class="k-label">Surface de la page <code>/play</code> (<code>PAGE_THEMES</code>)</label>
           <div class="k-choice-grid-2">
-            <button type="button" class="k-choice-tile ${r.pageTheme === "kermesse" ? "active" : ""}" data-action="set-field" data-path="roue.pageTheme" data-val="kermesse">
+            <button type="button" class="k-choice-tile ${r.pageTheme === "kermesse" ? "active" : ""}" data-action="set-surface-theme" data-val="kermesse">
               <strong>🎪 Kermesse (Crème #fdf6e3 + Bandeau rayé + Encre)</strong>
             </button>
-            <button type="button" class="k-choice-tile ${r.pageTheme === "nuit" ? "active" : ""}" data-action="set-field" data-path="roue.pageTheme" data-val="nuit">
+            <button type="button" class="k-choice-tile ${r.pageTheme === "nuit" ? "active" : ""}" data-action="set-surface-theme" data-val="nuit">
               <strong>🌙 Nuit / Dégradé radial sur mesure</strong>
             </button>
           </div>
@@ -619,17 +490,7 @@
           </div>
         </div>
 
-        <div class="k-field-group">
-          <label class="k-label">Jeu de symboles de la Machine à sous (<code>SLOT_SYMBOL_SETS</code>)</label>
-          <div class="k-choice-grid-3">
-            ${Object.entries(CB.SLOT_SYMBOL_SETS).map(([sk, sObj]) => `
-              <button type="button" class="k-choice-tile ${r.slotSymbols === sk ? "active" : ""}" data-action="set-field" data-path="roue.slotSymbols" data-val="${sk}">
-                <span style="font-size:1.15rem">${sObj.symbols.join(" ")}</span>
-                <strong>${sObj.label}</strong>
-              </button>
-            `).join("")}
-          </div>
-        </div>
+        ${specificField}
       `;
     }
 
@@ -921,10 +782,26 @@
           if (p) {
             drafts.roue.preset = p.key;
             Object.assign(drafts.roue, p.style);
-            if (!p.style.fond && p.family === "ambiance") {
+            if (p.family === "ambiance") {
               drafts.roue.fond = "aucun";
+              drafts.roue.pageTheme = p.style.pageTheme || "nuit";
+              const pal = WHEEL_PALETTES[p.key];
+              if (pal && Array.isArray(drafts.roue.lots)) {
+                drafts.roue.lots.forEach((lot, i) => {
+                  lot.color = pal[i % pal.length];
+                });
+              }
+            } else if (p.family === "univers") {
+              drafts.roue.fond = p.key;
+              drafts.roue.pageTheme = "kermesse";
             }
           }
+          triggerAutoSave();
+          renderFormColumn();
+          renderPreviewColumn();
+        } else if (act === "set-surface-theme") {
+          drafts.roue.pageTheme = el.dataset.val;
+          drafts.roue.fond = "aucun";
           triggerAutoSave();
           renderFormColumn();
           renderPreviewColumn();
@@ -1155,24 +1032,33 @@
 
   function buildRouePreviewHTML() {
     const r = drafts.roue;
-    const isKermesse = r.pageTheme === "kermesse";
-    const hasFond = r.fond && r.fond !== "aucun";
-    // const mech = CB.INSTANT_MECHANICS.find((m) => m.key === r.gameType) || CB.INSTANT_MECHANICS[0];
+    const isNuit = r.pageTheme === "nuit";
+    const hasFond = r.fond && r.fond !== "aucun" && !isNuit;
 
-    const bgStyle = hasFond
-      ? `background-image: linear-gradient(180deg, rgba(253,246,227,0.78), rgba(253,246,227,0.88)), url('fonds/${r.fond}-640.webp'); background-size: cover; background-position: center;`
-      : isKermesse
-        ? `background-color: #fdf6e3;`
-        : `background: radial-gradient(circle at 50% -10%, ${r.bgFrom}, ${r.bgTo} 75%);`;
+    let bgStyle = "";
+    let isDark = false;
 
-    const textColor = isKermesse || hasFond ? "#211d16" : "#ffffff";
-    const subColor = isKermesse || hasFond ? "#3d382f" : "#d4d4d8";
+    if (hasFond) {
+      bgStyle = `background-image: linear-gradient(180deg, rgba(253,246,227,0.78), rgba(253,246,227,0.88)), url('fonds/${r.fond}-640.webp'); background-size: cover; background-position: center;`;
+      isDark = false;
+    } else if (isNuit) {
+      const from = r.bgFrom || "#2e1065";
+      const to = r.bgTo || "#0b0814";
+      bgStyle = `background: radial-gradient(circle at 50% -10%, ${from}, ${to} 75%);`;
+      isDark = true;
+    } else {
+      bgStyle = `background-color: #fdf6e3;`;
+      isDark = false;
+    }
+
+    const textColor = isDark ? "#ffffff" : "#211d16";
+    const subColor = isDark ? "#d4d4d8" : "#3d382f";
 
     return `
-      <div class="kp-play-surface" style="${bgStyle};color:${textColor};">
-        ${isKermesse ? `<div class="k-stripe-bar" style="height:10px;"></div>` : ""}
+      <div class="kp-play-surface ${isDark ? "is-dark-theme" : ""}" data-theme="${isDark ? "nuit" : "kermesse"}" style="${bgStyle};color:${textColor};">
+        ${!isDark ? `<div class="k-stripe-bar" style="height:10px;"></div>` : ""}
         <div class="kp-play-inner">
-          <span class="kp-play-kicker" style="color:${subColor}">${auth.orgName || drafts.vitrine.nom || "VOTRE ÉTABLISSEMENT"}</span>
+          <span class="kp-play-kicker" style="color:${subColor}">${escapeHtml(auth.orgName || drafts.vitrine.nom || "VOTRE ÉTABLISSEMENT")}</span>
           <h3 class="kp-play-title" style="color:${textColor}">${escapeHtml(r.name)}</h3>
 
           <div class="kp-play-stage" id="kp-play-stage" style="width:100%;min-height:280px;display:flex;align-items:center;justify-content:center;">
@@ -1195,11 +1081,20 @@
     if (GE && typeof GE.createSimulator === "function") {
       const winningLots = (r.lots || []).filter((l) => l.isWinning);
       const chosen = winningLots[0] || (r.lots && r.lots[0]) || { label: "-15 % sur l'addition ☕" };
+      const isDark = (r.pageTheme === "nuit");
 
       GE.createSimulator(stage, {
         gameKey: r.gameType,
         lots: r.lots,
         prize: chosen.label,
+        pageTheme: r.pageTheme,
+        isDark: isDark,
+        buttonFrom: r.buttonFrom,
+        buttonTo: r.buttonTo,
+        ringColor: r.ringColor,
+        pointerColor: r.pointerColor,
+        slotSymbols: r.slotSymbols,
+        objectColor: r.objectColor,
       });
     }
   }

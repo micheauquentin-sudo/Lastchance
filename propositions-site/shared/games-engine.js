@@ -161,6 +161,29 @@
     return "LC-" + Math.random().toString(36).substring(2, 6).toUpperCase();
   }
 
+  function renderDiceSVG(val) {
+    const v = Math.max(1, Math.min(6, parseInt(val, 10) || 6));
+    const dotCoords = {
+      1: [[32, 32]],
+      2: [[19, 19], [45, 45]],
+      3: [[19, 19], [32, 32], [45, 45]],
+      4: [[19, 19], [45, 19], [19, 45], [45, 45]],
+      5: [[19, 19], [45, 19], [32, 32], [19, 45], [45, 45]],
+      6: [[19, 17], [45, 17], [19, 32], [45, 32], [19, 47], [45, 47]],
+    };
+    const dots = (dotCoords[v] || dotCoords[6]).map(([cx, cy]) => {
+      const isOne = (v === 1);
+      const fill = isOne ? "#dc2626" : "#181512";
+      const r = isOne ? 7 : 5.5;
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" />`;
+    }).join("");
+
+    return `<svg width="74" height="74" viewBox="0 0 64 64" class="lc-dice-svg" style="display:block;filter:drop-shadow(3px 3px 0 #181512);border-radius:14px;overflow:visible;">
+      <rect x="2" y="2" width="60" height="60" rx="14" fill="#ffffff" stroke="#181512" stroke-width="3.5" />
+      ${dots}
+    </svg>`;
+  }
+
   // Déclenchement d'une explosion de confettis DOM
   function burstConfetti(container) {
     if (!container) return;
@@ -212,7 +235,18 @@
       this.wheelRotation = 0;
       this.prize = options.prize || "Un café offert ☕";
       this.code = "";
+      this.isDark = Boolean(options.isDark || options.pageTheme === "nuit");
       this.init();
+    }
+
+    applyButtonStyle(btn) {
+      if (!btn) return;
+      if (this.options.buttonFrom && this.options.buttonTo) {
+        btn.style.background = `linear-gradient(135deg, ${this.options.buttonFrom}, ${this.options.buttonTo})`;
+        btn.style.color = "#ffffff";
+        btn.style.textShadow = "0 1px 2px rgba(0,0,0,0.4)";
+        btn.style.borderColor = "var(--ink)";
+      }
     }
 
     destroy() {
@@ -240,9 +274,12 @@
     render() {
       this.container.innerHTML = "";
       this.container.classList.add("lc-sim-root");
+      if (this.isDark) {
+        this.container.classList.add("is-dark");
+      }
 
       const shell = document.createElement("div");
-      shell.className = `lc-game-shell lc-game-${this.gameKey}`;
+      shell.className = `lc-game-shell lc-game-${this.gameKey} ${this.isDark ? "is-dark-theme" : ""}`;
 
       // En-tête informatif du mini-jeu
       const head = document.createElement("div");
@@ -280,13 +317,19 @@
       this.code = generateVoucherCode();
       const prizeLabel = customPrize || this.prize;
 
-      burstConfetti(this.stageElement);
+      burstConfetti(this.shellElement || this.container);
+
+      // Masquer la scène de jeu pour centrer le coupon gagnant et éliminer tout débordement en bas
+      if (this.stageElement) {
+        this.stageElement.style.display = "none";
+      }
 
       if (this.winCardElement) {
         this.winCardElement.hidden = false;
+        this.winCardElement.className = "lc-game-win-card";
         this.winCardElement.innerHTML = `
           <div class="lc-win-badge">🎉 BRAVO, LOT REMPORTÉ !</div>
-          <div class="lc-win-prize">🎁 ${prizeLabel}</div>
+          <div class="lc-win-prize">🎁 ${escapeHtml(prizeLabel)}</div>
           <div class="lc-win-code-box">
             <span>Code caisse :</span>
             <code>${this.code}</code>
@@ -301,6 +344,9 @@
           replayBtn.addEventListener("click", () => {
             this.isWon = false;
             this.winCardElement.hidden = true;
+            if (this.stageElement) {
+              this.stageElement.style.display = "";
+            }
             this.mountMechanic();
           });
         }
@@ -308,6 +354,41 @@
 
       if (typeof this.options.onWin === "function") {
         this.options.onWin({ prize: prizeLabel, code: this.code, gameKey: this.gameKey });
+      }
+    }
+
+    triggerLoss(reason) {
+      this.isPlaying = false;
+      this.isWon = false;
+
+      if (this.stageElement) {
+        this.stageElement.style.display = "none";
+      }
+
+      if (this.winCardElement) {
+        this.winCardElement.hidden = false;
+        this.winCardElement.className = "lc-game-win-card lc-loss-card";
+        this.winCardElement.innerHTML = `
+          <div class="lc-win-badge lc-loss-badge">❌ DÉFI NON VALIDÉ</div>
+          <div class="lc-win-prize" style="color:#b91c1c;">${escapeHtml(reason || "Dommage, retentez votre chance !")}</div>
+          <p style="font-size:0.78rem;color:#4b5563;margin:0.35rem 0 0.6rem;line-height:1.4;">
+            Vous n'étiez pas dans les conditions de gain requises. Entraînez-vous et prenez votre revanche !
+          </p>
+          <button type="button" class="lc-win-replay-btn" id="lc-replay-btn">
+            🔄 Réessayer la partie test
+          </button>
+        `;
+
+        const replayBtn = this.winCardElement.querySelector("#lc-replay-btn");
+        if (replayBtn) {
+          replayBtn.addEventListener("click", () => {
+            this.winCardElement.hidden = true;
+            if (this.stageElement) {
+              this.stageElement.style.display = "";
+            }
+            this.mountMechanic();
+          });
+        }
       }
     }
 
@@ -409,9 +490,9 @@
 
       this.stageElement.innerHTML = `
         <div class="lc-wheel-arena">
-          <div class="lc-wheel-pointer" style="border-top-color:#e63946"></div>
+          <div class="lc-wheel-pointer" style="border-top-color:${this.options.pointerColor || "#e63946"}"></div>
           <svg viewBox="0 0 220 220" class="lc-wheel-svg" id="lc-live-wheel-svg">
-            <circle cx="110" cy="110" r="106" fill="none" stroke="#211d16" stroke-width="6" />
+            <circle cx="110" cy="110" r="106" fill="none" stroke="${this.options.ringColor || "#211d16"}" stroke-width="6" />
             <g id="lc-wheel-disc">
               ${paths}
               <circle cx="110" cy="110" r="18" fill="#fdf6e3" stroke="#211d16" stroke-width="3" />
@@ -426,6 +507,7 @@
 
       const disc = this.stageElement.querySelector("#lc-wheel-disc");
       const btn = this.stageElement.querySelector("#lc-spin-btn");
+      this.applyButtonStyle(btn);
 
       const spin = () => {
         if (this.isPlaying || this.isWon) return;
@@ -544,7 +626,12 @@
 
     /* ── 3. MACHINE À SOUS ── */
     mountSlot() {
-      const symbols = ["🍒", "🍋", "⭐", "🔔", "7️⃣", "💎", "🎁"];
+      const symbolSets = {
+        fruits: ["🍒", "🍋", "🔔", "⭐", "🍀", "💎"],
+        fete: ["🎈", "🎉", "🎂", "🍭", "🎁", "🎪"],
+        bijoux: ["💎", "👑", "💍", "🏆", "✨", "🥇"]
+      };
+      const symbols = symbolSets[this.options.slotSymbols] || symbolSets.fruits;
       this.stageElement.innerHTML = `
         <div class="lc-slot-machine">
           <div class="lc-slot-reels-box">
@@ -568,6 +655,7 @@
       ];
       const btn = this.stageElement.querySelector("#lc-slot-btn");
       const arm = this.stageElement.querySelector("#lc-slot-arm");
+      this.applyButtonStyle(btn);
 
       const spin = () => {
         if (this.isPlaying || this.isWon) return;
@@ -613,20 +701,15 @@
 
     /* ── 4. BONNETEAU (3 GOBELETS) ── */
     mountCups() {
+      this.winningCup = Math.floor(Math.random() * 3);
       this.stageElement.innerHTML = `
         <div class="lc-cups-arena" id="lc-cups-arena">
-          <button type="button" class="lc-cup-item" data-cup="0">
-            <span class="lc-cup-visual">🥤</span>
-            <span class="lc-cup-ball" id="lc-ball-0">🪙</span>
-          </button>
-          <button type="button" class="lc-cup-item" data-cup="1">
-            <span class="lc-cup-visual">🥤</span>
-            <span class="lc-cup-ball" id="lc-ball-1">🪙</span>
-          </button>
-          <button type="button" class="lc-cup-item" data-cup="2">
-            <span class="lc-cup-visual">🥤</span>
-            <span class="lc-cup-ball" id="lc-ball-2">🪙</span>
-          </button>
+          ${[0, 1, 2].map((i) => `
+            <button type="button" class="lc-cup-item" data-cup="${i}">
+              <span class="lc-cup-visual">🥤</span>
+              ${i === this.winningCup ? `<span class="lc-cup-ball" id="lc-ball-${i}">🪙</span>` : ""}
+            </button>
+          `).join("")}
         </div>
         <p class="lc-hint-text" id="lc-cups-status">👀 Suivez la pièce d'or des yeux...</p>
       `;
@@ -635,11 +718,11 @@
       const status = this.stageElement.querySelector("#lc-cups-status");
       const arena = this.stageElement.querySelector("#lc-cups-arena");
 
-      // Étape 1 : Révélation initiale
+      // Étape 1 : Révélation initiale du bon gobelet
       setTimeout(() => {
-        cups[1].classList.add("lifted");
+        if (cups[this.winningCup]) cups[this.winningCup].classList.add("lifted");
         setTimeout(() => {
-          cups[1].classList.remove("lifted");
+          if (cups[this.winningCup]) cups[this.winningCup].classList.remove("lifted");
           status.textContent = "🌪️ Les gobelets se mélangent à toute allure...";
           arena.classList.add("shuffling");
 
@@ -655,11 +738,22 @@
         c.addEventListener("click", () => {
           if (!this.canPickCup || this.isWon) return;
           this.canPickCup = false;
+          const picked = parseInt(c.dataset.cup, 10);
+          const isWin = (picked === this.winningCup);
           c.classList.add("lifted");
-          status.textContent = "🎉 TROUVÉ ! La pièce d'or était bien là !";
-          setTimeout(() => {
-            this.triggerWin("Bonneteau Gagné · Pièce d'Or");
-          }, 600);
+
+          if (isWin) {
+            status.textContent = "🎉 TROUVÉ ! La pièce d'or était bien là !";
+            setTimeout(() => {
+              this.triggerWin("Bonneteau Gagné · Pièce d'Or");
+            }, 600);
+          } else {
+            if (cups[this.winningCup]) cups[this.winningCup].classList.add("lifted");
+            status.textContent = "❌ PERDU ! La pièce était sous l'autre gobelet !";
+            setTimeout(() => {
+              this.triggerLoss("Mauvais gobelet choisi");
+            }, 750);
+          }
         });
       });
     }
@@ -742,21 +836,21 @@
 
     /* ── 7. LANCER DE DÉ ── */
     mountDice() {
-      const faces = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
       this.stageElement.innerHTML = `
         <div class="lc-dice-arena">
-          <div class="lc-dice-cube" id="lc-dice-cube">
-            <span>⚅</span>
+          <div class="lc-dice-cube" id="lc-dice-cube" tabindex="0" role="button" aria-label="Lancer le dé">
+            ${renderDiceSVG(6)}
           </div>
         </div>
+        <p class="lc-hint-text">🎲 Touchez le dé ou le bouton pour lancer</p>
         <button type="button" class="lc-action-btn pop-btn-yellow" id="lc-dice-btn">
           🎲 Lancer le dé sur le tapis !
         </button>
       `;
 
       const dice = this.stageElement.querySelector("#lc-dice-cube");
-      const span = dice.querySelector("span");
       const btn = this.stageElement.querySelector("#lc-dice-btn");
+      this.applyButtonStyle(btn);
 
       const roll = () => {
         if (this.isPlaying || this.isWon) return;
@@ -768,13 +862,14 @@
 
         let ticks = 0;
         const interval = setInterval(() => {
-          span.textContent = faces[Math.floor(Math.random() * faces.length)];
+          const randVal = Math.floor(Math.random() * 6) + 1;
+          dice.innerHTML = renderDiceSVG(randVal);
           ticks++;
           if (ticks > 14) {
             clearInterval(interval);
             dice.classList.remove("rolling");
             dice.classList.add("bounced");
-            span.textContent = "⚅";
+            dice.innerHTML = renderDiceSVG(6);
             setTimeout(() => {
               this.triggerWin("Score Parfait 6 au Dé !");
             }, 600);
@@ -1006,6 +1101,7 @@
 
       const needle = this.stageElement.querySelector("#lc-gauge-needle");
       const btn = this.stageElement.querySelector("#lc-gauge-stop-btn");
+      this.applyButtonStyle(btn);
 
       let pos = 0;
       let dir = 1;
@@ -1028,21 +1124,24 @@
         cancelAnimationFrame(this.rafId);
         btn.disabled = true;
 
-        // Zone cible centrale : entre 38% et 62%
-        const inTarget = pos >= 36 && pos <= 64;
+        // Zone cible centrale : entre 39% et 61%
+        const inTarget = (pos >= 39 && pos <= 61);
         if (inTarget) {
           needle.style.backgroundColor = "#10b981";
           btn.textContent = "🎯 EN PLEIN DANS LE MILLE !";
+          btn.style.backgroundColor = "#d1fae5";
+          btn.style.color = "#065f46";
           setTimeout(() => {
             this.triggerWin("Précision Jauge 100%");
           }, 600);
         } else {
-          // Tolérance de rattrapage
-          needle.style.backgroundColor = "#f59e0b";
-          btn.textContent = "✨ Très proche ! Défi validé !";
+          needle.style.backgroundColor = "#ef4444";
+          btn.textContent = "❌ HORS DE LA ZONE VERTE !";
+          btn.style.backgroundColor = "#fee2e2";
+          btn.style.color = "#b91c1c";
           setTimeout(() => {
-            this.triggerWin("Défi Jauge Réussi");
-          }, 600);
+            this.triggerLoss("Aiguille stoppée hors de la zone cible");
+          }, 750);
         }
       };
 
