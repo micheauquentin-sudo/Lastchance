@@ -50,7 +50,7 @@ on:
 jobs:
   mesure:
     name: Taux d'échec réel
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7

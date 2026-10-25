@@ -19,7 +19,7 @@ jobs:
       (github.event.deployment_status.state == 'success' &&
       (github.event.deployment.environment == 'Production' ||
       github.event.deployment.environment == 'production'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     concurrency:
       group: production-health
       cancel-in-progress: true

@@ -35,7 +35,7 @@ concurrency:
 jobs:
   quality:
     name: Typecheck · Lint · Tests · Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -76,7 +76,7 @@ jobs:
 
   site:
     name: Site vitrine · Typecheck · Lint · Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: site
@@ -103,7 +103,7 @@ jobs:
 
   site-e2e:
     name: Site vitrine · E2E · axe
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -132,7 +132,7 @@ jobs:
 
   audit:
     name: npm audit (vulnérabilités)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -155,7 +155,7 @@ jobs:
 
   database-security:
     name: PostgreSQL · ACL · RLS · Intégrité
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -253,7 +253,7 @@ jobs:
 
   e2e:
     name: E2E Playwright (Chromium · WebKit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -436,7 +436,7 @@ jobs:
 
   codeql:
     name: CodeQL · JavaScript / TypeScript
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
