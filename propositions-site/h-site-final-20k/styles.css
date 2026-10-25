@@ -151,10 +151,10 @@ header, main, section, footer { position: relative; z-index: 2; }
   position: sticky;
   top: 0.55rem;
   z-index: 50;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  gap: 1.1rem;
+  gap: 1.2rem;
   width: min(var(--max), 94vw);
   margin: 0.35rem auto 0.75rem;
   padding: 0.52rem 1.35rem;
@@ -171,6 +171,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: var(--ink) !important;
   display: flex;
   align-items: center;
+  justify-self: start;
   flex-shrink: 0;
 }
 .logo-club {
@@ -181,9 +182,10 @@ header, main, section, footer { position: relative; z-index: 2; }
 .header-nav nav {
   display: flex;
   align-items: center;
-  gap: 1.15rem;
-  margin-left: auto;
-  margin-right: 0.5rem;
+  justify-content: center;
+  gap: 1.35rem;
+  margin: 0;
+  justify-self: center;
 }
 .header-nav nav a {
   font: 700 0.88rem var(--fun-font);
@@ -216,6 +218,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   align-items: center;
   gap: 0.65rem;
   flex-shrink: 0;
+  justify-self: end;
 }
 .nav-circle-badges { display: flex; gap: 0.3rem; }
 .c-dot {
@@ -4596,6 +4599,8 @@ header, main, section, footer { position: relative; z-index: 2; }
 
 /* ── RESPONSIVE ── */
 @media (max-width: 1120px) {
+  .header-nav nav { gap: 0.85rem; }
+  .header-nav nav a { font-size: 0.82rem; }
   .hero-clean-grid { flex-direction: column; text-align: center; gap: 1.8rem; }
   .hero-cta-row { justify-content: center; }
   .jukebox-arena, .lavender-split-wrap, .vitrine-spotlight-shell, .marmoris-config-shell, .prono-interactive-stage, .k-studio-workspace, .hero-play-grid, .k-gate-options, .k-modal-preview-grid, .k-conv-options-grid { grid-template-columns: 1fr; }
@@ -4606,6 +4611,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   .fc-loop-arrow { margin: 0 auto; transform: rotate(90deg); }
 }
 @media (max-width: 820px) {
+  .header-nav { display: flex; justify-content: space-between; }
   .header-nav nav, .nav-circle-badges { display: none; }
   .clog-stats-wrap, .clog-cards-grid, .manifesto-photo-duo, .plans-deck, .config-plan-radios, .config-addon-checks, .vr-sector-buttons, .dedicated-pages-duo, .jp-family-explainer, .jp-15-grid, .prono-champ-tabs, .prono-projection-boxes, .fc-detail-grid, .k-form-grid, .k-editable-row, .k-choice-grid-2, .k-choice-grid-3, .k-choice-grid-4, .k-grid-2 {
     grid-template-columns: 1fr;
