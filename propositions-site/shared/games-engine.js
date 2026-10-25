@@ -220,7 +220,17 @@
         cancelAnimationFrame(this.rafId);
         this.rafId = null;
       }
-      this.container.innerHTML = "";
+      if (Array.isArray(this.intervals)) {
+        this.intervals.forEach((id) => clearInterval(id));
+        this.intervals = [];
+      }
+      if (Array.isArray(this.timeouts)) {
+        this.timeouts.forEach((id) => clearTimeout(id));
+        this.timeouts = [];
+      }
+      if (this.container) {
+        this.container.innerHTML = "";
+      }
     }
 
     init() {
@@ -1209,19 +1219,24 @@
   function openGameModal(gameKey, customOptions = {}) {
     const k = normalizeGameKey(gameKey);
     const meta = GAMES_META[k] || GAMES_META.wheel;
+    const previousActive = document.activeElement;
 
-    let overlay = document.getElementById("lc-game-modal-overlay");
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.id = "lc-game-modal-overlay";
-      overlay.className = "lc-game-modal-overlay";
-      document.body.appendChild(overlay);
+    // Supprimer tout overlay orphelin existant dans le DOM
+    const existing = document.getElementById("lc-game-modal-overlay");
+    if (existing && existing.parentNode) {
+      existing.parentNode.removeChild(existing);
     }
 
-    overlay.hidden = false;
+    const overlay = document.createElement("div");
+    overlay.id = "lc-game-modal-overlay";
+    overlay.className = "lc-game-modal-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    document.body.appendChild(overlay);
+
     overlay.innerHTML = `
       <div class="lc-game-modal-backdrop" id="lc-modal-close-backdrop"></div>
-      <div class="lc-game-modal-window" role="dialog" aria-modal="true" aria-labelledby="lc-modal-title">
+      <div class="lc-game-modal-window" role="document" aria-labelledby="lc-modal-title">
         <button type="button" class="lc-modal-close-btn" id="lc-modal-close-btn" aria-label="Fermer l'aperçu du jeu">✕</button>
 
         <div class="lc-modal-phone-frame">
@@ -1259,23 +1274,66 @@
       lots: customOptions.lots,
     });
 
+    let isClosed = false;
     const close = () => {
+      if (isClosed) return;
+      isClosed = true;
+
       if (sim) {
         sim.destroy();
         sim = null;
       }
-      overlay.hidden = true;
-      overlay.innerHTML = "";
       document.removeEventListener("keydown", onEsc);
+
+      overlay.setAttribute("hidden", "");
+      overlay.classList.add("is-hidden");
+      overlay.style.display = "none";
+      overlay.style.pointerEvents = "none";
+      overlay.innerHTML = "";
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+
+      if (previousActive && typeof previousActive.focus === "function") {
+        try {
+          previousActive.focus();
+        } catch {}
+      }
     };
 
     const onEsc = (e) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
     };
 
-    closeBtn.addEventListener("click", close);
-    backdrop.addEventListener("click", close);
+    if (closeBtn) {
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        close();
+      });
+    }
+    if (backdrop) {
+      backdrop.addEventListener("click", (e) => {
+        e.stopPropagation();
+        close();
+      });
+    }
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        close();
+      }
+    });
     document.addEventListener("keydown", onEsc);
+
+    if (closeBtn && typeof closeBtn.focus === "function") {
+      setTimeout(() => {
+        try {
+          closeBtn.focus();
+        } catch {}
+      }, 50);
+    }
   }
 
   // Export sur window

@@ -5473,6 +5473,14 @@ header, main, section, footer { position: relative; z-index: 2; }
   padding: 1rem;
   box-sizing: border-box;
 }
+.lc-game-modal-overlay[hidden],
+.lc-game-modal-overlay.is-hidden,
+.lc-game-modal-overlay:empty {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
 .lc-game-modal-backdrop {
   position: absolute;
   inset: 0;
