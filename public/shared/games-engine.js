@@ -185,7 +185,18 @@
   }
 
   // Déclenchement d'une explosion de confettis DOM
-  function burstConfetti(container) {
+    // Échappement HTML sécurisé pour l'affichage des gains et motifs
+  function escapeHtml(str) {
+    if (str == null) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+function burstConfetti(container) {
     if (!container) return;
     const count = 30;
     const wrap = document.createElement("div");
@@ -326,6 +337,7 @@
 
       if (this.winCardElement) {
         this.winCardElement.hidden = false;
+        this.winCardElement.style.display = "block";
         this.winCardElement.className = "lc-game-win-card";
         this.winCardElement.innerHTML = `
           <div class="lc-win-badge">🎉 BRAVO, LOT REMPORTÉ !</div>
@@ -344,6 +356,7 @@
           replayBtn.addEventListener("click", () => {
             this.isWon = false;
             this.winCardElement.hidden = true;
+            this.winCardElement.style.display = "none";
             if (this.stageElement) {
               this.stageElement.style.display = "";
             }
@@ -367,6 +380,7 @@
 
       if (this.winCardElement) {
         this.winCardElement.hidden = false;
+        this.winCardElement.style.display = "block";
         this.winCardElement.className = "lc-game-win-card lc-loss-card";
         this.winCardElement.innerHTML = `
           <div class="lc-win-badge lc-loss-badge">❌ DÉFI NON VALIDÉ</div>
@@ -383,6 +397,7 @@
         if (replayBtn) {
           replayBtn.addEventListener("click", () => {
             this.winCardElement.hidden = true;
+            this.winCardElement.style.display = "none";
             if (this.stageElement) {
               this.stageElement.style.display = "";
             }
@@ -689,7 +704,7 @@
 
             if (i === 2) {
               setTimeout(() => {
-                this.triggerWin("TRIPLE JACKPOT 💎💎💎");
+                this.triggerWin(this.prize ? "TRIPLE JACKPOT 💎 · " + this.prize : "TRIPLE JACKPOT 💎💎💎");
               }, 500);
             }
           }, ms);
@@ -745,7 +760,7 @@
           if (isWin) {
             status.textContent = "🎉 TROUVÉ ! La pièce d'or était bien là !";
             setTimeout(() => {
-              this.triggerWin("Bonneteau Gagné · Pièce d'Or");
+              this.triggerWin(this.prize ? this.prize + " 🪙" : "Bonneteau Gagné · Pièce d'Or");
             }, 600);
           } else {
             if (cups[this.winningCup]) cups[this.winningCup].classList.add("lifted");
@@ -788,7 +803,7 @@
             if (other !== c) other.style.opacity = "0.4";
           });
           setTimeout(() => {
-            this.triggerWin("Carte Mystère Gagnante");
+            this.triggerWin(this.prize ? this.prize + " 🃏" : "Carte Mystère Gagnante");
           }, 700);
         });
       });
@@ -828,7 +843,7 @@
           });
 
           setTimeout(() => {
-            this.triggerWin("Trésor du Coffre Ouvert");
+            this.triggerWin(this.prize ? this.prize + " 🎁" : "Trésor du Coffre Ouvert");
           }, 700);
         });
       });
@@ -871,7 +886,7 @@
             dice.classList.add("bounced");
             dice.innerHTML = renderDiceSVG(6);
             setTimeout(() => {
-              this.triggerWin("Score Parfait 6 au Dé !");
+              this.triggerWin(this.prize ? this.prize + " 🎲 (Score 6)" : "Score Parfait 6 au Dé !");
             }, 600);
           }
         }, 75);
@@ -913,7 +928,7 @@
               a.classList.add("matched");
               b.classList.add("matched");
               setTimeout(() => {
-                this.triggerWin(`Paire Memory Gagnée (${a.dataset.sym})`);
+                this.triggerWin(this.prize ? `${this.prize} 🧠 (${a.dataset.sym})` : `Paire Memory Gagnée (${a.dataset.sym})`);
               }, 600);
             } else {
               hint.textContent = "Pas de chance... Nouvelle paire !";
@@ -963,7 +978,7 @@
         setTimeout(() => {
           drawnCard.classList.add("flipped");
           setTimeout(() => {
-            this.triggerWin("Carte As VIP Tirée");
+            this.triggerWin(this.prize ? this.prize + " ♠️" : "Carte As VIP Tirée");
           }, 700);
         }, 500);
       };
@@ -1019,7 +1034,7 @@
             botHand.textContent = moveIcons[botMove];
             status.textContent = "🎉 VICTOIRE ! Vous battez la machine !";
             setTimeout(() => {
-              this.triggerWin("Duel Remporté · Pierre-Feuille-Ciseaux");
+              this.triggerWin(this.prize ? this.prize + " ✌️" : "Duel Remporté · Pierre-Feuille-Ciseaux");
             }, 600);
           }, 900);
         });
@@ -1078,7 +1093,7 @@
           text.textContent = `⚡ ${elapsed} ms ! Réflexe d'éclair !`;
           sub.textContent = "Défi d'adresse validé avec succès.";
           setTimeout(() => {
-            this.triggerWin(`Réflexe Record : ${elapsed} ms`);
+            this.triggerWin(this.prize ? `${this.prize} ⚡ (${elapsed} ms)` : `Réflexe Record : ${elapsed} ms`);
           }, 600);
         }
       });
@@ -1132,7 +1147,7 @@
           btn.style.backgroundColor = "#d1fae5";
           btn.style.color = "#065f46";
           setTimeout(() => {
-            this.triggerWin("Précision Jauge 100%");
+            this.triggerWin(this.prize ? this.prize + " 🎯 (Précision 100%)" : "Précision Jauge 100%");
           }, 600);
         } else {
           needle.style.backgroundColor = "#ef4444";
@@ -1212,7 +1227,7 @@
                 hint.textContent = "✨ PUZZLE RÉSOLU ! Bravo !";
                 grid.classList.add("solved");
                 setTimeout(() => {
-                  this.triggerWin("Puzzle Reconstitué");
+                  this.triggerWin(this.prize ? this.prize + " 🧩" : "Puzzle Reconstitué");
                 }, 600);
               }
             }
@@ -1258,7 +1273,7 @@
             mysterySlot.classList.remove("mystery");
             mysterySlot.classList.add("solved");
             setTimeout(() => {
-              this.triggerWin("Mot Mystère Trouvé : CADEAU");
+              this.triggerWin(this.prize ? this.prize + " 🔤" : "Mot Mystère Trouvé : CADEAU");
             }, 600);
           } else {
             btn.style.opacity = "0.3";
@@ -1306,7 +1321,7 @@
         btn.disabled = true;
         btn.textContent = "🎯 C'est le JUSTE NOMBRE EXACT !";
         setTimeout(() => {
-          this.triggerWin(`Juste Nombre Trouvé (${range.value})`);
+          this.triggerWin(this.prize ? `${this.prize} 🔢 (${range.value})` : `Juste Nombre Trouvé (${range.value})`);
         }, 600);
       });
     }

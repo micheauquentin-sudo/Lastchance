@@ -1065,6 +1065,8 @@
             <!-- Rendu interactif réel animé par LC_GAMES_ENGINE -->
           </div>
 
+          <div class="kp-play-win-banner" id="kp-play-win-banner" style="display:none;background:#e6f9ef;color:#161317;border:2.5px solid #161317;border-radius:14px;padding:0.55rem 0.8rem;text-align:center;font-size:0.8rem;font-weight:800;margin:0.5rem 0;box-shadow:3px 3px 0 #161317;"></div>
+
           <small class="kp-play-footer" style="color:${subColor}">
             Limite : ${r.playLimit === "once" ? "1 participation par navigateur" : r.playLimit === "daily" ? "1 participation / jour / navigateur" : "1 participation / semaine"} · Code valable ${r.codeTtlDays}j
           </small>
@@ -1095,6 +1097,14 @@
         pointerColor: r.pointerColor,
         slotSymbols: r.slotSymbols,
         objectColor: r.objectColor,
+        onWin: (res) => {
+          const winBanner = $("#kp-play-win-banner", root);
+          if (winBanner) {
+            winBanner.style.display = "block";
+            winBanner.innerHTML = `🎉 <b>Gain débloqué : ${escapeHtml(res.prize)}</b> · Code caisse : <code style="background:#ffd93d;padding:0.1rem 0.35rem;border-radius:5px;border:1.5px solid #161317;font-weight:900;">${escapeHtml(res.code)}</code>`;
+            try { winBanner.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch {}
+          }
+        }
       });
     }
   }
