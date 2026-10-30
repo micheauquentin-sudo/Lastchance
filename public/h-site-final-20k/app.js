@@ -605,7 +605,7 @@
 
     const triggerHpPlayRound = () => {
       if (hpSim) {
-        const actionBtn = hpPhoneScreen ? hpPhoneScreen.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube") : null;
+        const actionBtn = hpPhoneScreen ? hpPhoneScreen.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube, .lc-rps-btn, .lc-memory-card") : null;
         if (actionBtn) {
           actionBtn.click();
         } else if (typeof hpSim.triggerWin === "function") {
@@ -696,6 +696,7 @@
             if (winBanner) {
               winBanner.style.display = "block";
               winBanner.innerHTML = `🎉 Gain : <b>${res.prize}</b> · Code caisse : <code style="background:#fcca59;padding:0.1rem 0.35rem;border-radius:5px;border:1px solid #211d16;">${res.code}</code>`;
+              try { winBanner.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch {}
             }
           }
         });
@@ -1089,7 +1090,7 @@
 
     if (jpPlayBtn) {
       jpPlayBtn.addEventListener("click", () => {
-        const actionBtn = jpPhoneStage ? jpPhoneStage.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube") : null;
+        const actionBtn = jpPhoneStage ? jpPhoneStage.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube, .lc-rps-btn, .lc-memory-card") : null;
         if (actionBtn) {
           actionBtn.click();
         } else if (jpSim) {

@@ -5922,3 +5922,8 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: #4f4739;
   margin: 0;
 }
+
+/* Bannière de gain pour l'aperçu /play du Studio */
+.kp-play-win-banner {
+  animation: lc-pop-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
