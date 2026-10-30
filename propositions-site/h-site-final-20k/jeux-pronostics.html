@@ -372,6 +372,132 @@
     <!-- ==========================================================
          4. PRONOSTICS : VRAIS EXEMPLES DE CHAMPIONNATS & ÉVÉNEMENTS
          ========================================================== -->
+    
+    <!-- ==========================================================
+         4. CALENDRIER SURPRISE : LE RENDEZ-VOUS QUOTIDIEN
+         ========================================================== -->
+    <section class="clog-cards-section" id="calendrier-surprise">
+      <div class="center">
+        <p class="section-script">le rituel d'assiduité qui fidélise chaque jour</p>
+        <h2 class="section-title">LE CALENDRIER SURPRISE <mark class="pop-mark pop-mark-yellow">AU QUOTIDIEN</mark></h2>
+        <p class="section-lead">
+          Créez un rendez-vous journalier sur le smartphone de vos clients : une case mystère à ouvrir chaque jour pour débloquer un cadeau, une remise ou un tour de roue.
+        </p>
+      </div>
+
+      <div class="cs-calendar-showcase">
+        <div class="cs-calendar-box">
+          <div class="cs-cal-head">
+            <div>
+              <span class="cs-cal-badge">✨ RITUEL DU JOUR</span>
+              <strong class="cs-cal-title">Calendrier des Surprises · Semaine en cours</strong>
+            </div>
+            <span class="cs-cal-date">Aujourd'hui · Case #3 active</span>
+          </div>
+
+          <div class="cs-days-grid" id="cs-days-grid">
+            <!-- Jour 1 (Déjà ouvert) -->
+            <div class="cs-day-card is-opened">
+              <span class="cs-day-num">J-1</span>
+              <div class="cs-day-content">
+                <span class="cs-day-icon">☕</span>
+                <span class="cs-day-label">Café offert</span>
+              </div>
+              <span class="cs-day-status">✓ Réclamé</span>
+            </div>
+
+            <!-- Jour 2 (Déjà ouvert) -->
+            <div class="cs-day-card is-opened">
+              <span class="cs-day-num">J-2</span>
+              <div class="cs-day-content">
+                <span class="cs-day-icon">🍪</span>
+                <span class="cs-day-label">Cookie gourmand</span>
+              </div>
+              <span class="cs-day-status">✓ Réclamé</span>
+            </div>
+
+            <!-- Jour 3 (Aujourd'hui - À ouvrir !) -->
+            <button type="button" class="cs-day-card is-today" id="cs-today-btn" title="Cliquez pour ouvrir votre case du jour !">
+              <span class="cs-day-num">J-3 · AUJOURD'HUI</span>
+              <div class="cs-day-content" id="cs-today-inner">
+                <span class="cs-day-icon cs-pulse-icon">🎁</span>
+                <span class="cs-day-label" style="font-weight:900;color:#e63946;">Ouvre-moi !</span>
+              </div>
+              <span class="cs-day-action-pill">▶ Découvrir mon cadeau</span>
+            </button>
+
+            <!-- Jour 4 (Verrouillé) -->
+            <div class="cs-day-card is-locked">
+              <span class="cs-day-num">J-4</span>
+              <div class="cs-day-content">
+                <span class="cs-day-icon">🔒</span>
+                <span class="cs-day-label">Demain</span>
+              </div>
+              <span class="cs-day-status">Rendez-vous à 8h</span>
+            </div>
+
+            <!-- Jour 5 (Verrouillé) -->
+            <div class="cs-day-card is-locked">
+              <span class="cs-day-num">J-5</span>
+              <div class="cs-day-content">
+                <span class="cs-day-icon">🔒</span>
+                <span class="cs-day-label">Après-demain</span>
+              </div>
+              <span class="cs-day-status">Bientôt</span>
+            </div>
+
+            <!-- Jour 6 (Palier d'assiduité) -->
+            <div class="cs-day-card is-jackpot">
+              <span class="cs-day-num">J-6 · SUPER LOT</span>
+              <div class="cs-day-content">
+                <span class="cs-day-icon">⭐</span>
+                <span class="cs-day-label">Cadeau Assiduité</span>
+              </div>
+              <span class="cs-day-status">Palier 6 jours</span>
+            </div>
+          </div>
+
+          <!-- Jauge d'assiduité -->
+          <div class="cs-progress-wrap">
+            <div class="cs-progress-head">
+              <span id="cs-progress-text"><b>Jauge d'assiduité :</b> 2 / 6 cases ouvertes (Ouvrez la case 3 !)</span>
+              <span class="cs-progress-pct" id="cs-progress-pct">33 %</span>
+            </div>
+            <div class="cs-progress-bar-bg">
+              <div class="cs-progress-bar-fill" id="cs-progress-bar" style="width: 33%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cs-perks-row">
+          <div class="cs-perk-card reveal">
+            <span class="cs-perk-emoji">📅</span>
+            <strong>Rendez-vous sans application</strong>
+            <p>Accessible au QR code ou sur l'écran d'accueil du client. Pas de mot de passe, un geste fluide chaque jour.</p>
+          </div>
+          <div class="cs-perk-card reveal">
+            <span class="cs-perk-emoji">🎡</span>
+            <strong>Cadeaux directs ou Tour de Roue</strong>
+            <p>Glissez ce que vous voulez dans les cases : réduction, douceur offerte ou un lancer offert sur votre Roue !</p>
+          </div>
+          <div class="cs-perk-card reveal">
+            <span class="cs-perk-emoji">🔒</span>
+            <strong>Horloge serveur infalsifiable</strong>
+            <p>Une seule ouverture par jour et par visiteur, validée par le serveur pour éviter toute triche.</p>
+          </div>
+        </div>
+
+        <div style="text-align:center;margin-top:1.6rem;">
+          <a class="ticket-btn pop-btn-yellow ticket-btn-large" href="studio.html?module=calendrier">
+            🛠️ Configurer mon Calendrier Surprise dans le Studio →
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Damier de transition -->
+    <div class="checker-strip" aria-hidden="true"></div>
+
     <section class="prono-showcase-section" id="pronostics-championnats">
       <div class="center">
         <p class="section-script">faites vibrer votre clientèle pendant toutes les grandes compétitions</p>

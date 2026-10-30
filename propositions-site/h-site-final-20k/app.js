@@ -539,8 +539,8 @@
     let hpTab = "ambiances";
     let hpPresetKey = drafts.roue.preset || "kermesse";
     let hpMechanic = drafts.roue.gameType || "wheel";
-    let hpWheelDeg = 0;
     let hpLastWin = null;
+    let hpSim = null;
 
     const getPresetByKey = (key) => {
       return (
@@ -604,25 +604,26 @@
     };
 
     const triggerHpPlayRound = () => {
-      const lots = drafts.roue.lots && drafts.roue.lots.length
-        ? drafts.roue.lots.filter((l) => l.isWinning)
-        : [
-            { label: "-15 % sur votre visite" },
-            { label: "Café ou Douceur offerte" },
-            { label: "Cadeau Découverte VIP" },
-          ];
-      const won = lots[Math.floor(Math.random() * lots.length)] || { label: "Cadeau surprise" };
-      const code = "LC-" + Math.random().toString(36).substring(2, 6).toUpperCase();
-      hpWheelDeg += 1080 + Math.floor(Math.random() * 360);
-      hpLastWin = { label: won.label, code };
-      renderHpPhone(true);
+      if (hpSim) {
+        const actionBtn = hpPhoneScreen ? hpPhoneScreen.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube") : null;
+        if (actionBtn) {
+          actionBtn.click();
+        } else if (typeof hpSim.triggerWin === "function") {
+          hpSim.triggerWin();
+        }
+      }
     };
 
     const renderHpPhone = () => {
       if (!hpPhoneScreen) return;
       const p = getPresetByKey(hpPresetKey);
-      const st = p.style || {};
-      const mech = C.INSTANT_MECHANICS.find((m) => m.key === hpMechanic) || C.INSTANT_MECHANICS[0];
+      const st = p ? (p.style || {}) : {};
+      const mech = (C.INSTANT_MECHANICS && C.INSTANT_MECHANICS.find((m) => m.key === hpMechanic)) || {
+        key: "wheel",
+        label: "Roue de la fortune",
+        emoji: "🎡",
+        family: "hasard"
+      };
       const isDark = st.pageTheme === "nuit" && !st.fond;
 
       if (st.fond) {
@@ -637,77 +638,68 @@
       }
       hpPhoneScreen.style.color = isDark ? "#ffffff" : "#211d16";
 
-      const cols = p.swatch && p.swatch.length >= 3
-        ? [p.swatch[0], p.swatch[1], p.swatch[2], "#99b7f5"]
-        : ["#fcca59", "#f296bd", "#99b7f5", "#267f53"];
-      const conic = cols
-        .map((c, i) => `${c} ${(i * 100) / cols.length}% ${((i + 1) * 100) / cols.length}%`)
-        .join(", ");
-
-      let stageVisual = "";
-      if (mech.key === "wheel") {
-        stageVisual = `
-          <div style="position:relative;width:190px;height:190px;margin:0.35rem auto;">
-            <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);z-index:3;font-size:1.45rem;filter:drop-shadow(0 2px 0 #211d16);">🔻</div>
-            <div id="hp-wheel-disc" style="width:100%;height:100%;border-radius:50%;background:conic-gradient(${conic});border:5px solid ${st.ringColor || "#211d16"};box-shadow:0 6px 0 rgba(0,0,0,0.35);transition:transform 0.9s cubic-bezier(0.2,0.9,0.25,1);transform:rotate(${hpWheelDeg}deg);display:grid;place-items:center;">
-              <div style="width:42px;height:42px;border-radius:50%;background:#fdf6e3;border:3px solid #211d16;display:grid;place-items:center;font-size:1rem;">🎡</div>
-            </div>
-          </div>
-        `;
-      } else if (mech.key === "slot") {
-        const syms = (C.SLOT_SYMBOL_SETS.fete || { symbols: ["🎪", "🎟️", "🍭"] }).symbols;
-        stageVisual = `
-          <div style="display:flex;gap:0.45rem;justify-content:center;margin:0.8rem 0;">
-            <div style="width:58px;height:66px;border-radius:14px;background:#fff;border:3px solid #211d16;box-shadow:3px 3px 0 #211d16;display:grid;place-items:center;font-size:1.85rem;">${syms[0]}</div>
-            <div style="width:58px;height:66px;border-radius:14px;background:${cols[0]};border:3px solid #211d16;box-shadow:3px 3px 0 #211d16;display:grid;place-items:center;font-size:1.85rem;">${hpLastWin ? syms[0] : syms[1]}</div>
-            <div style="width:58px;height:66px;border-radius:14px;background:#fff;border:3px solid #211d16;box-shadow:3px 3px 0 #211d16;display:grid;place-items:center;font-size:1.85rem;">${hpLastWin ? syms[0] : syms[2]}</div>
-          </div>
-        `;
-      } else {
-        stageVisual = `
-          <div style="background:rgba(255,255,255,0.94);color:#211d16;border:3px solid #211d16;border-radius:18px;padding:1rem;margin:0.5rem 0;text-align:center;box-shadow:4px 4px 0 #211d16;">
-            <div style="font-size:2.4rem;line-height:1;">${mech.emoji}</div>
-            <strong style="display:block;font:900 0.95rem var(--display);margin-top:0.3rem;">${mech.label}</strong>
-            <small style="font-size:0.75rem;font-weight:700;color:#4f4739;">${mech.desc}</small>
-          </div>
-        `;
-      }
+      const themeBadgeColor = (p && p.swatch && p.swatch[0]) || "#fcca59";
 
       hpPhoneScreen.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.92);color:#211d16;padding:0.45rem 0.7rem;border-radius:12px;border:2px solid #211d16;font-size:0.74rem;font-weight:800;">
-          <span>Thème : ${p.label}</span>
-          <span style="background:${cols[0]};color:#211d16;padding:0.12rem 0.45rem;border-radius:999px;border:1.5px solid #211d16;">/play</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.92);color:#211d16;padding:0.4rem 0.65rem;border-radius:12px;border:2px solid #211d16;font-size:0.72rem;font-weight:800;margin-bottom:0.35rem;">
+          <span>Thème : ${p ? p.label : "Kermesse"}</span>
+          <span style="background:${themeBadgeColor};color:#211d16;padding:0.1rem 0.45rem;border-radius:999px;border:1.5px solid #211d16;font-size:0.68rem;">/play direct</span>
         </div>
 
-        <div style="text-align:center;background:rgba(255,255,255,0.9);color:#211d16;padding:0.6rem 0.75rem;border-radius:14px;border:2px solid #211d16;">
-          <small style="font:800 0.66rem var(--body);text-transform:uppercase;color:#267f53;">${mech.family === "adresse" ? "🎯 Défi d'adresse + Tirage" : "🎲 Jeu de hasard instantané"}</small>
-          <strong style="display:block;font:900 1.02rem var(--display);">${drafts.vitrine.nom || "Votre Établissement"}</strong>
-          <span style="font-size:0.76rem;font-weight:700;">${drafts.roue.name || "Tentez votre chance !"}</span>
+        <div style="text-align:center;background:rgba(255,255,255,0.92);color:#211d16;padding:0.45rem 0.65rem;border-radius:14px;border:2px solid #211d16;margin-bottom:0.45rem;">
+          <small style="font:800 0.64rem var(--body);text-transform:uppercase;color:#267f53;">${mech.family === "adresse" ? "🎯 Défi d'adresse + Tirage" : "🎲 Jeu de hasard instantané"}</small>
+          <strong style="display:block;font:900 0.98rem var(--display);line-height:1.2;">${drafts.vitrine.nom || "Votre Établissement"}</strong>
+          <span style="font-size:0.74rem;font-weight:700;">${drafts.roue.name || "Tentez votre chance !"}</span>
         </div>
 
-        ${stageVisual}
+        <div id="hp-live-stage" style="width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:260px;"></div>
 
-        <button type="button" class="k-btn k-btn-yellow k-btn-full" id="hp-phone-spin-btn" style="margin-top:auto;background:linear-gradient(135deg, ${st.buttonFrom || "#f5793b"}, ${st.buttonTo || "#fcca59"});color:#ffffff;">
-          ▶ ${hpLastWin ? "Rejouer un tour !" : `Jouer (${mech.label})`}
-        </button>
-
-        ${
-          hpLastWin
-            ? `
-          <div style="background:#e6f9ef;color:#211d16;border:2px solid #211d16;border-radius:12px;padding:0.55rem 0.7rem;text-align:center;font-size:0.76rem;font-weight:800;box-shadow:2px 2px 0 #211d16;">
-            🎉 Gain : <b>${hpLastWin.label}</b> · Code caisse : <code style="background:#fcca59;padding:0.1rem 0.35rem;border-radius:5px;border:1px solid #211d16;">${hpLastWin.code}</code>
-          </div>
-        `
-            : `
-          <div style="background:rgba(255,255,255,0.88);color:#211d16;border:1.5px solid #211d16;border-radius:10px;padding:0.4rem 0.6rem;text-align:center;font-size:0.71rem;font-weight:700;">
-            💡 Cliquez sur les 18 thèmes à gauche pendant que vous jouez !
-          </div>
-        `
-        }
+        <div id="hp-win-banner" style="${hpLastWin ? "" : "display:none;"}background:#e6f9ef;color:#211d16;border:2px solid #211d16;border-radius:12px;padding:0.45rem 0.65rem;text-align:center;font-size:0.75rem;font-weight:800;box-shadow:2px 2px 0 #211d16;margin-top:0.4rem;">
+          ${hpLastWin ? `🎉 Gain : <b>${hpLastWin.label}</b> · Code caisse : <code style="background:#fcca59;padding:0.1rem 0.35rem;border-radius:5px;border:1px solid #211d16;">${hpLastWin.code}</code>` : ""}
+        </div>
       `;
 
-      const spinBtn = $("#hp-phone-spin-btn", hpPhoneScreen);
-      if (spinBtn) spinBtn.addEventListener("click", triggerHpPlayRound);
+      if (hpSim) {
+        hpSim.destroy();
+        hpSim = null;
+      }
+
+      const stageEl = $("#hp-live-stage", hpPhoneScreen);
+      const winBanner = $("#hp-win-banner", hpPhoneScreen);
+      const GE = window.LC_GAMES_ENGINE;
+
+      if (stageEl && GE && typeof GE.createSimulator === "function") {
+        const prizeLabel = (drafts.roue.lots && drafts.roue.lots[0] && drafts.roue.lots[0].label) || "-15 % sur votre visite 🎁";
+        const lots = (drafts.roue.lots && drafts.roue.lots.length >= 4)
+          ? drafts.roue.lots
+          : [
+              { label: "-15 % sur votre visite", color: "#fcca59" },
+              { label: "Café gourmand offert", color: "#ff8fa3" },
+              { label: "1 Boisson au choix", color: "#6ec1e4" },
+              { label: "Dessert maison", color: "#80ed99" },
+              { label: "Cadeau Découverte VIP", color: "#ffd166" },
+              { label: "Ticket Or VIP", color: "#c77dff" },
+            ];
+
+        hpSim = GE.createSimulator(stageEl, {
+          gameKey: hpMechanic,
+          prize: prizeLabel,
+          lots: lots,
+          ringColor: st.ringColor || "#211d16",
+          pointerColor: st.pointerColor || "#f5793b",
+          buttonStyle: {
+            background: `linear-gradient(135deg, ${st.buttonFrom || "#f5793b"}, ${st.buttonTo || "#fcca59"})`,
+            color: "#ffffff"
+          },
+          onWin: (res) => {
+            hpLastWin = { label: res.prize, code: res.code };
+            if (winBanner) {
+              winBanner.style.display = "block";
+              winBanner.innerHTML = `🎉 Gain : <b>${res.prize}</b> · Code caisse : <code style="background:#fcca59;padding:0.1rem 0.35rem;border-radius:5px;border:1px solid #211d16;">${res.code}</code>`;
+            }
+          }
+        });
+      }
     };
 
     const openHeroPlayModal = () => {
@@ -1333,6 +1325,45 @@
         }
       });
     }
+  }
+
+  
+  /* ── 6B. INTERACTIVITÉ DU CALENDRIER SURPRISE (jeux-pronostics.html) ── */
+  const csTodayBtn = $("#cs-today-btn");
+  if (csTodayBtn) {
+    let csOpened = false;
+    csTodayBtn.addEventListener("click", () => {
+      if (csOpened) return;
+      csOpened = true;
+      csTodayBtn.classList.remove("is-today");
+      csTodayBtn.classList.add("is-opened");
+      csTodayBtn.disabled = true;
+
+      const inner = $("#cs-today-inner", csTodayBtn);
+      const actionPill = csTodayBtn.querySelector(".cs-day-action-pill");
+      if (inner) {
+        inner.innerHTML = `
+          <span class="cs-day-icon">🎡</span>
+          <span class="cs-day-label" style="font-weight:900;color:#1b7a43;">Tour de Roue VIP offert !</span>
+        `;
+      }
+      if (actionPill) {
+        actionPill.outerHTML = `<span class="cs-day-status" style="color:#1b7a43;font-weight:800;">✓ Réclamé (Code : LC-CAL7)</span>`;
+      }
+
+      const progressText = $("#cs-progress-text");
+      const progressPct = $("#cs-progress-pct");
+      const progressBar = $("#cs-progress-bar");
+
+      if (progressText) progressText.innerHTML = `<b>Jauge d'assiduité :</b> 3 / 6 cases ouvertes (50 % - Bravo !)`;
+      if (progressPct) progressPct.textContent = "50 %";
+      if (progressBar) progressBar.style.width = "50%";
+
+      const GE = window.LC_GAMES_ENGINE;
+      if (GE && typeof GE.burstConfetti === "function") {
+        GE.burstConfetti(csTodayBtn);
+      }
+    });
   }
 
   /* ── 7. INTERACTIVITÉ DE LA PAGE FIDÉLITÉ, PARRAINAGE & JACKPOT + 10 FONDS FOND_KEYS ── */

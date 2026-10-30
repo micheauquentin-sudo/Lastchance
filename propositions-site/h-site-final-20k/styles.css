@@ -590,15 +590,15 @@ header, main, section, footer { position: relative; z-index: 2; }
 .qr-cartoon-3d-block {
   position: relative;
   display: block;
-  width: 184px;
-  height: 184px;
+  width: 228px;
+  height: 228px;
   background: #ffffff;
-  border: 3.5px solid var(--ink);
-  border-radius: 28px;
-  padding: 9px;
+  border: 4px solid var(--ink);
+  border-radius: 32px;
+  padding: 12px;
   box-shadow:
-    0 10px 0 var(--ink),
-    0 18px 34px rgba(22, 19, 23, 0.24);
+    0 12px 0 var(--ink),
+    0 22px 38px rgba(22, 19, 23, 0.25);
   transition: transform 0.25s var(--spring), box-shadow 0.25s ease;
   cursor: pointer;
 }
@@ -612,7 +612,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 18px;
+  border-radius: 20px;
   overflow: hidden;
   background: #ffffff;
 }
@@ -627,15 +627,15 @@ header, main, section, footer { position: relative; z-index: 2; }
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: var(--yellow);
-  border: 3px solid var(--ink);
-  box-shadow: 0 3px 0 var(--ink);
+  border: 3.5px solid var(--ink);
+  box-shadow: 0 4px 0 var(--ink);
   display: grid;
   place-items: center;
-  font-size: 1.2rem;
+  font-size: 1.45rem;
 }
 
 /* Pilules de sÃ©lection du QR Code immersif */
@@ -4620,7 +4620,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================================
-   MOTEUR DE JEUX INTERACTIFS RÉELS (15 MÉCANIQUES & MODALE D'APERÇU)
+   MOTEUR DE JEUX INTERACTIFS Rï¿½ELS (15 Mï¿½CANIQUES & MODALE D'APERï¿½U)
    ========================================================================== */
 .lc-sim-root {
   width: 100%;
@@ -4717,7 +4717,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   text-align: center;
 }
 
-/* -- ÉCRAN DE GAIN / COUPON -- */
+/* -- ï¿½CRAN DE GAIN / COUPON -- */
 .lc-game-win-card {
   width: 100%;
   background: linear-gradient(135deg, #fffbeb, #fef3c7);
@@ -4835,7 +4835,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   filter: drop-shadow(0 6px 12px rgba(0,0,0,0.18));
 }
 
-/* -- JEU 2 : CARTE À GRATTER -- */
+/* -- JEU 2 : CARTE ï¿½ GRATTER -- */
 .lc-scratch-wrap {
   position: relative;
   width: 100%;
@@ -4875,7 +4875,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   touch-action: none;
 }
 
-/* -- JEU 3 : MACHINE À SOUS -- */
+/* -- JEU 3 : MACHINE ï¿½ SOUS -- */
 .lc-slot-machine {
   display: flex;
   align-items: center;
@@ -4991,7 +4991,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 @keyframes lc-shuffle-2 { 0% { transform: translateX(0); } 100% { transform: translateX(-80px); } }
 @keyframes lc-shuffle-3 { 0% { transform: translateX(0); } 100% { transform: translateX(-80px); } }
 
-/* -- JEU 5 : CARTE RETOURNÉE -- */
+/* -- JEU 5 : CARTE RETOURNï¿½E -- */
 .lc-cards-3d-arena {
   display: flex;
   gap: 0.65rem;
@@ -5066,7 +5066,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: var(--ink);
 }
 
-/* -- JEU 7 : LANCER DE DÉ -- */
+/* -- JEU 7 : LANCER DE Dï¿½ -- */
 .lc-dice-arena {
   display: grid;
   place-items: center;
@@ -5232,7 +5232,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   100% { transform: translateY(6px) rotate(8deg); }
 }
 
-/* -- JEU 11 : RÉFLEXE -- */
+/* -- JEU 11 : Rï¿½FLEXE -- */
 .lc-reflex-pad {
   width: 100%;
   max-width: 270px;
@@ -5275,7 +5275,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   margin-top: 0.2rem;
 }
 
-/* -- JEU 12 : JAUGE À ARRÊTER -- */
+/* -- JEU 12 : JAUGE ï¿½ ARRï¿½TER -- */
 .lc-gauge-arena {
   width: 100%;
   max-width: 270px;
@@ -5353,7 +5353,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   border-color: #10b981;
 }
 
-/* -- JEU 14 : MOT MYSTÈRE -- */
+/* -- JEU 14 : MOT MYSTï¿½RE -- */
 .lc-word-clue {
   background: #fff;
   border: 2px dashed var(--ink);
@@ -5462,7 +5462,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   margin-top: 0.3rem;
 }
 
-/* -- MODALE D'APERÇU PLEIN ÉCRAN POUR LES 15 JEUX -- */
+/* -- MODALE D'APERï¿½U PLEIN ï¿½CRAN POUR LES 15 JEUX -- */
 .lc-game-modal-overlay {
   position: fixed;
   inset: 0;
@@ -5722,4 +5722,203 @@ header, main, section, footer { position: relative; z-index: 2; }
   border-radius: 24px !important;
   overflow: hidden !important;
   padding-bottom: 0.8rem !important;
+}
+
+
+/* ============================================================
+   CALENDRIER SURPRISE â€” STYLES & INTERACTION
+   ============================================================ */
+.cs-calendar-showcase {
+  max-width: 980px;
+  margin: 2rem auto 0;
+}
+.cs-calendar-box {
+  background: #ffffff;
+  border: 3.5px solid var(--ink);
+  border-radius: 28px;
+  padding: 1.8rem 1.6rem 2rem;
+  box-shadow: 8px 8px 0 var(--ink);
+  margin-bottom: 2rem;
+}
+.cs-cal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  padding-bottom: 1.2rem;
+  border-bottom: 2.5px dashed rgba(22, 19, 23, 0.2);
+  margin-bottom: 1.4rem;
+}
+.cs-cal-badge {
+  display: inline-block;
+  background: var(--yellow);
+  color: var(--ink);
+  font: 800 0.72rem var(--body);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25em 0.7em;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  margin-bottom: 0.35rem;
+}
+.cs-cal-title {
+  display: block;
+  font: 900 1.25rem var(--display);
+  color: var(--ink);
+}
+.cs-cal-date {
+  font: 800 0.82rem var(--body);
+  background: #e6f9ef;
+  color: #1b7a43;
+  padding: 0.4em 0.9em;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.cs-days-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1.6rem;
+}
+.cs-day-card {
+  position: relative;
+  background: #fdfcf7;
+  border: 2.5px solid var(--ink);
+  border-radius: 18px;
+  padding: 0.9rem 0.6rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 140px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.cs-day-card.is-opened {
+  background: #f0fbf4;
+  border-color: #1b7a43;
+}
+.cs-day-card.is-locked {
+  background: #f8f6f0;
+  border-style: dashed;
+  opacity: 0.8;
+}
+.cs-day-card.is-today {
+  background: #fff8d6;
+  border: 3px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+  cursor: pointer;
+  animation: todayCardGlow 2.5s infinite alternate ease-in-out;
+}
+@keyframes todayCardGlow {
+  0% { transform: translateY(0); box-shadow: 5px 5px 0 var(--ink); }
+  100% { transform: translateY(-4px); box-shadow: 7px 9px 0 var(--ink); }
+}
+.cs-day-card.is-jackpot {
+  background: linear-gradient(135deg, #fff3d1, #fde49e);
+  border: 2.5px solid var(--ink);
+}
+.cs-day-num {
+  font: 800 0.68rem var(--body);
+  color: #655b76;
+  text-transform: uppercase;
+}
+.cs-day-content {
+  margin: 0.4rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+.cs-day-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+.cs-pulse-icon {
+  display: inline-block;
+  animation: pulseIcon 1.2s infinite ease-in-out;
+}
+@keyframes pulseIcon {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+.cs-day-label {
+  font: 800 0.82rem var(--body);
+  color: var(--ink);
+  line-height: 1.2;
+}
+.cs-day-status {
+  font: 700 0.66rem var(--body);
+  color: #655b76;
+}
+.cs-day-action-pill {
+  background: #e63946;
+  color: #ffffff;
+  font: 900 0.65rem var(--body);
+  padding: 0.3em 0.6em;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  margin-top: 0.2rem;
+}
+.cs-progress-wrap {
+  background: #fdf6e3;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  padding: 0.8rem 1rem;
+}
+.cs-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.84rem;
+  margin-bottom: 0.5rem;
+}
+.cs-progress-pct {
+  font: 900 0.95rem var(--display);
+  color: #1b7a43;
+}
+.cs-progress-bar-bg {
+  width: 100%;
+  height: 14px;
+  background: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.cs-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffd93d, #05d38a);
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+.cs-perks-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.2rem;
+}
+.cs-perk-card {
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 20px;
+  padding: 1.4rem 1.2rem;
+  box-shadow: 5px 5px 0 var(--ink);
+  text-align: left;
+}
+.cs-perk-emoji {
+  font-size: 2.2rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.cs-perk-card strong {
+  display: block;
+  font: 900 1.05rem var(--display);
+  margin-bottom: 0.4rem;
+}
+.cs-perk-card p {
+  font: 600 0.86rem/1.45 var(--body);
+  color: #4f4739;
+  margin: 0;
 }
