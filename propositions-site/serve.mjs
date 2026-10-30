@@ -28,6 +28,18 @@ const server = http.createServer((req, res) => {
     filePath = filePath + ".html";
   }
 
+  // Fallback vers h-site-final-20k si le fichier n'est pas trouvé à la racine ou chemin legacy
+  if (!fs.existsSync(filePath)) {
+    const baseName = path.basename(filePath);
+    const candidateH = path.join(__dirname, "h-site-final-20k", baseName);
+    const candidateHHourly = path.join(__dirname, "h-site-final-20k", baseName + ".html");
+    if (fs.existsSync(candidateH) && !fs.statSync(candidateH).isDirectory()) {
+      filePath = candidateH;
+    } else if (fs.existsSync(candidateHHourly)) {
+      filePath = candidateHHourly;
+    }
+  }
+
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
     res.end("<h1>404 Not Found</h1><p>Page non trouvée. <a href='/'>Retour aux propositions</a></p>");

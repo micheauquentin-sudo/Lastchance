@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <base href="/h-site-final-20k/" />
+  <title>Roue de la Fortune — Lastchance</title>
+  <meta name="description" content="Tournez la roue sans installer d'application et remportez votre lot au comptoir." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800;900&family=Caveat:wght@700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #161317;
+      --yellow: #ffd000;
+      --pink: #ff358b;
+      --mint: #05d38a;
+      --sky: #389bff;
+      --border: 3px solid var(--ink);
+      --shadow: 5px 5px 0 var(--ink);
+      --shadow-lg: 8px 8px 0 var(--ink);
+      --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Manrope", system-ui, sans-serif;
+      background: #0d1b2a url("img/pixar_clouds.jpg") no-repeat center top / cover;
+      min-height: 100vh;
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1rem 1rem 3rem;
+      position: relative;
+      overflow-x: hidden;
+    }
+    .overlay-backdrop {
+      position: fixed; inset: 0;
+      background: linear-gradient(180deg, rgba(13,27,42,0.3) 0%, rgba(255,250,242,0.85) 60%, rgba(255,250,242,0.98) 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Fanions supérieurs */
+    .bunting-row {
+      position: relative; z-index: 2;
+      display: flex; gap: 10px; margin-bottom: 1.2rem;
+    }
+    .flag {
+      width: 22px; height: 30px;
+      clip-path: polygon(0 0, 100% 0, 50% 100%);
+      border: 2px solid var(--ink);
+    }
+    .f-pink { background: var(--pink); }
+    .f-yellow { background: var(--yellow); }
+    .f-mint { background: var(--mint); }
+    .f-sky { background: var(--sky); }
+
+    .game-shell {
+      position: relative; z-index: 3;
+      max-width: 440px; width: 100%;
+      background: #ffffff;
+      border: var(--border);
+      border-radius: 32px;
+      box-shadow: var(--shadow-lg);
+      padding: 1.8rem 1.4rem 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin: auto 0;
+    }
+
+    .shop-badge {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font: 800 0.78rem var(--body);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      background: var(--yellow);
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      padding: 0.35em 0.9em;
+      box-shadow: 2px 2px 0 var(--ink);
+      margin-bottom: 0.8rem;
+    }
+    h1 {
+      font-family: "Unbounded", sans-serif;
+      font-size: 1.7rem;
+      line-height: 1.15;
+      margin-bottom: 0.4rem;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      font-size: 0.92rem;
+      color: #4a3e5c;
+      margin-bottom: 1.4rem;
+      font-weight: 600;
+    }
+
+    /* Boîte de la roue */
+    .wheel-arena {
+      position: relative;
+      width: min(320px, 82vw);
+      aspect-ratio: 1;
+      margin: 0 auto 1.6rem;
+      display: grid;
+      place-items: center;
+    }
+    .pin-flapper {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: 0; height: 0;
+      border-left: 16px solid transparent;
+      border-right: 16px solid transparent;
+      border-top: 30px solid var(--ink);
+      filter: drop-shadow(0 3px 0 rgba(0,0,0,0.3));
+      transform-origin: 50% 0;
+    }
+    .pin-flapper.tick {
+      animation: flapperBounce 0.12s ease-in-out;
+    }
+    @keyframes flapperBounce {
+      0% { transform: translateX(-50%) rotate(0deg); }
+      50% { transform: translateX(-50%) rotate(-18deg); }
+      100% { transform: translateX(-50%) rotate(0deg); }
+    }
+
+    .svg-wheel {
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      filter: drop-shadow(6px 6px 0 var(--ink));
+      transition: transform 4.4s cubic-bezier(0.12, 0.7, 0.16, 1);
+    }
+    .svg-wheel text {
+      font-family: "Unbounded", sans-serif;
+      font-weight: 800;
+      font-size: 8.5px;
+      fill: var(--ink);
+    }
+
+    /* Bouton Lancer */
+    .spin-cta {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.6em;
+      font: 900 1.15rem/1 "Unbounded", sans-serif;
+      background: var(--pink); color: #ffffff;
+      padding: 1.1em 2em;
+      border: var(--border);
+      border-radius: 999px;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      width: 100%;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      transition: transform 0.2s var(--spring), box-shadow 0.2s ease;
+    }
+    .spin-cta:hover:not(:disabled) {
+      transform: translate(-2px, -3px);
+      box-shadow: 7px 7px 0 var(--ink);
+      background: #ff1f7d;
+    }
+    .spin-cta:disabled {
+      opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: var(--shadow);
+    }
+
+    .rule-note {
+      font-size: 0.8rem;
+      color: #635875;
+      margin-top: 1rem;
+      font-weight: 600;
+    }
+
+    /* Modal / Ticket de gain */
+    .win-modal {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(22, 19, 23, 0.75);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 1.2rem;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .win-modal.active { opacity: 1; pointer-events: auto; }
+    .ticket-win-card {
+      background: #ffffff;
+      border: 4px solid var(--ink);
+      border-radius: 28px;
+      box-shadow: 10px 10px 0 var(--ink);
+      padding: 2.2rem 1.6rem;
+      max-width: 400px; width: 100%;
+      text-align: center;
+      position: relative;
+      animation: popModal 0.45s var(--spring);
+    }
+    @keyframes popModal {
+      from { transform: scale(0.8) translateY(20px); }
+      to { transform: scale(1) translateY(0); }
+    }
+    .confetti-badge {
+      font-size: 2.5rem; margin-bottom: 0.4rem;
+    }
+    .win-headline {
+      font: 900 1.6rem/1.1 "Unbounded", sans-serif;
+      margin-bottom: 0.8rem;
+    }
+    .win-lot-box {
+      background: var(--yellow);
+      border: 3px solid var(--ink);
+      border-radius: 16px;
+      padding: 1.1rem;
+      font: 900 1.35rem/1.2 "Unbounded", sans-serif;
+      margin: 1rem 0;
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+    .caisse-code-row {
+      margin: 1.2rem 0;
+      font-size: 0.95rem; font-weight: 700;
+    }
+    .caisse-code {
+      display: block;
+      font: 900 2.2rem "Unbounded", sans-serif;
+      letter-spacing: 0.08em;
+      color: var(--pink);
+      background: #fff3f8;
+      border: 2px dashed var(--pink);
+      border-radius: 12px;
+      padding: 0.3em;
+      margin-top: 0.4rem;
+    }
+    .ticket-actions-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      margin-top: 1.2rem;
+    }
+    .btn-secondary-action {
+      display: block;
+      padding: 0.7em 1.2em;
+      font: 800 0.85rem "Manrope", sans-serif;
+      color: var(--ink);
+      background: #fdf6e3;
+      border: 2px solid var(--ink);
+      border-radius: 12px;
+      text-decoration: none;
+      box-shadow: 2px 2px 0 var(--ink);
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .btn-secondary-action:hover {
+      background: var(--yellow);
+    }
+    .btn-return {
+      display: inline-block;
+      margin-top: 0.8rem;
+      font: 800 0.88rem "Manrope", sans-serif;
+      color: var(--ink);
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    /* Confettis canvas */
+    #confetti-canvas {
+      position: fixed; inset: 0; pointer-events: none; z-index: 40;
+    }
+
+    .back-home {
+      position: relative; z-index: 3;
+      margin-top: 1.5rem;
+      font: 800 0.88rem "Manrope", sans-serif;
+      color: #161317;
+      text-decoration: none;
+      background: #ffffff;
+      padding: 0.6em 1.3em;
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      box-shadow: 3px 3px 0 var(--ink);
+    }
+    .back-home:hover { background: var(--yellow); }
+  </style>
+</head>
+<body>
+  <div class="overlay-backdrop"></div>
+  <canvas id="confetti-canvas"></canvas>
+
+  <div class="bunting-row" aria-hidden="true">
+    <span class="flag f-pink"></span>
+    <span class="flag f-yellow"></span>
+    <span class="flag f-mint"></span>
+    <span class="flag f-sky"></span>
+    <span class="flag f-pink"></span>
+    <span class="flag f-yellow"></span>
+    <span class="flag f-mint"></span>
+    <span class="flag f-sky"></span>
+  </div>
+
+  <main class="game-shell">
+    <div class="shop-badge">✦ Votre commerce en fête ✦</div>
+    <h1>LA ROUE DE LA FORTUNE</h1>
+    <p class="subtitle">Tournez la roue sans installer d'application et tentez de remporter un lot au comptoir !</p>
+
+    <div class="wheel-arena">
+      <div class="pin-flapper" id="flapper" aria-hidden="true"></div>
+      <svg id="roue-svg" class="svg-wheel" viewBox="-115 -115 230 230" role="img" aria-label="Roue du jeu"></svg>
+    </div>
+
+    <button class="spin-cta" id="btn-spin" type="button">TOURNER LA ROUE !</button>
+    <p class="rule-note">1 chance par client · Lot vérifié en caisse avec code unique</p>
+  </main>
+
+  <a class="back-home" href="index.html">← Découvrir la plateforme Lastchance</a>
+
+  <!-- MODAL DE GAIN -->
+  <div class="win-modal" id="win-modal" role="dialog" aria-modal="true" aria-labelledby="win-title">
+    <div class="ticket-win-card">
+      <div class="confetti-badge" aria-hidden="true">🎉</div>
+      <h2 class="win-headline" id="win-title">FÉLICITATIONS !</h2>
+      <p style="font-size:0.95rem;font-weight:600">Vous remportez votre récompense :</p>
+      
+      <div class="win-lot-box" id="win-lot-label">Un café offert</div>
+
+      <div class="caisse-code-row">
+        <span>Présentez ce code en caisse :</span>
+        <strong class="caisse-code" id="win-lot-code">LC-8F42</strong>
+      </div>
+      
+      <p style="font-size:0.8rem;color:#655b76">Votre commerçant vérifiera ce code unique pour vous remettre votre cadeau immédiatement.</p>
+
+      <div class="ticket-actions-col">
+        <a class="btn-secondary-action" href="fidelite-communaute.html#simulateur-trio">
+          🛂 Conserver dans mon Passeport Fidélité (Google Wallet) →
+        </a>
+        <button type="button" class="btn-secondary-action" id="btn-share-game">
+          🎁 Partager la roue avec un proche
+        </button>
+        <button class="spin-cta" style="background:var(--yellow);color:var(--ink);" id="btn-close-modal" type="button">
+          Rejouer un tour de démo
+        </button>
+      </div>
+
+      <a class="btn-return" href="index.html">Retour à l'accueil</a>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const LOTS = [
+        { t: "Café offert", c: "#ff358b" },
+        { t: "-15% addition", c: "#ffd000" },
+        { t: "Dessert maison", c: "#9d6fff" },
+        { t: "Boisson fraîche", c: "#05d38a" },
+        { t: "Cookie gourmand", c: "#ff6b35" },
+        { t: "Ticket Or VIP", c: "#389bff" },
+        { t: "Cadeau surprise", c: "#ffd000" },
+        { t: "Douceur du chef", c: "#ff358b" }
+      ];
+
+      const svg = document.getElementById("roue-svg");
+      const flapper = document.getElementById("flapper");
+      const btn = document.getElementById("btn-spin");
+      const modal = document.getElementById("win-modal");
+      const lotLabel = document.getElementById("win-lot-label");
+      const lotCode = document.getElementById("win-lot-code");
+      const btnClose = document.getElementById("btn-close-modal");
+      const btnShare = document.getElementById("btn-share-game");
+
+      const n = LOTS.length, step = 360 / n, R = 100;
+      const pt = (a, r = R) => [r * Math.cos(((a - 90) * Math.PI) / 180), r * Math.sin(((a - 90) * Math.PI) / 180)];
+
+      let svgHtml = "";
+      
+      // Anneau extérieur avec lumières incandescentes (style codebase Kermesse / wheel-svg.tsx)
+      svgHtml += `<circle cx="0" cy="0" r="108" fill="none" stroke="#161317" stroke-width="7"/>`;
+      svgHtml += `<circle cx="0" cy="0" r="104" fill="none" stroke="#ffd000" stroke-width="3"/>`;
+      
+      const bulbCount = 20;
+      for (let b = 0; b < bulbCount; b++) {
+        const [bx, by] = pt(b * (360 / bulbCount), 104);
+        const bulbCol = (b % 2 === 0) ? "#ffffff" : "#fff3a8";
+        svgHtml += `<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="2.8" fill="${bulbCol}" stroke="#161317" stroke-width="1.2"/>`;
+      }
+
+      // Segments
+      LOTS.forEach((l, i) => {
+        const a0 = i * step, a1 = a0 + step;
+        const [x0, y0] = pt(a0), [x1, y1] = pt(a1);
+        svgHtml += `<path d="M0 0 L${x0.toFixed(1)} ${y0.toFixed(1)} A${R} ${R} 0 0 1 ${x1.toFixed(1)} ${y1.toFixed(1)} Z" fill="${l.c}" stroke="#161317" stroke-width="2.8"/>`;
+        const mid = a0 + step / 2, [tx, ty] = pt(mid, 62);
+        svgHtml += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" transform="rotate(${mid.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})">${l.t}</text>`;
+      });
+
+      // Bordure intérieure et Moyeu central
+      svgHtml += `<circle r="${R}" fill="none" stroke="#161317" stroke-width="3"/>`;
+      svgHtml += `<circle r="16" fill="#fdf6e3" stroke="#161317" stroke-width="3.5"/>`;
+      svgHtml += `<circle r="6" fill="#e63946"/>`;
+      svg.innerHTML = svgHtml;
+
+      let rot = 0, isSpinning = false;
+      btn.addEventListener("click", () => {
+        if (isSpinning) return;
+        isSpinning = true;
+        btn.disabled = true;
+        btn.textContent = "LA ROUE TOURNE...";
+
+        const winIndex = Math.floor(Math.random() * n);
+        const target = 360 - (winIndex * step + step / 2);
+        rot += 360 * 6 + ((target - (rot % 360)) + 360) % 360;
+        svg.style.transform = `rotate(${rot}deg)`;
+
+        // Animation du flapper
+        const tickInterval = setInterval(() => {
+          flapper.classList.add("tick");
+          setTimeout(() => flapper.classList.remove("tick"), 60);
+        }, 120);
+
+        setTimeout(() => {
+          clearInterval(tickInterval);
+          isSpinning = false;
+          lotLabel.textContent = LOTS[winIndex].t;
+          const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+          lotCode.textContent = "LC-" + Array.from({length: 4}, () => abc[Math.floor(Math.random() * abc.length)]).join("");
+          modal.classList.add("active");
+          triggerConfetti();
+        }, 4400);
+      });
+
+      btnClose.addEventListener("click", () => {
+        modal.classList.remove("active");
+        btn.disabled = false;
+        btn.textContent = "TOURNER LA ROUE !";
+      });
+
+      if (btnShare) {
+        btnShare.addEventListener("click", () => {
+          if (navigator.share) {
+            navigator.share({
+              title: "Tentez votre chance sur la Roue Lastchance !",
+              text: "Je viens de remporter un cadeau au comptoir ! Tentez votre chance aussi :",
+              url: window.location.href
+            }).catch(() => {});
+          } else {
+            navigator.clipboard.writeText(window.location.href).then(() => {
+              btnShare.textContent = "✓ Lien copié dans le presse-papier !";
+              setTimeout(() => { btnShare.textContent = "🎁 Partager la roue avec un proche"; }, 2500);
+            });
+          }
+        });
+      }
+
+      // Confetti canvas
+      function triggerConfetti() {
+        const c = document.getElementById("confetti-canvas");
+        if (!c) return;
+        const ctx = c.getContext("2d");
+        c.width = window.innerWidth;
+        c.height = window.innerHeight;
+        const pieces = Array.from({length: 90}, () => ({
+          x: c.width / 2,
+          y: c.height / 2,
+          vx: (Math.random() - 0.5) * 18,
+          vy: (Math.random() - 0.8) * 16,
+          r: 5 + Math.random() * 6,
+          color: ["#ff358b", "#ffd000", "#05d38a", "#389bff", "#9d6fff"][Math.floor(Math.random() * 5)],
+          life: 95
+        }));
+
+        let frame = 0;
+        function loop() {
+          ctx.clearRect(0, 0, c.width, c.height);
+          pieces.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.35;
+            p.life--;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          frame++;
+          if (frame < 120) requestAnimationFrame(loop);
+          else ctx.clearRect(0, 0, c.width, c.height);
+        }
+        loop();
+      }
+    })();
+  </script>
+</body>
+</html>
