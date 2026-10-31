@@ -160,11 +160,11 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     entitlements: ["core", "duo", "bande"],
     limits: { eventParticipants: 100 },
     highlights: [
-      "QR codes et roues illimités",
+      "15 mini-jeux et QR codes illimités",
       "Duo Miroir et Portrait de la Bande, jouables à table",
-      "Lots remis en caisse avec code",
-      "Studio créatif et affiches",
-      "Emails automatiques et webhooks sortants",
+      "Lots remis en caisse avec code sécurisé",
+      "Studio créatif et affiches prêtes à imprimer",
+      "Emails automatiques et relances clients",
     ],
   },
   {
@@ -179,8 +179,11 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     entitlements: ["core", "duo", "bande", "loyalty", "calendar", "referral", "hunts", "quiz"],
     limits: { eventParticipants: 100 },
     highlights: [
-      "Tout Coup d'envoi",
-      "Campagnes multi-modules sur la même clientèle",
+      "Passeport fidélité digital (tampons & récompenses)",
+      "Calendrier surprise (cadeaux & rendez-vous quotidien)",
+      "Programme de parrainage (ambassadeurs & bouche-à-oreille)",
+      "Quiz interactifs & Chasse au QR code",
+      "Tout Coup d'envoi inclus (15 mini-jeux & scans illimités)",
     ],
   },
   {
@@ -228,8 +231,11 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     // Aucun temps réel dans cette offre : la jauge reste celle du socle.
     limits: { eventParticipants: 100 },
     highlights: [
-      "Tout Coup d'envoi",
-      "Carte publique bilingue et agenda dans la même offre",
+      "Prise de rendez-vous en ligne (agenda & créneaux)",
+      "Moments & ateliers (réservations & offres spéciales)",
+      "Vitrine & carte numérique au QR code (bilingue)",
+      "Quiz & animations à table (Duo Miroir, Portrait)",
+      "Tout Coup d'envoi inclus (15 mini-jeux & scans illimités)",
     ],
   },
   {
@@ -248,7 +254,13 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     // La capacité live n'est PAS répétée ici : `describeTier()` la dérive de
     // `limits.eventParticipants`, et la recopier affichait la même limite deux
     // fois sur la carte, avec deux typographies différentes.
-    highlights: ["Tout Coup d'envoi", "Écran de salle et télécommande organisateur"],
+    highlights: [
+      "Écran géant live (250 joueurs simultanés en salle)",
+      "Pronostics sportifs & de match avant/pendant/après",
+      "Jackpot collectif avec jauge commune et tirage",
+      "Quiz de salle en direct avec télécommande animateur",
+      "Tout Coup d'envoi inclus (15 mini-jeux & scans illimités)",
+    ],
   },
   {
     id: "full",
@@ -290,8 +302,11 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     limits: { eventParticipants: 250 },
     // Même raison qu'au-dessus : la capacité vient de `limits`, pas d'ici.
     highlights: [
-      "Le Club + Le Grand Jeu + Sur Place réunis",
-      "Accès à tout nouveau module inclus",
+      "Le Club + Sur Place + Le Grand Jeu réunis",
+      "Passeport fidélité, Parrainage & Calendrier surprise",
+      "Agenda de rendez-vous, Réservations & Vitrine QR",
+      "Grand écran de salle (250 pers.), Pronostics & Jackpot",
+      "Accès à tout nouveau module et mini-jeu inclus",
     ],
   },
 ] as const;

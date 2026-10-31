@@ -397,33 +397,33 @@
     switch (f.id) {
       case "core":
         return {
-          badge: "👥 Live : jusqu'à 100 joueurs simultanés · Scans & QR illimités",
-          full: "👥 Événements live : jusqu'à 100 participants connectés en simultané · Scans QR au comptoir & clients illimités",
+          badge: "🎯 15 mini-jeux & scans QR illimités · Libre-service en caisse",
+          full: "🎯 15 mini-jeux instantanés · Scans QR, clients et remises de lots 100% illimités au comptoir",
         };
       case "engagement":
         return {
-          badge: "👥 Live : jusqu'à 100 joueurs simultanés · Fidélité & scans illimités",
-          full: "👥 Événements live : jusqu'à 100 participants connectés en simultané · Cartes fidélité, parrainages & scans illimités",
+          badge: "💎 Fidélité, Parrainage & Calendrier surprise · Clients illimités",
+          full: "💎 Passeport fidélité, parrainage ambassadeurs & calendrier surprise · Membres et scans 100% illimités",
         };
       case "place":
         return {
-          badge: "👥 Live : jusqu'à 100 joueurs simultanés · Réservations illimitées",
-          full: "👥 Événements live : jusqu'à 100 participants connectés en simultané · Prise de RDV, vitrine & scans illimités",
+          badge: "📅 Agenda, Prise de RDV & Vitrine QR · Sans commission",
+          full: "📅 Prise de rendez-vous en ligne, moments & vitrine QR code · Sans commission, scans illimités",
         };
       case "live":
         return {
-          badge: "📺 Grand Écran : jusqu'à 250 participants en direct · Mode soirée",
-          full: "📺 Grand Écran de salle : jusqu'à 250 participants connectés en direct pour vos soirées & pronostics en direct",
+          badge: "📺 Écran géant live : 250 participants simultanés · Mode soirée",
+          full: "📺 Grand écran live : jusqu'à 250 participants connectés en direct pour vos soirées, quiz & pronostics",
         };
       case "full":
         return {
-          badge: "🚀 Grand Écran : jusqu'à 250 participants en direct · Tout illimité",
-          full: "🚀 Grand Écran de salle : jusqu'à 250 participants en direct · Tous les modules & scans 100% illimités",
+          badge: "🚀 Toute la plateforme réunie · Grand écran live 250 pers. inclus",
+          full: "🚀 Toute la plateforme en illimité : fidélité, réservations, écran géant 250 pers., pronostics & scans",
         };
       default:
         return {
-          badge: `👥 Live : jusqu'à ${f.jauge} participants · Scans illimités`,
-          full: `👥 Jusqu'à ${f.jauge} participants connectés en simultané · Scans & animations illimités`,
+          badge: "✨ Scans QR & animations illimités",
+          full: "✨ Scans et animations 100% illimités au quotidien",
         };
     }
   };
