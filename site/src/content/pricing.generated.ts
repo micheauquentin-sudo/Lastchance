@@ -74,11 +74,11 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Portrait de la Bande"
     ],
     "highlights": [
-      "QR codes et roues illimités",
+      "15 mini-jeux et QR codes illimités",
       "Duo Miroir et Portrait de la Bande, jouables à table",
-      "Lots remis en caisse avec code",
-      "Studio créatif et affiches",
-      "Emails automatiques et webhooks sortants"
+      "Lots remis en caisse avec code sécurisé",
+      "Studio créatif et affiches prêtes à imprimer",
+      "Emails automatiques et relances clients"
     ],
     "limits": []
   },
@@ -100,8 +100,11 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Portrait de la Bande"
     ],
     "highlights": [
-      "Tout Coup d'envoi",
-      "Campagnes multi-modules sur la même clientèle"
+      "Passeport fidélité digital (tampons & récompenses)",
+      "Calendrier surprise (cadeaux & rendez-vous quotidien)",
+      "Programme de parrainage (ambassadeurs & bouche-à-oreille)",
+      "Quiz interactifs & Chasse au QR code",
+      "Tout Coup d'envoi inclus (15 mini-jeux & scans illimités)"
     ],
     "limits": []
   },
@@ -122,8 +125,11 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Portrait de la Bande"
     ],
     "highlights": [
-      "Tout Coup d'envoi",
-      "Carte publique bilingue et agenda dans la même offre"
+      "Prise de rendez-vous en ligne (agenda & créneaux)",
+      "Moments & ateliers (réservations & offres spéciales)",
+      "Vitrine & carte numérique au QR code (bilingue)",
+      "Quiz & animations à table (Duo Miroir, Portrait)",
+      "Tout Coup d'envoi inclus (15 mini-jeux & scans illimités)"
     ],
     "limits": []
   },
@@ -144,8 +150,11 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Portrait de la Bande"
     ],
     "highlights": [
-      "Tout Coup d'envoi",
-      "Écran de salle et télécommande organisateur"
+      "Écran géant live (250 joueurs simultanés en salle)",
+      "Pronostics sportifs & de match avant/pendant/après",
+      "Jackpot collectif avec jauge commune et tirage",
+      "Quiz de salle en direct avec télécommande animateur",
+      "Tout Coup d'envoi inclus (15 mini-jeux & scans illimités)"
     ],
     "limits": [
       "250 participants par session live"
@@ -175,8 +184,11 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Portrait de la Bande"
     ],
     "highlights": [
-      "Le Club + Le Grand Jeu + Sur Place réunis",
-      "Accès à tout nouveau module inclus"
+      "Le Club + Sur Place + Le Grand Jeu réunis",
+      "Passeport fidélité, Parrainage & Calendrier surprise",
+      "Agenda de rendez-vous, Réservations & Vitrine QR",
+      "Grand écran de salle (250 pers.), Pronostics & Jackpot",
+      "Accès à tout nouveau module et mini-jeu inclus"
     ],
     "limits": [
       "250 participants par session live"
