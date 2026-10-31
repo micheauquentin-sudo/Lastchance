@@ -393,6 +393,41 @@
     window.location.href = `/signup?plan=${encodeURIComponent(plan.id)}${addonsParam}`;
   };
 
+  const getPlanJaugeDetails = (f) => {
+    switch (f.id) {
+      case "core":
+        return {
+          badge: "👥 Live : jusqu'à 100 joueurs simultanés · Scans & QR illimités",
+          full: "👥 Événements live : jusqu'à 100 participants connectés en simultané · Scans QR au comptoir & clients illimités",
+        };
+      case "engagement":
+        return {
+          badge: "👥 Live : jusqu'à 100 joueurs simultanés · Fidélité & scans illimités",
+          full: "👥 Événements live : jusqu'à 100 participants connectés en simultané · Cartes fidélité, parrainages & scans illimités",
+        };
+      case "place":
+        return {
+          badge: "👥 Live : jusqu'à 100 joueurs simultanés · Réservations illimitées",
+          full: "👥 Événements live : jusqu'à 100 participants connectés en simultané · Prise de RDV, vitrine & scans illimités",
+        };
+      case "live":
+        return {
+          badge: "📺 Grand Écran : jusqu'à 250 participants en direct · Mode soirée",
+          full: "📺 Grand Écran de salle : jusqu'à 250 participants connectés en direct pour vos soirées & pronostics en direct",
+        };
+      case "full":
+        return {
+          badge: "🚀 Grand Écran : jusqu'à 250 participants en direct · Tout illimité",
+          full: "🚀 Grand Écran de salle : jusqu'à 250 participants en direct · Tous les modules & scans 100% illimités",
+        };
+      default:
+        return {
+          badge: `👥 Live : jusqu'à ${f.jauge} participants · Scans illimités`,
+          full: `👥 Jusqu'à ${f.jauge} participants connectés en simultané · Scans & animations illimités`,
+        };
+    }
+  };
+
   const updateConfigurator = () => {
     if (!O) return;
     const plan = O.FORMULES[selectedPlanIdx];
@@ -420,7 +455,10 @@
     if (cfgSummaryTotal) cfgSummaryTotal.textContent = `${sum} € / mois`;
     if (cfgPlanName) cfgPlanName.textContent = `Formule ${plan.nom} (${plan.prix} €)`;
     if (cfgPlanTagline) cfgPlanTagline.textContent = plan.tagline;
-    if (cfgJauge) cfgJauge.textContent = `👥 Jusqu'à ${plan.jauge} participants en simultané · 7 jours d'essai gratuit`;
+    if (cfgJauge) {
+      const jDetails = getPlanJaugeDetails(plan);
+      cfgJauge.innerHTML = `<strong>${jDetails.full}</strong> · <em>7 jours d'essai gratuit</em>`;
+    }
     if (cfgChips) {
       cfgChips.innerHTML = [...allRights].map((d) => `<span>✓ ${O.label(d)}</span>`).join("");
     }
@@ -468,7 +506,9 @@
         <p class="plan-summary-text">${f.tagline.split(":").slice(1).join(":").trim()}</p>
         <ul>${f.points.map((p) => `<li>${p}</li>`).join("")}</ul>
         <div style="margin-top:auto;display:grid;gap:0.65rem">
-          <small style="font-weight:700">Jusqu'à ${f.jauge} participants · Essai 7 jours</small>
+          <div style="font-size:0.78rem;line-height:1.35;font-weight:700;color:var(--ink);background:rgba(255,255,255,0.7);padding:0.4rem 0.6rem;border-radius:8px;border:1.5px solid var(--ink);">
+            ${getPlanJaugeDetails(f).badge}
+          </div>
           <div class="plan-chips">${chips}</div>
           <button type="button" class="ticket-btn pop-btn-ink choose-plan-signup-btn" style="text-align:center;width:100%;cursor:pointer;">
             Choisir ${f.nom} (Essai 7j) →
@@ -486,9 +526,14 @@
       }
       const customLink = $(".plan-custom-link", card);
       if (customLink) {
-        customLink.addEventListener("click", () => {
+        customLink.addEventListener("click", (e) => {
+          e.preventDefault();
           selectedPlanIdx = i;
           updateConfigurator();
+          const target = document.getElementById("configurateur");
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         });
       }
       deck.appendChild(card);
@@ -524,6 +569,17 @@
   const C = window.LC_CODEBASE;
 
   /* ── 4B. MODALE EXPÉRIENCE JOUEUR /PLAY AU CLIC SUR LE QR CODE DU HÉRO (18 THÈMES DU CODE SOURCE) ── */
+  const heroTrialCta = $("#hero-trial-cta");
+  if (heroTrialCta) {
+    heroTrialCta.addEventListener("click", (e) => {
+      e.preventDefault();
+      const target = document.getElementById("formules") || document.getElementById("configurateur");
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  }
+
   const heroQrBtn = $("#hero-qr-play-btn");
   const heroOpenPlayCta = $("#hero-open-play-cta");
   const modalHeroPlay = $("#modal-hero-play");
