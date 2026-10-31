@@ -133,6 +133,8 @@ header, main, section, footer { position: relative; z-index: 2; }
 .pop-btn-mint { background: var(--mint); color: var(--ink); }
 .pop-btn-ink { background: var(--ink); color: #ffffff; }
 .pop-btn-white { background: #ffffff; color: var(--ink); }
+.pop-btn-pastel-pink { background: #ffb8da; color: var(--ink); }
+.pop-btn-pastel-pink:hover { background: #ffa4cf; }
 .ticket-btn-large { font-size: 0.98rem; padding: 0.92em 1.75em; }
 
 .pop-mark {
@@ -508,16 +510,16 @@ header, main, section, footer { position: relative; z-index: 2; }
 
 .hero-fun-sticker {
   display: inline-block;
-  background: var(--yellow);
+  background: linear-gradient(180deg, #fff385 0%, #ffd93d 100%);
   color: var(--ink);
   -webkit-text-stroke: 0px transparent;
   text-shadow: none;
-  border: 3px solid var(--ink);
-  border-radius: 18px;
-  padding: 0.04em 0.34em 0.08em;
-  box-shadow: 5px 6px 0 var(--ink);
-  transform: rotate(-1.8deg);
-  margin-top: 0.12em;
+  border: 1.6px solid var(--ink);
+  border-radius: 10px;
+  padding: 0.02em 0.28em 0.05em;
+  box-shadow: 2px 2.5px 0 var(--ink);
+  transform: none;
+  margin-top: 0.08em;
 }
 
 .hero-fun-sub {
