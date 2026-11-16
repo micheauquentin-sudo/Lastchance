@@ -2312,6 +2312,20 @@ header, main, section, footer { position: relative; z-index: 2; }
     transform: none !important;
     transition: none !important;
   }
+  .qr-floating-unit,
+  .b-bubble,
+  .ticker-content,
+  .carnival-ribbon-track,
+  .device-live-dot,
+  .laser-scan-line,
+  .story-wheel-svg,
+  .cs-day-card.is-today,
+  .cs-pulse-icon,
+  .jb-stamp-dot,
+  .jb-cal-door,
+  .jb-jackpot-fill {
+    animation: none !important;
+  }
 }
 
 /* ==========================================================
@@ -4641,14 +4655,44 @@ header, main, section, footer { position: relative; z-index: 2; }
 
 /* ── RESPONSIVE ── */
 @media (max-width: 1120px) {
+  html, body { max-width: 100%; overflow-x: clip; }
   .header-nav nav { gap: 0.85rem; }
   .header-nav nav a { font-size: 0.82rem; }
   .hero-clean-grid { flex-direction: column; text-align: center; gap: 1.8rem; }
   .hero-cta-row { justify-content: center; }
-  .jukebox-arena, .lavender-split-wrap, .vitrine-spotlight-shell, .marmoris-config-shell, .prono-interactive-stage, .k-studio-workspace, .hero-play-grid, .k-gate-options, .k-modal-preview-grid, .k-conv-options-grid { grid-template-columns: 1fr; }
+  .jukebox-arena, .lavender-split-wrap, .vitrine-spotlight-shell, .marmoris-config-shell, .prono-interactive-stage, .k-studio-workspace, .hero-play-grid, .hero-annex-grid, .k-gate-options, .k-modal-preview-grid, .k-conv-options-grid { grid-template-columns: minmax(0, 1fr); }
+  .jukebox-arena > *,
+  .lavender-split-wrap > *,
+  .vitrine-spotlight-shell > *,
+  .marmoris-config-shell > *,
+  .prono-interactive-stage > *,
+  .k-studio-workspace > *,
+  .hero-play-grid > *,
+  .hero-annex-grid > *,
+  .hero-clean-grid > *,
+  .lavender-copy,
+  .lavender-photo-frame,
+  .prono-scenario-card,
+  .prono-live-widget,
+  .prono-11-types-banner,
+  .jp-customizer-controls,
+  .jp-ctrl-group,
+  .k-studio-header,
+  .k-studio-top-row,
+  .k-studio-left,
+  .k-studio-right,
+  .k-steps-bar,
+  .k-studio-form-col,
+  .k-studio-preview-col,
+  .k-field-group,
+  .k-slug-row,
+  .k-slug-row .k-input {
+    min-width: 0;
+    max-width: 100%;
+  }
   .k-preview-pane, .k-studio-preview-col { position: static; }
-  .clog-cards-grid, .dedicated-pages-duo, .jp-family-explainer, .prono-champ-tabs, .k-choice-grid-3, .k-choice-grid-4 { grid-template-columns: repeat(2, 1fr); }
-  .config-plan-radios, .jp-15-grid, .fc-detail-grid { grid-template-columns: repeat(2, 1fr); }
+  .clog-cards-grid, .dedicated-pages-duo, .jp-family-explainer, .prono-champ-tabs, .k-choice-grid-3, .k-choice-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .config-plan-radios, .jp-15-grid, .fc-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .plans-mobile-switcher { display: flex; }
   .plans-deck {
     display: flex;
@@ -4664,7 +4708,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     flex: 0 0 min(84vw, 320px);
     scroll-snap-align: center;
   }
-  .refeel-organic-trio, .storyboard-3-screens, .vr-combo-steps, .fc-loop-banner { grid-template-columns: 1fr; }
+  .refeel-organic-trio, .storyboard-3-screens, .vr-combo-steps, .fc-loop-banner { grid-template-columns: minmax(0, 1fr); }
   .fc-loop-arrow { margin: 0 auto; transform: rotate(90deg); }
 }
 
@@ -4812,6 +4856,10 @@ header, main, section, footer { position: relative; z-index: 2; }
   }
 
   /* Studio Header Responsive */
+  .k-studio-header {
+    max-width: 100%;
+    overflow-x: clip;
+  }
   .k-studio-top-row {
     flex-wrap: wrap;
     padding: 0.45rem 0.65rem;
@@ -4826,7 +4874,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     order: 3;
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.3rem;
   }
   .k-mod-tab {
@@ -4838,6 +4886,8 @@ header, main, section, footer { position: relative; z-index: 2; }
   .k-studio-right {
     width: 100%;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.35rem;
   }
   .k-autosave-status {
     font-size: 0.66rem;
@@ -4903,7 +4953,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     padding: 0.85rem 0.75rem;
   }
   .clog-stats-wrap {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.55rem;
   }
   .clog-stat-pill {
@@ -4920,6 +4970,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   /* 3. Héros Pages Annexes */
   .hero-annex-portal {
     padding: 0.3rem 0 1.6rem;
+    overflow-x: clip;
   }
   .annex-breadcrumb-wrap {
     margin: 0 auto 0.6rem;
@@ -4952,15 +5003,15 @@ header, main, section, footer { position: relative; z-index: 2; }
   .k-form-grid,
   .k-choice-grid-2,
   .k-grid-2 {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .k-choice-grid-3,
   .k-choice-grid-4 {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
   }
   .k-editable-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.4rem;
   }
   .k-studio-form-col {
@@ -5076,7 +5127,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 
   /* Configurateur 5 Formules */
   .config-plan-radios {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.4rem;
   }
   .cfg-plan-btn {
@@ -5089,7 +5140,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 
   /* Page jeux-pronostics.html */
   .jp-15-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.65rem;
   }
   .jp-game-card {
@@ -5121,6 +5172,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     display: flex;
     flex-wrap: nowrap;
     overflow-x: auto;
+    max-width: 100%;
     max-height: none !important;
     gap: 0.4rem;
     padding: 0.2rem 0;
@@ -5148,7 +5200,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     white-space: nowrap;
   }
   .cs-days-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.55rem;
   }
   .cs-day-card {
@@ -5157,7 +5209,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     border-radius: 14px;
   }
   .prono-champ-tabs {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
   }
   .prono-champ-tab {
@@ -5176,6 +5228,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     display: flex;
     flex-wrap: nowrap;
     overflow-x: auto;
+    max-width: 100%;
     gap: 0.45rem;
     padding: 0.2rem 0.1rem 0.4rem;
     scrollbar-width: none;
@@ -5191,12 +5244,15 @@ header, main, section, footer { position: relative; z-index: 2; }
 
   /* Espacements Sections Mobile */
   .organic-pillars-section,
-  .section {
+  .section,
+  .prono-showcase-section {
     padding: 2.2rem 0;
+    overflow-x: clip;
   }
   .clog-lavender-split,
   .clog-yellow-manifesto {
     padding: 2.4rem 0.95rem;
+    overflow-x: clip;
   }
   .vitrine-spotlight-shell,
   .marmoris-config-shell,
@@ -6542,7 +6598,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     border-radius: 20px;
   }
   .cs-days-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.55rem;
   }
   .cs-day-card {
