@@ -1031,7 +1031,7 @@
    * - canEditDraft : true (1 brouillon gratuit mémorisé en cache ou sur le compte)
    * - canPublish : true uniquement lorsque `auth.status === "subscribed"`
    */
-  function getModuleCapabilities(moduleKey) {
+  function getModuleCapabilities() {
     const auth = loadAuth();
     const isSubscribed = auth.status === "subscribed";
     const isAccount = auth.status === "free_account" || isSubscribed;

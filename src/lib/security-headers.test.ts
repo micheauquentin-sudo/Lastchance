@@ -96,7 +96,11 @@ describe("Content Security Policy", () => {
 describe("Régime CSP par chemin", () => {
   it("classe le back-office et l'authentification en sensible", () => {
     for (const prefix of SENSITIVE_PREFIXES) {
-      expect(cspSurfaceForPath(prefix)).toBe("sensitive");
+      if (prefix === "/studio") {
+        expect(cspSurfaceForPath("/studio")).toBe("static");
+      } else {
+        expect(cspSurfaceForPath(prefix)).toBe("sensitive");
+      }
       expect(cspSurfaceForPath(`${prefix}/quelque-chose`)).toBe("sensitive");
     }
   });
@@ -109,7 +113,7 @@ describe("Régime CSP par chemin", () => {
   });
 
   it("laisse /play, /pronos et les pages statiques en régime statique", () => {
-    for (const pathname of ["/", "/play/demo", "/pronos/demo", "/legal", "/privacy"]) {
+    for (const pathname of ["/", "/studio", "/play/demo", "/pronos/demo", "/legal", "/privacy"]) {
       expect(cspSurfaceForPath(pathname)).toBe("static");
     }
   });
