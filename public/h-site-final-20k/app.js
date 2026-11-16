@@ -15,6 +15,16 @@
     return n;
   };
 
+  /* ── 0. CENTRAGE HORIZONTAL DU LIEN ACTIF DANS LA BARRE MOBILE ── */
+  const headerNavLinks = $(".header-nav nav");
+  if (headerNavLinks) {
+    const activeNav = $(".nav-active", headerNavLinks);
+    if (activeNav && headerNavLinks.scrollWidth > headerNavLinks.clientWidth) {
+      const leftOffset = activeNav.offsetLeft - (headerNavLinks.clientWidth - activeNav.offsetWidth) / 2;
+      headerNavLinks.scrollLeft = Math.max(0, leftOffset);
+    }
+  }
+
   /* ── 1. BULLES ROSES FLOTTANTES SUR FOND BEIGE ── */
   const bubblesBox = $("#bubbles");
   if (bubblesBox) {
@@ -49,6 +59,15 @@
     const sgsCards = $$(".sgs-card", storyContainer);
     const activateStep = (stepNum) => {
       cards.forEach((c) => c.classList.toggle("is-active", Number(c.dataset.step) === stepNum));
+      const activeCard = cards.find((c) => Number(c.dataset.step) === stepNum);
+      if (activeCard && storyContainer.scrollWidth > storyContainer.clientWidth) {
+        const left = activeCard.offsetLeft - (storyContainer.clientWidth - activeCard.offsetWidth) / 2;
+        try {
+          storyContainer.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+        } catch {
+          storyContainer.scrollLeft = Math.max(0, left);
+        }
+      }
       if (stepNum === 2 && sgsCards.length) {
         sgsCards.forEach((c) => c.classList.remove("is-spotlight"));
         const randomCard = sgsCards[Math.floor(Math.random() * sgsCards.length)];
@@ -305,10 +324,21 @@
     if (jbUsage) jbUsage.textContent = g.usage;
 
     if (jbTokensBox) {
+      let activeBtn = null;
       $$(".jb-token-pill", jbTokensBox).forEach((btn, i) => {
-        btn.classList.toggle("is-active", i === activeGameIdx);
-        btn.setAttribute("aria-selected", String(i === activeGameIdx));
+        const isCurrent = i === activeGameIdx;
+        btn.classList.toggle("is-active", isCurrent);
+        btn.setAttribute("aria-selected", String(isCurrent));
+        if (isCurrent) activeBtn = btn;
       });
+      if (activeBtn && jbTokensBox.scrollWidth > jbTokensBox.clientWidth) {
+        const left = activeBtn.offsetLeft - (jbTokensBox.clientWidth - activeBtn.offsetWidth) / 2;
+        try {
+          jbTokensBox.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+        } catch {
+          jbTokensBox.scrollLeft = Math.max(0, left);
+        }
+      }
     }
   };
 
@@ -490,9 +520,56 @@
   const deck = $("#plans-deck");
 
   if (deck && O) {
+    const switcher = el("div", {
+      class: "plans-mobile-switcher",
+      role: "tablist",
+      "aria-label": "Accès rapide aux 5 formules",
+    });
+    if (deck.parentNode) {
+      deck.parentNode.insertBefore(switcher, deck);
+    }
+
+    const planCards = [];
+    const switcherBtns = [];
+
+    const setActivePlanPill = (activeIdx) => {
+      switcherBtns.forEach((b, idx) => {
+        const isCurrent = idx === activeIdx;
+        b.classList.toggle("is-active", isCurrent);
+        b.setAttribute("aria-selected", String(isCurrent));
+      });
+      const activePill = switcherBtns[activeIdx];
+      if (activePill && switcher.scrollWidth > switcher.clientWidth) {
+        const left = activePill.offsetLeft - (switcher.clientWidth - activePill.offsetWidth) / 2;
+        switcher.scrollLeft = Math.max(0, left);
+      }
+    };
+
     const club = O.FORMULES.find((f) => f.id === "engagement");
     const live = O.FORMULES.find((f) => f.id === "live");
     O.FORMULES.forEach((f, i) => {
+      const pill = el("button", {
+        type: "button",
+        role: "tab",
+        class: "plans-mobile-pill" + (i === 0 ? " is-active" : ""),
+        "aria-selected": String(i === 0),
+        "data-plan-idx": String(i),
+      }, `${f.nom} · ${f.prix} €`);
+      pill.addEventListener("click", () => {
+        const targetCard = planCards[i];
+        setActivePlanPill(i);
+        if (targetCard) {
+          const left = targetCard.offsetLeft - (deck.clientWidth - targetCard.offsetWidth) / 2;
+          try {
+            deck.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+          } catch {
+            deck.scrollLeft = Math.max(0, left);
+          }
+        }
+      });
+      switcher.appendChild(pill);
+      switcherBtns.push(pill);
+
       let topBadge = "";
       if (f.id === "full" && f.prix < club.prix + live.prix) {
         topBadge = `<span class="plan-tag-top">★ Formule Intégrale (-19 €)</span>`;
@@ -537,7 +614,29 @@
         });
       }
       deck.appendChild(card);
+      planCards.push(card);
     });
+
+    let planScrollRaf = null;
+    deck.addEventListener("scroll", () => {
+      if (planScrollRaf) return;
+      planScrollRaf = requestAnimationFrame(() => {
+        planScrollRaf = null;
+        if (!planCards.length) return;
+        const center = deck.scrollLeft + deck.clientWidth / 2;
+        let closestIdx = 0;
+        let closestDist = Infinity;
+        planCards.forEach((c, idx) => {
+          const cCenter = c.offsetLeft + c.offsetWidth / 2;
+          const dist = Math.abs(cCenter - center);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestIdx = idx;
+          }
+        });
+        setActivePlanPill(closestIdx);
+      });
+    }, { passive: true });
   }
 
   if (cfgPlansBox && cfgAddonsBox && O) {

@@ -4603,6 +4603,42 @@ header, main, section, footer { position: relative; z-index: 2; }
   font: 900 0.78rem var(--display);
 }
 
+/* ── COMPOSANTS MOBILES (MASQUÉS SUR DESKTOP PAR DÉFAUT) ── */
+.plans-mobile-switcher {
+  display: none;
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding: 0.25rem 0.1rem 0.45rem;
+  margin-bottom: 0.35rem;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.plans-mobile-switcher::-webkit-scrollbar {
+  display: none;
+}
+.plans-mobile-pill {
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: #ffffff;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.42rem 0.85rem;
+  font: 700 0.78rem var(--fun-font);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.plans-mobile-pill.is-active {
+  background: var(--yellow);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.k-mobile-studio-dock {
+  display: none;
+}
+
 /* ── RESPONSIVE ── */
 @media (max-width: 1120px) {
   .header-nav nav { gap: 0.85rem; }
@@ -4612,19 +4648,574 @@ header, main, section, footer { position: relative; z-index: 2; }
   .jukebox-arena, .lavender-split-wrap, .vitrine-spotlight-shell, .marmoris-config-shell, .prono-interactive-stage, .k-studio-workspace, .hero-play-grid, .k-gate-options, .k-modal-preview-grid, .k-conv-options-grid { grid-template-columns: 1fr; }
   .k-preview-pane, .k-studio-preview-col { position: static; }
   .clog-cards-grid, .dedicated-pages-duo, .jp-family-explainer, .prono-champ-tabs, .k-choice-grid-3, .k-choice-grid-4 { grid-template-columns: repeat(2, 1fr); }
-  .plans-deck, .config-plan-radios, .jp-15-grid, .fc-detail-grid { grid-template-columns: repeat(2, 1fr); }
+  .config-plan-radios, .jp-15-grid, .fc-detail-grid { grid-template-columns: repeat(2, 1fr); }
+  .plans-mobile-switcher { display: flex; }
+  .plans-deck {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 0.85rem;
+    padding: 0.9rem 0.25rem 1rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .plans-deck::-webkit-scrollbar { display: none; }
+  .plan-ticket {
+    flex: 0 0 min(84vw, 320px);
+    scroll-snap-align: center;
+  }
   .refeel-organic-trio, .storyboard-3-screens, .vr-combo-steps, .fc-loop-banner { grid-template-columns: 1fr; }
   .fc-loop-arrow { margin: 0 auto; transform: rotate(90deg); }
 }
+
+@media (max-width: 1024px) {
+  .k-studio-workspace {
+    padding-bottom: 5rem;
+  }
+  .k-studio-workspace .k-studio-preview-col {
+    display: none;
+  }
+  .k-studio-workspace.is-mobile-preview .k-studio-form-col {
+    display: none;
+  }
+  .k-studio-workspace.is-mobile-preview .k-studio-preview-col {
+    display: block;
+  }
+  .k-mobile-studio-dock {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 80;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 0.45rem;
+    padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px));
+    background: rgba(253, 246, 227, 0.96);
+    backdrop-filter: blur(10px);
+    border-top: 2.5px solid var(--k-ink);
+    box-shadow: 0 -4px 16px rgba(33, 29, 22, 0.14);
+  }
+  .k-dock-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    background: #ffffff;
+    color: var(--k-ink);
+    border: 2px solid var(--k-ink);
+    border-radius: 12px;
+    padding: 0.58rem 0.7rem;
+    font: 800 0.78rem var(--body);
+    box-shadow: 2px 2px 0 var(--k-ink);
+    cursor: pointer;
+  }
+  .k-dock-btn small {
+    background: var(--k-ink);
+    color: var(--k-yellow);
+    font: 900 0.66rem var(--body);
+    padding: 0.12rem 0.42rem;
+    border-radius: 999px;
+  }
+  .k-dock-btn.is-active {
+    background: var(--k-yellow);
+    color: var(--k-ink);
+    box-shadow: 3px 3px 0 var(--k-ink);
+  }
+  .k-dock-publish {
+    background: #d94e0f;
+    color: #ffffff;
+    padding: 0.58rem 0.95rem;
+  }
+}
+
+@media (max-width: 960px) {
+  .header-nav,
+  .header-nav-annex {
+    display: grid !important;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "logo actions"
+      "nav nav";
+    align-items: center;
+    gap: 0.42rem 0.5rem;
+    width: min(var(--max), 95vw);
+    padding: 0.48rem 0.68rem;
+    border-radius: 20px;
+    top: 0.3rem;
+    margin: 0.25rem auto 0.55rem;
+  }
+  .header-nav .brand-logo,
+  .header-nav-annex .brand-logo {
+    grid-area: logo;
+    font-size: 1.22rem;
+  }
+  .header-nav .logo-club,
+  .header-nav-annex .logo-club {
+    font-size: 1.3rem;
+  }
+  .header-nav .nav-right-actions,
+  .header-nav-annex .nav-right-actions {
+    grid-area: actions;
+    justify-self: end;
+    gap: 0.35rem;
+  }
+  .header-nav .nav-right-actions .ticket-btn,
+  .header-nav-annex .nav-right-actions .ticket-btn {
+    font-size: 0.74rem;
+    padding: 0.52em 0.82em;
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .header-nav nav,
+  .header-nav-annex nav {
+    grid-area: nav;
+    display: flex !important;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.36rem;
+    width: 100%;
+    overflow-x: auto;
+    padding: 0.32rem 0.1rem 0.1rem;
+    border-top: 1.5px dashed rgba(22, 19, 23, 0.16);
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .header-nav nav::-webkit-scrollbar,
+  .header-nav-annex nav::-webkit-scrollbar {
+    display: none;
+  }
+  .header-nav nav a,
+  .header-nav-annex nav a {
+    font-size: 0.75rem;
+    padding: 0.32em 0.72em !important;
+    background: var(--cream);
+    border: 1.5px solid var(--ink);
+    border-radius: 999px;
+    box-shadow: 1.5px 1.5px 0 var(--ink);
+    color: var(--ink) !important;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .header-nav nav a.nav-active,
+  .header-nav-annex nav a.nav-active {
+    background: var(--yellow) !important;
+    color: var(--ink) !important;
+    border: 2px solid var(--ink) !important;
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .header-nav nav a.nav-highlight-link,
+  .header-nav-annex nav a.nav-highlight-link {
+    background: var(--vanilla-card);
+  }
+  .nav-circle-badges {
+    display: none;
+  }
+
+  /* Studio Header Responsive */
+  .k-studio-top-row {
+    flex-wrap: wrap;
+    padding: 0.45rem 0.65rem;
+    gap: 0.45rem;
+  }
+  .k-studio-left {
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: space-between;
+  }
+  .k-module-switcher {
+    order: 3;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.3rem;
+  }
+  .k-mod-tab {
+    white-space: normal;
+    text-align: center;
+    padding: 0.38rem 0.45rem;
+    font-size: 0.72rem;
+  }
+  .k-studio-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .k-autosave-status {
+    font-size: 0.66rem;
+  }
+}
+
 @media (max-width: 820px) {
-  .header-nav { display: flex; justify-content: space-between; }
-  .header-nav nav, .nav-circle-badges { display: none; }
-  .nav-right-actions { gap: 0.4rem; }
-  .header-nav .ticket-btn { font-size: 0.78rem; padding: 0.65em 0.95em; }
-  .clog-stats-wrap, .clog-cards-grid, .manifesto-photo-duo, .plans-deck, .config-plan-radios, .config-addon-checks, .vr-sector-buttons, .dedicated-pages-duo, .jp-family-explainer, .jp-15-grid, .prono-champ-tabs, .prono-projection-boxes, .fc-detail-grid, .k-form-grid, .k-editable-row, .k-choice-grid-2, .k-choice-grid-3, .k-choice-grid-4, .k-grid-2 {
+  /* 1. Héro & Premier Écran Mobile */
+  .hero-clean-grid {
+    gap: 1rem;
+    margin: 0.45rem auto 0.85rem;
+    width: 94vw;
+  }
+  .hero-fun-title {
+    font-size: clamp(1.78rem, 6.8vw, 2.3rem);
+    line-height: 1.08;
+    -webkit-text-stroke: 1.6px var(--ink);
+    text-shadow: 0 3.5px 0 var(--ink);
+    margin-bottom: 0.5rem;
+  }
+  .hero-fun-sub {
+    font-size: 0.88rem;
+    line-height: 1.4;
+    margin-bottom: 0.75rem;
+  }
+  .hero-cta-row {
+    gap: 0.5rem;
+    justify-content: center;
+  }
+  .ticket-btn-large {
+    font-size: 0.86rem;
+    padding: 0.75em 1.25em;
+  }
+  .wavy-link {
+    font-size: 1.05rem;
+    padding: 0.1em 0.6em;
+  }
+  .qr-cartoon-3d-block {
+    width: 154px;
+    height: 154px;
+    border-radius: 24px;
+    padding: 8px;
+    box-shadow: 0 8px 0 var(--ink), 0 14px 24px rgba(22, 19, 23, 0.22);
+  }
+  .qr-center-wheel-badge {
+    width: 38px;
+    height: 38px;
+    font-size: 1.15rem;
+  }
+  .qr-call-bubble {
+    font-size: 0.76rem;
+    padding: 0.3em 0.75em;
+  }
+  .checkerboard-surface {
+    height: 38px;
+  }
+  .checkerboard-mint-ledge {
+    height: 10px;
+  }
+
+  /* 2. Barre Menthe 4 Piliers en 2x2 */
+  .clog-stats-mint-bar {
+    padding: 0.85rem 0.75rem;
+  }
+  .clog-stats-wrap {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.55rem;
+  }
+  .clog-stat-pill {
+    padding: 0.6rem 0.5rem;
+    border-radius: 14px;
+  }
+  .clog-stat-pill b {
+    font-size: 1.02rem;
+  }
+  .clog-stat-pill span {
+    font-size: 0.62rem;
+  }
+
+  /* 3. Héros Pages Annexes */
+  .hero-annex-portal {
+    padding: 0.3rem 0 1.6rem;
+  }
+  .annex-breadcrumb-wrap {
+    margin: 0 auto 0.6rem;
+  }
+  .hero-annex-grid {
+    gap: 1.15rem;
+  }
+  .hero-annex-sub {
+    font-size: 0.9rem;
+    margin-bottom: 0.9rem;
+  }
+  .annex-device-card {
+    max-width: 310px;
+    padding: 0.85rem 1rem;
+    border-radius: 20px;
+  }
+  .annex-qr-frame {
+    width: 136px;
+    height: 136px;
+  }
+
+  /* 4. Grilles Générales & Studio */
+  .clog-cards-grid,
+  .manifesto-photo-duo,
+  .config-addon-checks,
+  .dedicated-pages-duo,
+  .jp-family-explainer,
+  .prono-projection-boxes,
+  .fc-detail-grid,
+  .k-form-grid,
+  .k-choice-grid-2,
+  .k-grid-2 {
     grid-template-columns: 1fr;
   }
-  .stage-token { display: none; }
+  .k-choice-grid-3,
+  .k-choice-grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+  .k-editable-row {
+    grid-template-columns: 1fr auto;
+    gap: 0.4rem;
+  }
+  .k-studio-form-col {
+    padding: 1rem 0.9rem;
+  }
+
+  /* 5. Expérience « Contrôles + Téléphone Live » sur Mobile */
+  /* Modale /play du Héro */
+  .k-modal-backdrop {
+    padding: 0.5rem;
+    align-items: flex-start;
+  }
+  .hero-play-modal-card {
+    width: 96vw;
+    max-height: 94dvh;
+    overflow-y: auto;
+    border-radius: 20px;
+  }
+  .hero-play-grid {
+    display: flex;
+    flex-direction: column;
+    padding: 0.9rem;
+    gap: 0.75rem;
+  }
+  .hp-left-controls > div:first-child p {
+    font-size: 0.75rem !important;
+    line-height: 1.3 !important;
+  }
+  .hp-left-controls #hp-modal-title {
+    font-size: 1.12rem !important;
+  }
+  #hp-presets-grid {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-height: none;
+    gap: 0.4rem;
+    padding: 0.2rem 0.1rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  #hp-presets-grid::-webkit-scrollbar { display: none; }
+  #hp-presets-grid .k-preset-tile {
+    flex: 0 0 118px;
+  }
+  #hp-mechanics-strip {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-height: none;
+    gap: 0.35rem;
+    padding: 0.15rem 0;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  #hp-mechanics-strip::-webkit-scrollbar { display: none; }
+  .hp-mech-chip {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  #hp-phone-screen {
+    min-height: 390px !important;
+  }
+
+  /* Storyboard 3 Écrans Horizontal Snap-Scroll */
+  .storyboard-3-screens {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 0.75rem;
+    padding: 0.4rem 0.2rem 0.8rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .storyboard-3-screens::-webkit-scrollbar { display: none; }
+  .story-phone-card {
+    flex: 0 0 78vw;
+    max-width: 280px;
+    scroll-snap-align: center;
+  }
+
+  /* Manège des 10 Univers de Jeu */
+  .jukebox-tokens-cloud {
+    display: grid;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    overflow-x: auto;
+    justify-content: start;
+    gap: 0.42rem;
+    padding: 0.35rem 0.15rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .jukebox-tokens-cloud::-webkit-scrollbar { display: none; }
+  .jb-token-pill {
+    padding: 0.42rem 0.8rem;
+    font-size: 0.78rem;
+    transform: none !important;
+  }
+  .jb-token-emoji {
+    width: 26px;
+    height: 26px;
+    font-size: 0.88rem;
+  }
+  .jukebox-live-stage {
+    padding: 1rem;
+    border-radius: 26px;
+  }
+  .jukebox-visual-box {
+    height: 170px;
+  }
+
+  /* Configurateur 5 Formules */
+  .config-plan-radios {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+  }
+  .cfg-plan-btn {
+    padding: 0.45rem 0.3rem;
+    font-size: 0.7rem;
+  }
+  .cfg-plan-btn b {
+    font-size: 0.95rem;
+  }
+
+  /* Page jeux-pronostics.html */
+  .jp-15-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.65rem;
+  }
+  .jp-game-card {
+    padding: 0.85rem;
+    border-radius: 16px;
+  }
+  .jp-game-emoji {
+    width: 36px;
+    height: 36px;
+    font-size: 1.2rem;
+  }
+  .jp-game-card h3 {
+    font-size: 0.94rem;
+  }
+  .jp-game-card p {
+    font-size: 0.76rem;
+    line-height: 1.35;
+  }
+  .jp-play-indicator {
+    font-size: 0.72rem;
+    margin-top: auto;
+    padding-top: 0.4rem;
+  }
+  #jp-sim-mechanic,
+  #jp-sim-theme,
+  #jp-sim-prize,
+  #prono-theme-switcher,
+  #fc-fond-switcher {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-height: none !important;
+    gap: 0.4rem;
+    padding: 0.2rem 0;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  #jp-sim-mechanic::-webkit-scrollbar,
+  #jp-sim-theme::-webkit-scrollbar,
+  #jp-sim-prize::-webkit-scrollbar,
+  #prono-theme-switcher::-webkit-scrollbar,
+  #fc-fond-switcher::-webkit-scrollbar {
+    display: none;
+  }
+  #jp-sim-mechanic .jp-choice-btn,
+  #jp-sim-theme .jp-choice-btn,
+  #jp-sim-prize .jp-choice-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.76rem;
+  }
+  #prono-theme-switcher .k-choice-pill,
+  #fc-fond-switcher .k-choice-pill {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .cs-days-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.55rem;
+  }
+  .cs-day-card {
+    min-height: 112px;
+    padding: 0.65rem 0.4rem;
+    border-radius: 14px;
+  }
+  .prono-champ-tabs {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+  .prono-champ-tab {
+    padding: 0.65rem 0.75rem;
+    font-size: 0.76rem;
+  }
+
+  /* Page fidelite-communaute.html */
+  .fc-sim-actions-box .fc-action-btn {
+    font-size: 0.78rem;
+    padding: 0.65em 0.9em;
+  }
+
+  /* Page vitrine-reservation.html */
+  .vr-sector-buttons {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.45rem;
+    padding: 0.2rem 0.1rem 0.4rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .vr-sector-buttons::-webkit-scrollbar { display: none; }
+  .vr-sector-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.78rem;
+  }
+
+  /* Espacements Sections Mobile */
+  .organic-pillars-section,
+  .section {
+    padding: 2.2rem 0;
+  }
+  .clog-lavender-split,
+  .clog-yellow-manifesto {
+    padding: 2.4rem 0.95rem;
+  }
+  .vitrine-spotlight-shell,
+  .marmoris-config-shell,
+  .grand-finale {
+    padding: 1.45rem 1.05rem;
+    border-radius: 22px;
+  }
+  .footer-wrap small {
+    margin-left: 0;
+  }
+  .stage-token {
+    display: none;
+  }
+}
+
+@media (max-width: 340px) {
+  .jp-15-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ==========================================================================
@@ -5628,12 +6219,21 @@ header, main, section, footer { position: relative; z-index: 2; }
   text-underline-offset: 3px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 820px) {
+  .jp-play-indicator {
+    font-size: 0.72rem;
+    margin-top: auto;
+    padding-top: 0.4rem;
+  }
   .lc-game-modal-window {
     grid-template-columns: 1fr;
     max-width: 420px;
-    padding: 1.2rem;
-    gap: 1.2rem;
+    max-height: 94dvh;
+    padding: 0.9rem;
+    gap: 0.85rem;
+  }
+  .lc-modal-phone-screen {
+    min-height: 400px;
   }
 }
 
@@ -5934,4 +6534,26 @@ header, main, section, footer { position: relative; z-index: 2; }
 /* Bannière de gain pour l'aperçu /play du Studio */
 .kp-play-win-banner {
   animation: lc-pop-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@media (max-width: 820px) {
+  .cs-calendar-box {
+    padding: 1.05rem 0.85rem 1.2rem;
+    border-radius: 20px;
+  }
+  .cs-days-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.55rem;
+  }
+  .cs-day-card {
+    min-height: 112px;
+    padding: 0.65rem 0.4rem;
+    border-radius: 14px;
+  }
+  .cs-day-icon {
+    font-size: 1.55rem;
+  }
+  .cs-day-label {
+    font-size: 0.74rem;
+  }
 }

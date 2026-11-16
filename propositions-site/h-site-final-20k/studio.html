@@ -59,7 +59,7 @@
   <!-- ==========================================================
        DEUX COLONNES INDÉPENDANTES (Gauche : Réglages · Droite : Aperçu Fidèle)
        ========================================================== -->
-  <main class="k-studio-workspace">
+  <main class="k-studio-workspace" id="k-studio-workspace">
     <!-- Colonne de gauche : Étape courante -->
     <aside class="k-studio-form-col" id="k-studio-form-col">
       <!-- Injecté dynamiquement par studio.js selon le module et l'étape -->
@@ -84,6 +84,20 @@
       </div>
     </section>
   </main>
+
+  <!-- Dock d'action mobile flottant (bascule Réglages / Aperçu Direct / Publier) -->
+  <div class="k-mobile-studio-dock" id="k-mobile-studio-dock">
+    <button type="button" class="k-dock-btn is-active" id="k-dock-btn-form" data-dock-view="form">
+      <span>⚙️ Réglages</span>
+      <small id="k-dock-step-badge">1/7</small>
+    </button>
+    <button type="button" class="k-dock-btn" id="k-dock-btn-preview" data-dock-view="preview">
+      <span>📱 Aperçu Live</span>
+    </button>
+    <button type="button" class="k-dock-btn k-dock-publish" id="k-dock-btn-publish">
+      <span>🚀 Publier</span>
+    </button>
+  </div>
 
   <footer class="footer-retro">
     <div class="footer-wrap">

@@ -138,6 +138,30 @@
     });
   }
 
+  let mobileView = "form";
+  let savedFormScrollY = 0;
+
+  function setMobileStudioView(nextView, preserveScroll) {
+    mobileView = nextView === "preview" ? "preview" : "form";
+    const workspace = $("#k-studio-workspace");
+    const btnForm = $("#k-dock-btn-form");
+    const btnPreview = $("#k-dock-btn-preview");
+    if (nextView === "preview" && preserveScroll) {
+      savedFormScrollY = window.scrollY;
+    }
+    if (workspace) {
+      workspace.classList.toggle("is-mobile-preview", mobileView === "preview");
+    }
+    if (btnForm) btnForm.classList.toggle("is-active", mobileView === "form");
+    if (btnPreview) btnPreview.classList.toggle("is-active", mobileView === "preview");
+
+    if (mobileView === "preview") {
+      window.scrollTo(0, 0);
+    } else if (preserveScroll) {
+      window.scrollTo(0, savedFormScrollY);
+    }
+  }
+
   function renderStepsBar() {
     const bar = $("#k-steps-bar");
     if (!bar) return;
@@ -149,9 +173,27 @@
       </button>
     `).join("");
 
+    const stepBadge = $("#k-dock-step-badge");
+    if (stepBadge) {
+      stepBadge.textContent = `${currentStepIndex + 1}/${steps.length}`;
+    }
+
+    const activePill = $(".k-step-pill.active", bar);
+    if (activePill && bar.scrollWidth > bar.clientWidth) {
+      const targetLeft = activePill.offsetLeft - (bar.clientWidth - activePill.offsetWidth) / 2;
+      try {
+        bar.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+      } catch {
+        bar.scrollLeft = Math.max(0, targetLeft);
+      }
+    }
+
     $$(".k-step-pill", bar).forEach((btn) => {
       btn.addEventListener("click", () => {
         currentStepIndex = Number(btn.dataset.idx);
+        if (mobileView === "preview") {
+          setMobileStudioView("form", false);
+        }
         renderStepsBar();
         renderFormColumn();
       });
@@ -369,6 +411,236 @@
               </label>
             `).join("")}
           </div>
+        </div>
+      `;
+    }
+
+    if (cle === "couleurs") {
+      return `
+        <div class="k-field-group">
+          <label class="k-label">Couleurs de votre vitrine (Contraste calculé automatiquement via <code>texteSur()</code>)</label>
+          <div class="k-grid-2">
+            <div class="k-color-picker-box">
+              <span>Couleur d'accent (Primary)</span>
+              <input type="color" value="${v.primary}" data-bind="vitrine.primary" />
+              <code>${v.primary}</code>
+            </div>
+            <div class="k-color-picker-box">
+              <span>Fond de page (Secondary)</span>
+              <input type="color" value="${v.secondary}" data-bind="vitrine.secondary" />
+              <code>${v.secondary}</code>
+            </div>
+          </div>
+        </div>
+        <div class="k-field-group">
+          <label class="k-label">Police des titres (<code>FONT_KEYS</code>)</label>
+          <div class="k-choice-grid-3">
+            ${[
+              ["elegant", "Élégante (Serif)"],
+              ["sans", "Sans-serif (Classique)"],
+              ["impact", "Impact (Forte)"],
+              ["rounded", "Arrondie (Chaleureuse)"],
+              ["modern", "Moderne (Épurée)"],
+              ["script", "Manuscrite (Artisan)"],
+            ].map(([fk, flbl]) => `
+              <button type="button" class="k-choice-tile ${v.heading === fk ? "active" : ""}" data-action="set-field" data-path="vitrine.heading" data-val="${fk}">
+                <strong>${flbl}</strong>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    if (cle === "allure") {
+      return `
+        <div class="k-field-group">
+          <label class="k-label">Disposition des fiches (<code>style_cartes</code>)</label>
+          <div class="k-choice-grid-3">
+            ${[
+              ["liste", "📋 Liste (Classique)"],
+              ["grille", "🔲 Grille (2 colonnes)"],
+              ["magazine", "📰 Magazine (Éditorial)"],
+            ].map(([sk, slbl]) => `
+              <button type="button" class="k-choice-tile ${v.styleCartes === sk ? "active" : ""}" data-action="set-field" data-path="vitrine.styleCartes" data-val="${sk}">
+                <strong>${slbl}</strong>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="k-field-group">
+          <label class="k-label">Motif de fond (<code>allure.motif</code>)</label>
+          <div class="k-choice-grid-4">
+            ${[
+              ["diagonales", "╱ Diagonales"],
+              ["points", "⋯ Points"],
+              ["damier", "🏁 Damier"],
+              ["aucun", "⬜ Aucun"],
+            ].map(([mk, mlbl]) => `
+              <button type="button" class="k-choice-tile ${v.motif === mk ? "active" : ""}" data-action="set-field" data-path="vitrine.motif" data-val="${mk}">
+                <strong>${mlbl}</strong>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="k-field-group">
+          <label class="k-label">Style d'affichage des prix (<code>allure.style_prix</code>)</label>
+          <div class="k-choice-grid-3">
+            ${[
+              ["accent", "Couleur d'accent"],
+              ["pastille", "Pastille encadrée"],
+              ["simple", "Texte sobre"],
+            ].map(([pk, plbl]) => `
+              <button type="button" class="k-choice-tile ${v.stylePrix === pk ? "active" : ""}" data-action="set-field" data-path="vitrine.stylePrix" data-val="${pk}">
+                <strong>${plbl}</strong>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="k-field-group">
+          <label class="k-label">Barre d'action basse (<code>allure.barre_basse</code>)</label>
+          <div class="k-choice-grid-3">
+            ${[
+              ["flottante", "Flottante"],
+              ["pleine", "Pleine largeur"],
+              ["masquee", "Masquée"],
+            ].map(([bk, blbl]) => `
+              <button type="button" class="k-choice-tile ${v.barreBasse === bk ? "active" : ""}" data-action="set-field" data-path="vitrine.barreBasse" data-val="${bk}">
+                <strong>${blbl}</strong>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    return renderVerificationStepSummary("vitrine", "Votre Vitrine Digitale & Réservation est prête !");
+  }
+
+  /* ==========================================================================
+     2. ÉTAPES DU STUDIO 15 JEUX INSTANTANÉS (src/lib/wheel-style.ts & catalog.ts)
+     ========================================================================== */
+  function renderRoueStep(cle) {
+    const r = drafts.roue;
+    if (cle === "jeu") {
+      const hasardCards = CB.INSTANT_MECHANICS.filter((m) => m.family === "hasard").map((m) => `
+        <button type="button" class="k-choice-tile ${r.gameType === m.key ? "active" : ""}" data-action="set-field" data-path="roue.gameType" data-val="${m.key}">
+          <span style="font-size:1.35rem">${m.emoji}</span>
+          <strong>${m.label}</strong>
+          <small>Hasard · Tirage immédiat</small>
+        </button>
+      `).join("");
+
+      const adresseCards = CB.INSTANT_MECHANICS.filter((m) => m.family === "adresse").map((m) => `
+        <button type="button" class="k-choice-tile ${r.gameType === m.key ? "active" : ""}" data-action="set-field" data-path="roue.gameType" data-val="${m.key}">
+          <span style="font-size:1.35rem">${m.emoji}</span>
+          <strong>${m.label}</strong>
+          <small>Adresse · Défi avant tirage</small>
+        </button>
+      `).join("");
+
+      return `
+        <div class="k-field-group">
+          <label class="k-label" for="r-name">Titre affiché en haut de votre jeu</label>
+          <input id="r-name" type="text" class="k-input" value="${escapeAttr(r.name)}" data-bind="roue.name" />
+        </div>
+        <div class="k-field-group">
+          <label class="k-label">🎲 Famille 1 : Les 9 Jeux de Hasard (Tirage immédiat)</label>
+          <div class="k-choice-grid-3">${hasardCards}</div>
+        </div>
+        <div class="k-field-group">
+          <label class="k-label">🎯 Famille 2 : Les 6 Jeux d'Adresse (Le joueur doit réussir un défi avant que le tirage s'ouvre)</label>
+          <div class="k-choice-grid-3">${adresseCards}</div>
+        </div>
+        <div class="k-field-group">
+          <label class="k-label">Limite de participation par navigateur (<code>play_limit</code> — ADR-183)</label>
+          <div class="k-choice-grid-3">
+            ${[
+              ["once", "1 seule fois par navigateur"],
+              ["daily", "1 fois par jour / navigateur"],
+              ["weekly", "1 fois par semaine / navigateur"],
+            ].map(([lk, llbl]) => `
+              <button type="button" class="k-choice-tile ${r.playLimit === lk ? "active" : ""}" data-action="set-field" data-path="roue.playLimit" data-val="${lk}">
+                <strong>${llbl}</strong>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    if (cle === "lots") {
+      const lotsHtml = (r.lots || []).map((l, idx) => `
+        <div class="k-item-editor-row">
+          <div style="display:flex;align-items:center;gap:0.6rem;">
+            <input type="color" value="${l.color || "#fcca59"}" data-action="lot-color" data-idx="${idx}" style="width:28px;height:28px;border:2px solid #211d16;border-radius:6px;cursor:pointer;" />
+            <div>
+              <strong>${escapeHtml(l.label)}</strong>
+              <small style="display:block;">Poids : ${l.weight}% · Stock : ${l.stock} · ${l.isWinning ? "🎁 Lot gagnant" : "Perdant"}</small>
+            </div>
+          </div>
+          <button type="button" class="k-btn-mini-del" data-action="del-roue-lot" data-idx="${idx}">Retirer</button>
+        </div>
+      `).join("");
+
+      return `
+        <div class="k-field-group">
+          <label class="k-label">Vos lots et probabilités (Stock fini & garde de valeur atomique)</label>
+          <div class="k-items-stack">${lotsHtml}</div>
+        </div>
+        <div class="k-field-group k-add-box">
+          <strong>+ Ajouter un lot à faire gagner</strong>
+          <div class="k-grid-2" style="margin-top:0.5rem;">
+            <input type="text" id="new-lot-label" class="k-input" placeholder="Ex : Dessert offert, -20 %, Soin découverte…" />
+            <input type="number" id="new-lot-stock" class="k-input" placeholder="Stock (ex: 50)" value="50" min="1" />
+          </div>
+          <button type="button" class="k-btn k-btn-yellow" id="btn-add-roue-lot" style="margin-top:0.6rem;">+ Ajouter ce lot</button>
+        </div>
+      `;
+    }
+
+    if (cle === "allure") {
+      const ambiancesHtml = CB.WHEEL_PRESETS_AMBIANCE.map((p) => `
+        <button type="button" class="k-choice-tile ${r.preset === p.key ? "active" : ""}" data-action="apply-wheel-preset" data-val="${p.key}">
+          <div class="k-swatch-row">
+            <span style="background:${p.swatch[0]}"></span>
+            <span style="background:${p.swatch[1]}"></span>
+            <span style="background:${p.swatch[2]}"></span>
+          </div>
+          <strong>${p.label}</strong>
+          <small>Ambiance (${p.style.pageTheme})</small>
+        </button>
+      `).join("");
+
+      const universHtml = CB.WHEEL_PRESETS_UNIVERS.map((p) => `
+        <button type="button" class="k-choice-tile ${r.preset === p.key ? "active" : ""}" data-action="apply-wheel-preset" data-val="${p.key}">
+          <img src="fonds/${p.style.fond}-vignette.webp" alt="${escapeAttr(p.label)}" class="k-fond-thumb" loading="lazy" />
+          <strong>${p.label}</strong>
+          <small>Univers + Fond illustré</small>
+        </button>
+      `).join("");
+
+      const fondsHtml = ["aucun", ...CB.FOND_KEYS].map((fk) => `
+        <button type="button" class="k-choice-tile ${(r.fond || "aucun") === fk ? "active" : ""}" data-action="set-field" data-path="roue.fond" data-val="${fk}">
+          ${fk === "aucun" ? `<span style="font-size:1.3rem">🚫</span><strong>Aucun fond</strong>` : `<img src="fonds/${fk}-vignette.webp" alt="${CB.FOND_LABELS[fk]}" class="k-fond-thumb" loading="lazy" /><strong>${CB.FOND_LABELS[fk]}</strong>`}
+        </button>
+      `).join("");
+
+      return `
+        <div class="k-field-group">
+          <label class="k-label">1. Les 8 Ambiances de couleurs (<code>WHEEL_PRESETS_AMBIANCE</code>)</label>
+          <div class="k-choice-grid-4">${ambiancesHtml}</div>
+        </div>
+        <div class="k-field-group">
+          <label class="k-label">2. Les 10 Univers thématiques avec fond illustré (<code>WHEEL_PRESETS_UNIVERS</code>)</label>
+          <div class="k-choice-grid-3">${universHtml}</div>
+        </div>
+        <div class="k-field-group">
+          <label class="k-label">3. Choix explicite du fond d'écran (<code>FOND_KEYS</code> dans <code>src/lib/fonds-ecran.ts</code>)</label>
+          <div class="k-choice-grid-4">${fondsHtml}</div>
         </div>
       `;
     }
@@ -1326,6 +1598,13 @@
   });
 
   $("#k-btn-publish")?.addEventListener("click", () => openPublishModal());
+  $("#k-dock-btn-form")?.addEventListener("click", () => {
+    setMobileStudioView("form", true);
+  });
+  $("#k-dock-btn-preview")?.addEventListener("click", () => {
+    setMobileStudioView("preview", true);
+  });
+  $("#k-dock-btn-publish")?.addEventListener("click", () => openPublishModal());
   $("#k-account-btn")?.addEventListener("click", () => openPublishModal(true));
   $("#k-cap-save-account-btn")?.addEventListener("click", () => openPublishModal());
   $("#k-close-publish-modal")?.addEventListener("click", () => {
