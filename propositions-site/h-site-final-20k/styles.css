@@ -4767,7 +4767,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     box-shadow: 3px 3px 0 var(--k-ink);
   }
   .k-dock-publish {
-    background: #d94e0f;
+    background: #b83a09;
     color: #ffffff;
     padding: 0.58rem 0.95rem;
   }
