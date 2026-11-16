@@ -78,7 +78,7 @@ function auditer(dossier) {
   const r = spawnSync(
     process.platform === "win32" ? "npm.cmd" : "npm",
     ["audit", "--audit-level=moderate"],
-    { cwd: dossier, encoding: "utf8" },
+    { cwd: dossier, encoding: "utf8", shell: process.platform === "win32" },
   );
   return { code: r.status ?? 1, sortie: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
@@ -102,7 +102,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       console.error(
         `\n❌ Vulnérabilité signalée dans « ${dossier} ». Ce n'est PAS une panne du service : aucune reprise.`,
       );
-      process.exit(0);
+      process.exit(1);
     }
 
     if (suite === "reprendre") {

@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-location-assign-relative-destination */
 /* ============================================================
    SITE FINAL 20K (H) — LASTCHANCE
    Accueille l'interactivité de index.html ET de vitrine-reservation.html
@@ -73,7 +74,6 @@
   }
 
   /* ── 3. LE MANÈGE INTERACTIF DES 10 MÉCANIQUES DE JEU (Sans doublons Vitrine/RDV) ── */
-  const S = 'stroke="#161317" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"';
   const JUKEBOX_GAMES = [
     {
       id: "core",

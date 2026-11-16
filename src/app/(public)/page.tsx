@@ -4,7 +4,6 @@ import Link from "next/link";
 import { HeroCloudBackdrop } from "@/components/marketing/hero-cloud-backdrop";
 import { StraightRibbonTicker } from "@/components/marketing/straight-ribbon-ticker";
 import { KermessePatternSection } from "@/components/marketing/kermesse-pattern-background";
-import { KermesseWorldTransition } from "@/components/marketing/kermesse-world-transition";
 import { HeroStickers } from "@/components/marketing/hero-stickers";
 import { Magnetic } from "@/components/marketing/magnetic";
 import { InteractiveGamesSimulator } from "@/components/marketing/interactive-games-simulator";

@@ -172,6 +172,7 @@ export function SiteHeader() {
                           onClick={() => setMegaOpen(false)}
                           className={`group relative flex items-center gap-3.5 p-3 rounded-2xl border border-k-ink/10 bg-white shadow-xs transition-all duration-200 ${mod.bgHover}`}
                         >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={mod.image}
                             alt={mod.label}
@@ -292,6 +293,7 @@ export function SiteHeader() {
                   onClick={() => setOpen(false)}
                   className="flex items-center gap-3 rounded-2xl p-2.5 border border-k-ink/10 bg-k-bg/50 hover:bg-k-yellow/30 transition-colors"
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={mod.image}
                     alt={mod.label}

@@ -127,12 +127,12 @@ export function InteractiveGamesSimulator() {
   const [burst, setBurst] = useState(0);
 
   // États jeux instantanés
-  const [_instantWon, setInstantWon] = useState(false);
+  const [, setInstantWon] = useState(false);
   const [playingInstant, setPlayingInstant] = useState(false);
   const [wheelRotation, setWheelRotation] = useState(0);
   const [scratched, setScratched] = useState(false);
   const [slotSymbols, setSlotSymbols] = useState(["🍒", "🍋", "⭐"]);
-  const [_reflexSuccess, setReflexSuccess] = useState<boolean | null>(null);
+  const [, setReflexSuccess] = useState<boolean | null>(null);
 
   // États pronostics
   const [homeScore, setHomeScore] = useState(2);
@@ -147,7 +147,7 @@ export function InteractiveGamesSimulator() {
   const [openedDay, setOpenedDay] = useState<number | null>(5);
 
   // État Ticket d'Or
-  const [_goldTicketRevealed, setGoldTicketRevealed] = useState(false);
+  const [, setGoldTicketRevealed] = useState(false);
 
   // État Wallet Tampons
   const [walletStamps, setWalletStamps] = useState(6);

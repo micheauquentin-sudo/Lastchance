@@ -114,6 +114,9 @@ export const PUBLIC_NONCE_PREFIXES = [
 
 /** `true` si `pathname` est `prefix` ou une de ses sous-routes. */
 function matchesPrefix(pathname: string, prefix: string): boolean {
+  if (prefix === "/studio") {
+    return pathname.startsWith("/studio/");
+  }
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 

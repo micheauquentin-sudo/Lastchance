@@ -39,6 +39,15 @@ Document de reprise opérationnelle. L'historique détaillé vit dans
 - Codex pilote audits et validation. Claude Code reste autonome et n'est lancé
   que par l'utilisateur; ne pas lire ses sessions ni modifier ses réglages.
 
+## État vérifié le 2026-11-16 (audit & préparation GO)
+
+- **CSP `/studio` et réécriture `/vitrine-reservation`**: `matchesPrefix` (`src/lib/security-headers.ts`) limite désormais le régime `sensitive` aux sous-routes `/studio/` afin de laisser `/studio` (`studio.html`) s'exécuter en régime `static`; `src/proxy.ts` réécrit aussi `/vitrine-reservation` vers `/h-site-final-20k/vitrine-reservation.html`.
+- **Site vitrine `h-site-final-20k`**: ajout du bouton `/login` dans l'en-tête (`pop-btn-ink`, contraste préservé sur `.header-nav-annex`) et des liens `/legal`, `/privacy`, `/terms`, `/cookies`, `/login` dans le pied de page des pages publiques, synchronisé avec `propositions-site/h-site-final-20k/`.
+- **Qualité & sécurité dépendances**: 18 warnings ESLint éliminés (0 erreur, 0 warning); `next@16.4.6`, `@sentry/nextjs@10.78.0`, `sharp@0.35.5`, `zod@^4.6.7`, `vitest@4.1.12` et `overrides` mis à jour sur racine et `site/` (**0 vulnérabilité** `npm audit` des deux côtés); `scripts/audit-avec-reprises.mjs` rétabli sur `process.exit(1)` avec `shell: process.platform === "win32"`; PR Dependabot #390, #402 et #403 fermées.
+- **Production Supabase & Vercel**: les 25 lots gagnants à `value_cents IS NULL` des 8 campagnes historiques en pause de `CLUB` (`c5bed2d4-1952-40cc-9ca9-2e742db86fe8`) ont été régularisés avec des valeurs `< 20 €` et un stock fini (`50` si nul); `Soirée` et `Saint-Valentin` (fenêtre étendue au `2026-12-31`) ont été réactivées (`status = 'active'`, `/play/MHD5RUB3` HTTP 200). `RESEND_FROM_EMAIL` (`LastChance <onboarding@resend.dev>`) a été posée dans Vercel Production.
+- **Preuves locales fraîches**: `migrations:check` (219, head `20261221120000`), `sql:check`, `casts:check`, `typecheck`, `lint` (0/0), `npm audit` (0/0 racine et `site/`), `build` Next 16.4.6 (70 pages racine, 8 pages `site/`), `npm test` (438 fichiers / 7 782 tests) et tests Node (`casts`, `sql`, `migrations`, `production-health`) tous verts.
+- **Reliquats propriétaire restants hors dépôt**: DNS GoDaddy (`A @` et `A app` → `76.76.21.21`) puis mise à jour `NEXT_PUBLIC_APP_URL` + redéploiement; passage au plan Vercel Pro; variables `LEGAL_ENTITY_NAME` et `LEGAL_POSTAL_ADDRESS` sur Vercel Production; vérification mode Live Stripe/webhook sur domaine final; optionnels `CRON_SECRET` GitHub Secrets, `GOOGLE_WALLET_*`, canal SMS Brevo, et banc de capacité live 250 joueurs.
+
 ## État vérifié le 2026-09-16
 
 - `main` est au SHA `f965f4f47d5e9b025438f6f8f6a6624c625f74b6`. Les PR #381 et

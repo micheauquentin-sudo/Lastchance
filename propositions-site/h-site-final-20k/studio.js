@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-location-assign-relative-destination */
 /* ==========================================================================
    STUDIO KERMESSE — LOGIQUE INTERACTIVE COMPLÈTE (studio.js)
    Miroir fidèle de :
@@ -10,7 +11,6 @@
    ========================================================================== */
 (function () {
   const CB = window.LC_CODEBASE;
-  const OFFRE = window.LC_OFFRE;
   if (!CB) return;
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -669,7 +669,7 @@
     }
 
     if (cle === "cadeaux") {
-      const mList = (f.milestones || []).map((m, idx) => `
+      const mList = (f.milestones || []).map((m) => `
         <div class="k-item-editor-row">
           <div>
             <strong>${m.costPoints} pts (${Math.round(m.costPoints / 100)} visites)</strong> — ${escapeHtml(m.label)}
