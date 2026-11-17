@@ -41,55 +41,108 @@
     }
   }
 
-  /* ── 2. STORYBOARD INTERACTIF 3 ÉCRANS (« 1. ILS SCANNENT · 2. ILS JOUENT · 3. ILS GAGNENT ») ── */
-  const storyContainer = $("#storyboard-demo");
+  /* ── 2. MOTION DESIGN DU PARCOURS (« 1. ILS SCANNENT · 2. ILS JOUENT · 3. ILS GAGNENT ») ── */
+  const motionStage = $("#motion-stage");
   const storyTrigger = $("#demo-story-trigger");
-  const storyPrizeLabel = $("#story-prize-label");
-  const storyPrizeCode = $("#story-prize-code");
 
-  const STORY_PRIZES = [
-    "-20% sur votre visite",
-    "Cadeau Surprise Offert",
-    "Soin / Produit Découverte",
-    "Bon d'achat de 10 €",
+  const MOTION_PRIZES = [
+    "-20% SUR VOTRE ADDITION",
+    "UN DESSERT MAISON OFFERT",
+    "UNE BOISSON OU CAFÉ OFFERT",
+    "BON D'ACHAT DE 10 € COMPTOIR",
   ];
 
-  if (storyContainer) {
-    const cards = $$(".story-phone-card", storyContainer);
-    const sgsCards = $$(".sgs-card", storyContainer);
-    const activateStep = (stepNum) => {
-      cards.forEach((c) => c.classList.toggle("is-active", Number(c.dataset.step) === stepNum));
-      const activeCard = cards.find((c) => Number(c.dataset.step) === stepNum);
-      if (activeCard && storyContainer.scrollWidth > storyContainer.clientWidth) {
-        const left = activeCard.offsetLeft - (storyContainer.clientWidth - activeCard.offsetWidth) / 2;
-        try {
-          storyContainer.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
-        } catch {
-          storyContainer.scrollLeft = Math.max(0, left);
+  if (motionStage) {
+    const mProgressBar = $("#motion-progress-bar");
+    const mPlayPauseBtn = $("#motion-play-pause");
+    const mRewardTitle = $("#m-reward-title");
+    const mTicketCode = $("#m-ticket-code");
+    const mSlotStatus = $("#m-slot-status");
+    const mSlotCabinet = $(".m-slot-cabinet", motionStage);
+    const scenes = $$(".motion-scene", motionStage);
+    const stepBtns = $$(".m-step-btn", motionStage);
+    let currentStep = 1;
+    let isPlaying = true;
+    let timerId = null;
+
+    const setMotionStep = (stepNum) => {
+      currentStep = stepNum;
+      scenes.forEach((s) => s.classList.toggle("is-active", Number(s.dataset.step) === stepNum));
+      stepBtns.forEach((b) => b.classList.toggle("active", Number(b.dataset.step) === stepNum));
+
+      if (mProgressBar) {
+        mProgressBar.style.width = `${(stepNum / 3) * 100}%`;
+      }
+
+      if (stepNum === 2) {
+        if (mSlotCabinet) mSlotCabinet.classList.remove("is-won");
+        if (mSlotStatus) mSlotStatus.innerHTML = `<span class="m-status-star">⭐</span><strong>LES ROULEAUX TOURNENT !</strong>`;
+        setTimeout(() => {
+          if (currentStep === 2) {
+            if (mSlotCabinet) mSlotCabinet.classList.add("is-won");
+            if (mSlotStatus) mSlotStatus.innerHTML = `<span class="m-status-star">💎</span><strong>3 DIAMANTS ALIGNÉS !</strong>`;
+          }
+        }, 1600);
+      }
+
+      if (stepNum === 3) {
+        if (mRewardTitle) {
+          mRewardTitle.textContent = MOTION_PRIZES[Math.floor(Math.random() * MOTION_PRIZES.length)];
         }
-      }
-      if (stepNum === 2 && sgsCards.length) {
-        sgsCards.forEach((c) => c.classList.remove("is-spotlight"));
-        const randomCard = sgsCards[Math.floor(Math.random() * sgsCards.length)];
-        randomCard?.classList.add("is-spotlight");
-      }
-      if (stepNum === 3 && storyPrizeCode && storyPrizeLabel) {
-        storyPrizeLabel.textContent = STORY_PRIZES[Math.floor(Math.random() * STORY_PRIZES.length)];
-        storyPrizeCode.textContent = "LC-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+        if (mTicketCode) {
+          mTicketCode.textContent = "LC-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+        }
       }
     };
 
-    cards.forEach((card) => {
-      card.addEventListener("click", () => activateStep(Number(card.dataset.step)));
+    const nextMotionStep = () => {
+      const next = currentStep >= 3 ? 1 : currentStep + 1;
+      setMotionStep(next);
+    };
+
+    const startMotionLoop = () => {
+      stopMotionLoop();
+      timerId = setInterval(() => {
+        if (isPlaying) {
+          nextMotionStep();
+        }
+      }, 3400);
+    };
+
+    const stopMotionLoop = () => {
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+    };
+
+    stepBtns.forEach((b) => {
+      b.addEventListener("click", () => {
+        const step = Number(b.dataset.step);
+        setMotionStep(step);
+        startMotionLoop();
+      });
     });
+
+    if (mPlayPauseBtn) {
+      mPlayPauseBtn.addEventListener("click", () => {
+        isPlaying = !isPlaying;
+        mPlayPauseBtn.textContent = isPlaying ? "⏸️ Pause" : "▶ Lecture";
+      });
+    }
 
     if (storyTrigger) {
       storyTrigger.addEventListener("click", () => {
-        activateStep(1);
-        setTimeout(() => activateStep(2), 900);
-        setTimeout(() => activateStep(3), 2400);
+        setMotionStep(1);
+        isPlaying = true;
+        if (mPlayPauseBtn) mPlayPauseBtn.textContent = "⏸️ Pause";
+        startMotionLoop();
       });
     }
+
+    // Démarrage initial
+    setMotionStep(1);
+    startMotionLoop();
   }
 
   /* ── 3. LE MANÈGE INTERACTIF DES 10 MÉCANIQUES DE JEU (Sans doublons Vitrine/RDV) ── */
@@ -461,28 +514,51 @@
   const updateConfigurator = () => {
     if (!O) return;
     const plan = O.FORMULES[selectedPlanIdx];
-    let sum = plan.prix;
+    let sumMonthly = plan.prix;
+    let sumOneOff = 0;
     const allRights = new Set(plan.droits);
 
-    O.OPTIONS.ligneAbonnement.forEach((a) => {
+    // Parcourt tous les add-ons
+    const allAddonsList = [
+      ...O.OPTIONS.ligneAbonnement,
+      ...(O.OPTIONS.mensuelles.filter((m) => m.id === "loyalty" || m.id === "referral")),
+      ...O.OPTIONS.ponctuelles,
+    ];
+
+    allAddonsList.forEach((a) => {
       const cb = $(`input[data-addon="${a.id}"]`, cfgAddonsBox);
-      const alreadyInPlan = plan.droits.includes(a.id);
+      const badge = $(`span[data-badge="${a.id}"]`, cfgAddonsBox);
+      const isAlreadyInPlan = plan.droits.includes(a.id);
+
       if (cb) {
-        cb.disabled = alreadyInPlan;
-        if (alreadyInPlan) {
+        cb.disabled = isAlreadyInPlan;
+        if (isAlreadyInPlan) {
           cb.checked = true;
+          if (badge) {
+            badge.textContent = "✓ Inclus dans l'offre";
+            badge.className = "cfg-addon-status-pill in-plan";
+          }
         } else {
           cb.checked = selectedAddons.has(a.id);
+          if (badge) {
+            badge.textContent = a.duree ? `Pass ${a.duree}` : "Option mensuelle";
+            badge.className = "cfg-addon-status-pill optional";
+          }
           if (cb.checked) {
-            sum += a.prix;
+            if (a.duree) {
+              sumOneOff += a.prix;
+            } else {
+              sumMonthly += a.prix;
+            }
             allRights.add(a.id);
           }
         }
       }
     });
 
-    if (cfgTotal) cfgTotal.textContent = `${sum} € / mois`;
-    if (cfgSummaryTotal) cfgSummaryTotal.textContent = `${sum} € / mois`;
+    const totalText = sumOneOff > 0 ? `${sumMonthly} €/mois + ${sumOneOff} € (pass)` : `${sumMonthly} € / mois`;
+    if (cfgTotal) cfgTotal.textContent = totalText;
+    if (cfgSummaryTotal) cfgSummaryTotal.textContent = totalText;
     if (cfgPlanName) cfgPlanName.textContent = `Formule ${plan.nom} (${plan.prix} €)`;
     if (cfgPlanTagline) cfgPlanTagline.textContent = plan.tagline;
     if (cfgJauge) {
@@ -504,7 +580,12 @@
     const plan = O.FORMULES[selectedPlanIdx];
     let sum = plan.prix;
     const addonsList = [];
-    O.OPTIONS.ligneAbonnement.forEach((a) => {
+    const allAddonsList = [
+      ...O.OPTIONS.ligneAbonnement,
+      ...(O.OPTIONS.mensuelles.filter((m) => m.id === "loyalty" || m.id === "referral")),
+      ...O.OPTIONS.ponctuelles,
+    ];
+    allAddonsList.forEach((a) => {
       if (!plan.droits.includes(a.id) && selectedAddons.has(a.id)) {
         sum += a.prix;
         addonsList.push(a.id);
@@ -649,10 +730,25 @@
       cfgPlansBox.appendChild(btn);
     });
 
-    O.OPTIONS.ligneAbonnement.forEach((a) => {
+    // 1. Groupe des options mensuelles sans engagement
+    const monthlyHeader = el("div", { class: "cfg-addon-group-title" }, "📅 Options mensuelles sans engagement :");
+    cfgAddonsBox.appendChild(monthlyHeader);
+
+    const monthlyList = [
+      ...O.OPTIONS.ligneAbonnement,
+      ...(O.OPTIONS.mensuelles.filter((m) => m.id === "loyalty" || m.id === "referral")),
+    ];
+
+    monthlyList.forEach((a) => {
       const lbl = el("label", { class: "cfg-addon-label" }, `
-        <input type="checkbox" data-addon="${a.id}" />
-        <span>${a.nom} (+${a.prix} €)</span>
+        <div class="cfg-addon-row">
+          <input type="checkbox" data-addon="${a.id}" />
+          <div class="cfg-addon-texts">
+            <strong>${a.nom} <span class="cfg-addon-price">+${a.prix} €/mois</span></strong>
+            <small>${a.desc || a.regle}</small>
+          </div>
+          <span class="cfg-addon-status-pill" data-badge="${a.id}">Option</span>
+        </div>
       `);
       const input = $("input", lbl);
       input.addEventListener("change", () => {
@@ -662,6 +758,31 @@
       });
       cfgAddonsBox.appendChild(lbl);
     });
+
+    // 2. Groupe des pass événementiels & campagnes ponctuelles
+    const oneOffHeader = el("div", { class: "cfg-addon-group-title", style: "margin-top:0.75rem;" }, "⚡ Pass événements & campagnes à l'unité (sans abonnement) :");
+    cfgAddonsBox.appendChild(oneOffHeader);
+
+    O.OPTIONS.ponctuelles.forEach((a) => {
+      const lbl = el("label", { class: "cfg-addon-label" }, `
+        <div class="cfg-addon-row">
+          <input type="checkbox" data-addon="${a.id}" />
+          <div class="cfg-addon-texts">
+            <strong>${a.nom} <span class="cfg-addon-price">+${a.prix} € unique</span></strong>
+            <small>${a.desc || a.duree} · ${a.regle}</small>
+          </div>
+          <span class="cfg-addon-status-pill optional" data-badge="${a.id}">Pass</span>
+        </div>
+      `);
+      const input = $("input", lbl);
+      input.addEventListener("change", () => {
+        if (input.checked) selectedAddons.add(a.id);
+        else selectedAddons.delete(a.id);
+        updateConfigurator();
+      });
+      cfgAddonsBox.appendChild(lbl);
+    });
+
     updateConfigurator();
   }
 
@@ -1666,13 +1787,14 @@
       const tier2El = $("#fc-tier-2");
       const tier3El = $("#fc-tier-3");
       const jackpotPctEl = $("#fc-jackpot-pct");
+      const jackpotPctPillEl = $("#fc-jackpot-pct-pill");
       const jackpotBarEl = $("#fc-jackpot-bar");
       const jackpotMsgEl = $("#fc-jackpot-msg");
 
       const pts = fcStamps * 100;
 
       if (pointsValEl) pointsValEl.textContent = `${pts}`;
-      if (visitesCountEl) visitesCountEl.textContent = `${fcStamps} visites validées`;
+      if (visitesCountEl) visitesCountEl.textContent = `${fcStamps} passages validés`;
       if (pointsBarEl) pointsBarEl.style.width = `${Math.min(100, (fcStamps / 5) * 100)}%`;
 
       if (loyaltyMsgEl) {
@@ -1683,7 +1805,7 @@
       }
 
       if (tierBadgeEl) {
-        tierBadgeEl.textContent = fcStamps >= 5 ? "🏆 NIVEAU OR" : "🥈 NIVEAU ARGENT";
+        tierBadgeEl.textContent = fcStamps >= 5 ? "🏆 OR" : "🥈 ARGENT";
       }
       if (tierProgressTextEl) {
         tierProgressTextEl.textContent =
@@ -1707,23 +1829,24 @@
         }
       }
 
-      if (refCountEl) refCountEl.textContent = `${fcRefs} / 3 amis invités`;
+      if (refCountEl) refCountEl.textContent = `${fcRefs} ami${fcRefs > 1 ? "s" : ""} parrainé${fcRefs > 1 ? "s" : ""}`;
       if (tier2El) {
         tier2El.classList.toggle("is-reached", fcRefs >= 2);
-        tier2El.textContent = fcRefs >= 2 ? "✓ 2 amis (Dessert)" : "2 amis (Dessert)";
+        tier2El.textContent = fcRefs >= 2 ? "✓ Gagné" : "En attente";
       }
       if (tier3El) {
         tier3El.classList.toggle("is-reached", fcRefs >= 3);
-        tier3El.textContent = fcRefs >= 3 ? "✓ 3 amis (VIP Or)" : "3 amis (VIP Or)";
+        tier3El.textContent = fcRefs >= 3 ? "✓ Gagné (Or)" : "🔒 3 amis";
       }
 
       if (jackpotPctEl) jackpotPctEl.textContent = `${fcJackpot} %`;
+      if (jackpotPctPillEl) jackpotPctPillEl.textContent = `Jauge à ${fcJackpot}%`;
       if (jackpotBarEl) jackpotBarEl.style.width = `${fcJackpot}%`;
       if (jackpotMsgEl) {
         jackpotMsgEl.innerHTML =
           fcJackpot >= 100
             ? `🎆 <b>100 % ATTEINT !</b> Le grand tirage du Jackpot Collectif est déclenché pour toute la communauté !`
-            : `Plus que ${100 - fcJackpot} % pour déclencher le grand tirage collectif !`;
+            : `Plus que <strong>${100 - fcJackpot} %</strong> de visites collectives pour déclencher le grand tirage !`;
       }
 
       if (fcLiveLog && logHtml) {
@@ -1874,4 +1997,181 @@
   setTimeout(() => {
     revealElements.forEach((node) => node.classList.add("is-in"));
   }, 220);
+
+  /* ── 10. PAGE DÉDIÉE ABONNEMENTS & FORMULES (abonnements.html) ── */
+  const abStage = $("#ab-detail-stage");
+  const abGrid = $("#ab-cards-grid");
+  const btnMonthly = $("#btn-billing-monthly");
+  const btnAnnual = $("#btn-billing-annual");
+  const abTabBtns = $$(".ab-tab-btn");
+
+  if ((abStage || abGrid) && O) {
+    let isAnnual = false;
+    let currentSelectedPlan = "engagement"; // Le Club par défaut
+
+    const PLAN_TARGETS = {
+      core: {
+        cible: "Bars, brasseries & commerces souhaitant animer leur comptoir sans contrainte",
+        roi: "Rentabilisé dès 1 client supplémentaire par semaine grâce au QR code de comptoir.",
+        capacites: "Scans illimités · 15 mini-jeux · Caisse universelle · Zéro matériel requis",
+      },
+      engagement: {
+        cible: "Restaurants, cafés, coiffeurs & boutiques souhaitant faire revenir leurs habitués",
+        roi: "Multiplie la fréquence de visite par 1,8 grâce aux tampons du passeport et au parrainage.",
+        capacites: "Passeport fidélité & Parrainage illimités · Zéro appli à installer · Scans illimités",
+      },
+      place: {
+        cible: "Salons de beauté, instituts, restaurants & chambres d'hôtes souhaitant des réservations directes",
+        roi: "Économisez les 15% à 25% de commission prélevés par les plateformes de réservation.",
+        capacites: "Agenda en ligne · Créneaux configurables · Carte numérique QR bilingue · 0% commission",
+      },
+      live: {
+        cible: "Bars d'ambiance, pubs sportifs, tiers-lieux & restaurants animant des soirées",
+        roi: "Remplissez vos mardis et jeudis soirs avec des quiz géants et des concours de pronostics.",
+        capacites: "Jusqu'à 250 joueurs simultanés sur grand écran · Télécommande animateur · Scans illimités",
+      },
+      full: {
+        cible: "Établissements ambitieux voulant toute la puissance de LastChance sans compromis",
+        roi: "La solution tout-en-un ultime : fidélisation, réservation et animation réunies au meilleur prix.",
+        capacites: "Toutes les briques existantes et futures en illimité · Écran géant 250 pers. · Support VIP",
+      },
+    };
+
+    const getPlanPrice = (plan) => {
+      if (!isAnnual) return `${plan.prix} €`;
+      const annualMonthly = Math.round(plan.prix * 0.8);
+      return `${annualMonthly} €`;
+    };
+
+    const renderPlanDetail = (planId) => {
+      if (!abStage) return;
+      const plan = O.FORMULES.find((f) => f.id === planId) || O.FORMULES[1];
+      const targetInfo = PLAN_TARGETS[plan.id] || PLAN_TARGETS.engagement;
+      const displayPrice = getPlanPrice(plan);
+
+      abStage.innerHTML = `
+        <div class="ab-detail-card">
+          <div class="ab-detail-top">
+            <div class="ab-detail-title-group">
+              <span class="ab-detail-target-pill">🎯 Cible : ${targetInfo.cible}</span>
+              <h3>Formule ${plan.nom}</h3>
+              <p class="ab-detail-tagline">« ${plan.tagline} »</p>
+            </div>
+            <div class="ab-detail-price-box">
+              <div class="ab-price-big">${displayPrice}</div>
+              <span class="ab-price-period">${isAnnual ? "par mois (facturé annuellement · 2 mois offerts)" : "par mois · sans engagement"}</span>
+            </div>
+          </div>
+
+          <div class="ab-detail-grid">
+            <div class="ab-detail-section">
+              <h4><span>✓</span> Ce qui est inclus dans votre formule :</h4>
+              <ul class="ab-points-list">
+                ${plan.points.map((pt) => `
+                  <li>
+                    <span class="ab-check-icon">✓</span>
+                    <span>${pt}</span>
+                  </li>
+                `).join("")}
+              </ul>
+            </div>
+
+            <div class="ab-detail-section">
+              <h4><span>💎</span> Modules &amp; Capacités activées :</h4>
+              <div class="ab-modules-chips">
+                ${plan.droits.map((d) => `
+                  <span class="ab-module-chip">✓ ${O.label(d)}</span>
+                `).join("")}
+              </div>
+              <div style="margin-top:1.2rem;background:#fdfaf0;border:2px dashed var(--ink);border-radius:14px;padding:0.75rem 0.95rem;">
+                <strong style="font:800 0.8rem var(--fun-font);display:block;margin-bottom:0.25rem;color:#78350f;">💡 Retour sur investissement garanti :</strong>
+                <p style="font-size:0.78rem;color:#451a03;margin:0;line-height:1.4;">${targetInfo.roi}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="ab-detail-footer">
+            <span class="ab-limits-pill">
+              <span>⚡ Jauges garanties :</span>
+              <strong>${targetInfo.capacites}</strong>
+            </span>
+            <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+              <a class="ticket-btn ticket-btn-large pop-btn-ink" href="/signup?plan=${encodeURIComponent(plan.id)}">
+                🎟️ Démarrer mon essai gratuit 7 jours (${plan.nom}) →
+              </a>
+              <a class="ticket-btn pop-btn-white" href="studio.html">
+                🛠️ Personnaliser dans le Studio
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    const renderPlansGrid = () => {
+      if (!abGrid) return;
+      abGrid.innerHTML = O.FORMULES.map((plan) => {
+        const isClub = plan.id === "engagement";
+        const isFull = plan.id === "full";
+        const displayPrice = getPlanPrice(plan);
+
+        return `
+          <div class="ab-card-item ${isClub ? "is-featured" : ""}">
+            ${isClub ? `<span class="ab-card-featured-badge">⭐ Coup de cœur</span>` : ""}
+            ${isFull ? `<span class="ab-card-featured-badge" style="background:#4c1d95;color:#ffffff;">🚀 Tout inclus</span>` : ""}
+            <div>
+              <div class="ab-card-head">
+                <strong>${plan.nom}</strong>
+                <small style="font-weight:700;color:#666;">${plan.promesse}</small>
+              </div>
+              <div class="ab-card-price-row">
+                <span class="ab-card-price-num">${displayPrice}</span>
+                <small style="font-weight:700;color:#555;">/mois</small>
+              </div>
+              <ul class="ab-card-points-preview">
+                ${plan.points.slice(0, 4).map((pt) => `<li>✓ ${pt}</li>`).join("")}
+              </ul>
+            </div>
+            <a class="ticket-btn ${isClub ? "pop-btn-yellow" : isFull ? "pop-btn-pink" : "pop-btn-ink"} w-full" href="/signup?plan=${encodeURIComponent(plan.id)}">
+              Essai 7j offert →
+            </a>
+          </div>
+        `;
+      }).join("");
+    };
+
+    abTabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const planId = btn.dataset.plan;
+        currentSelectedPlan = planId;
+        abTabBtns.forEach((b) => b.classList.toggle("active", b.dataset.plan === planId));
+        renderPlanDetail(planId);
+      });
+    });
+
+    if (btnMonthly && btnAnnual) {
+      btnMonthly.addEventListener("click", () => {
+        isAnnual = false;
+        btnMonthly.classList.add("active");
+        btnMonthly.setAttribute("aria-pressed", "true");
+        btnAnnual.classList.remove("active");
+        btnAnnual.setAttribute("aria-pressed", "false");
+        renderPlanDetail(currentSelectedPlan);
+        renderPlansGrid();
+      });
+
+      btnAnnual.addEventListener("click", () => {
+        isAnnual = true;
+        btnAnnual.classList.add("active");
+        btnAnnual.setAttribute("aria-pressed", "true");
+        btnMonthly.classList.remove("active");
+        btnMonthly.setAttribute("aria-pressed", "false");
+        renderPlanDetail(currentSelectedPlan);
+        renderPlansGrid();
+      });
+    }
+
+    renderPlanDetail(currentSelectedPlan);
+    renderPlansGrid();
+  }
 })();

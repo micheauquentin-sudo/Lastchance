@@ -99,24 +99,25 @@ window.LC_OFFRE = (function () {
   const OPTIONS = {
     // Lignes ajoutées à un abonnement en cours (soldStandalone: false).
     ligneAbonnement: [
-      { id: "vitrine", nom: "Vitrine", prix: 20, regle: "S'ajoute à une offre en cours. Sans engagement." },
-      { id: "reserver", nom: "Moments", prix: 20, regle: "S'ajoute à une offre en cours. Sans engagement." },
-      { id: "rendez_vous", nom: "Réservation", prix: 20, regle: "S'ajoute à une offre en cours. Sans engagement." },
+      { id: "vitrine", nom: "Vitrine & Carte QR", prix: 20, regle: "S'ajoute à une offre en cours. Sans engagement.", desc: "Menu et carte numérique interactive sans commission." },
+      { id: "reserver", nom: "Moments & Ateliers", prix: 20, regle: "S'ajoute à une offre en cours. Sans engagement.", desc: "Réservations d'ateliers et d'événements spéciaux." },
+      { id: "rendez_vous", nom: "Prise de RDV en ligne", prix: 20, regle: "S'ajoute à une offre en cours. Sans engagement.", desc: "Agenda de créneaux et synchronisation calendrier client." },
     ],
-    // Mensuelles, achetables sans abonnement.
+    // Mensuelles, achetables avec ou sans abonnement.
     mensuelles: [
-      { id: "loyalty", nom: "Passeport des habitués", prix: 19, regle: "Récurrent, sans engagement." },
-      { id: "referral", nom: "Bouche-à-oreille / Parrainage", prix: 12, regle: "Récurrent, sans engagement." },
-      { id: "duo", nom: "Duo Miroir", prix: 12, regle: "Déjà compris dans les cinq offres : ne s'achète que sans abonnement." },
-      { id: "bande", nom: "Portrait de la Bande", prix: 12, regle: "Déjà compris dans les cinq offres : ne s'achète que sans abonnement." },
+      { id: "loyalty", nom: "Passeport des habitués", prix: 19, regle: "Récurrent, sans engagement.", desc: "Tampons, points et récompenses débloquées." },
+      { id: "referral", nom: "Parrainage ambassadeurs", prix: 12, regle: "Récurrent, sans engagement.", desc: "Bouche-à-oreille et paliers de parrainage." },
+      { id: "duo", nom: "Duo Miroir", prix: 12, regle: "Déjà compris dans les cinq offres : ne s'achète que sans abonnement.", desc: "Jeu à deux brise-glace à table." },
+      { id: "bande", nom: "Portrait de la Bande", prix: 12, regle: "Déjà compris dans les cinq offres : ne s'achète que sans abonnement.", desc: "Jeu de groupe amusant à table." },
     ],
-    // Achats uniques.
+    // Achats uniques / Pass campagnes à la demande.
     ponctuelles: [
-      { id: "hunts", nom: "Chasse au QR", prix: 29, duree: "30 jours d'usage", regle: "Activable dans les 90 jours suivant l'achat." },
-      { id: "calendar", nom: "Calendrier à surprises", prix: 29, duree: "1 campagne, 31 jours max.", regle: "Activable dans les 90 jours suivant l'achat." },
-      { id: "quiz", nom: "Quiz express", prix: 15, duree: "7 jours d'usage", regle: "Activable dans les 90 jours suivant l'achat." },
-      { id: "jackpot", nom: "Cagnotte collective", prix: 29, duree: "30 jours d'usage", regle: "Activable dans les 90 jours suivant l'achat." },
-      { id: "pronostics", nom: "Saison de pronostics", prix: 39, duree: "1 compétition, jusqu'à 12 mois", regle: "Le droit court jusqu'à 7 jours après la finale." },
+      { id: "hunts", nom: "Chasse au QR", prix: 29, duree: "30 jours d'usage", regle: "Activable dans les 90 jours suivant l'achat.", desc: "Parcours de jeu interactif multi-lieux." },
+      { id: "calendar", nom: "Calendrier à surprises", prix: 29, duree: "1 campagne, 31 jours max.", regle: "Activable dans les 90 jours suivant l'achat.", desc: "Campagne quotidienne de surprises (ex: Avent)." },
+      { id: "quiz", nom: "Quiz express", prix: 15, duree: "7 jours d'usage", regle: "Activable dans les 90 jours suivant l'achat.", desc: "Quiz thématique pour animer une semaine." },
+      { id: "jackpot", nom: "Cagnotte collective", prix: 29, duree: "30 jours d'usage", regle: "Activable dans les 90 jours suivant l'achat.", desc: "Jauge commune et tirage au sort automatique." },
+      { id: "pronostics", nom: "Saison de pronostics", prix: 39, duree: "1 compétition, jusqu'à 12 mois", regle: "Le droit court jusqu'à 7 jours après la finale.", desc: "Pronostics sportifs sur grand championnat." },
+      { id: "events", nom: "Pass Soirée live", prix: 19, duree: "24h de jeu live", regle: "7 jours de préparation puis 24h de jeu.", desc: "Écran géant live et télécommande pour 30 pers." },
     ],
     soiree: {
       nom: "Soirée en jeu",
