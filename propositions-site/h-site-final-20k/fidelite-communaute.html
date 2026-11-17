@@ -174,7 +174,7 @@
           </p>
 
           <div>
-            <label class="vr-sector-switcher-label">1. 1. Choisissez l'habillage de votre Passeport :</label>
+            <label class="vr-sector-switcher-label">1. Choisissez l'habillage de votre Passeport :</label>
             <div class="jp-pill-choices" id="fc-fond-switcher" style="margin-bottom:0.85rem;"></div>
           </div>
 
@@ -191,7 +191,7 @@
           </div>
 
           <div class="fc-live-log" id="fc-live-log">
-            <strong>💡 Action en attente :</strong> Cliquez sur « +1 Simuler un passage client » ou changez le fond illustré ci-dessus pour voir le Passeport s'actualiser en direct.
+            <strong>💡 Action en attente :</strong> Naviguez dans le téléphone ci-contre ou cliquez sur « +1 Simuler un passage client » pour observer la réaction en direct.
           </div>
 
           <div style="margin-top:0.95rem;">
@@ -201,56 +201,89 @@
           </div>
         </div>
 
-        <!-- Téléphone interactif réunissant Passeport + Parrainage + Jackpot -->
+        <!-- Téléphone interactif avec navigation directe (Passeport, Parrainage & Jackpot) -->
         <div class="lavender-photo-frame">
           <div class="vr-interactive-phone fc-trio-phone" id="fc-trio-phone" style="background-size:cover;background-position:center;">
-            <div class="vr-iphone-top" style="background:rgba(255,255,255,0.92);padding:0.55rem 0.8rem;border-radius:14px;border:2px solid #211d16;">
-              <div>
-                <span class="vr-iphone-badge" style="font:800 0.65rem var(--body);display:block;color:#267f53;">GOOGLE WALLET · ÉCRAN D'ACCUEIL</span>
-                <strong>Passeport Club &amp; Communauté</strong>
-                <small id="fc-member-status" style="display:block;font-size:0.73rem;">Solde : 300 pts (3 visites)</small>
-              </div>
+            <!-- Barre de statut Smartphone (Heure, Encoche, Batterie) -->
+            <div class="fc-phone-status-bar">
+              <span>09:41</span>
+              <div class="fc-phone-notch" aria-hidden="true"></div>
+              <span>5G 📶 100% 🔋</span>
             </div>
 
-            <!-- Brique 1 : Passeport Fidélité -->
-            <div class="fc-phone-card fc-card-loyalty" style="background:rgba(232,255,245,0.95);">
-              <div class="fc-card-head">
-                <strong>🛂 1. Mon Passeport Fidélité</strong>
-                <span id="fc-stamps-count">300 / 500 pts</span>
-              </div>
-              <div class="fc-stamps-track" id="fc-stamps-track">
-                <span class="fc-stamp is-filled">★</span>
-                <span class="fc-stamp is-filled">★</span>
-                <span class="fc-stamp is-filled">★</span>
-                <span class="fc-stamp">4</span>
-                <span class="fc-stamp is-gift">🎁</span>
-              </div>
-              <small id="fc-loyalty-msg">Plus que 2 visites (200 pts) avant votre récompense !</small>
+            <!-- En-tête Club & Compte Membre -->
+            <div class="fc-phone-header">
+              <span class="vr-iphone-badge" style="font:800 0.65rem var(--body);display:block;color:#267f53;">● GOOGLE WALLET &amp; ÉCRAN D'ACCUEIL</span>
+              <strong>👑 Passeport Club &amp; Communauté</strong>
+              <small id="fc-member-status">Solde : 300 pts (3 visites) · Membre Habitué</small>
             </div>
 
-            <!-- Brique 2 : Parrainage -->
-            <div class="fc-phone-card fc-card-referral" style="background:rgba(243,232,255,0.95);">
-              <div class="fc-card-head">
-                <strong>🤝 2. Mes Amis Parrainés</strong>
-                <span id="fc-ref-count">1 / 3 amis (Palier Or)</span>
-              </div>
-              <div class="fc-ref-tiers" id="fc-ref-tiers">
-                <span class="fc-tier-pill is-reached">✓ 1 ami (-10%)</span>
-                <span class="fc-tier-pill" id="fc-tier-2">2 amis (Cadeau)</span>
-                <span class="fc-tier-pill" id="fc-tier-3">3 amis (VIP Or)</span>
-              </div>
+            <!-- Barre d'onglets de navigation intégrée dans le téléphone -->
+            <div class="fc-iphone-nav" role="tablist" aria-label="Navigation dans le Passeport">
+              <button type="button" class="fc-tab-btn active" data-fc-tab="passeport">🛂 1. Passeport</button>
+              <button type="button" class="fc-tab-btn" data-fc-tab="parrainage">🤝 2. Parrainage</button>
+              <button type="button" class="fc-tab-btn" data-fc-tab="jackpot">🎰 3. Jackpot</button>
             </div>
 
-            <!-- Brique 3 : Jackpot Collectif alimenté par les 2 premiers -->
-            <div class="fc-phone-card fc-card-jackpot" style="background:rgba(255,243,207,0.95);">
-              <div class="fc-card-head">
-                <strong>🎰 3. Jackpot Collectif de l'établissement</strong>
-                <span id="fc-jackpot-pct">88 %</span>
+            <!-- Panneau 1 : Passeport Fidélité -->
+            <div class="fc-tab-panel active" id="fc-panel-passeport">
+              <div class="fc-phone-card fc-card-loyalty">
+                <div class="fc-card-head">
+                  <strong>🛂 Carte Fidélité Digitale</strong>
+                  <span id="fc-stamps-count">300 / 500 pts</span>
+                </div>
+                <div class="fc-stamps-track" id="fc-stamps-track">
+                  <span class="fc-stamp is-filled">★</span>
+                  <span class="fc-stamp is-filled">★</span>
+                  <span class="fc-stamp is-filled">★</span>
+                  <span class="fc-stamp">4</span>
+                  <span class="fc-stamp is-gift">🎁</span>
+                </div>
+                <small id="fc-loyalty-msg">Plus que 2 visites (200 pts) avant votre récompense !</small>
               </div>
-              <div class="fc-jackpot-bar-outer">
-                <div class="fc-jackpot-bar-inner" id="fc-jackpot-bar" style="width: 88%;"></div>
+              <button type="button" class="fc-screen-action-btn pop-btn-yellow" id="fc-screen-btn-visit">
+                📲 Valider un passage client (+100 pts)
+              </button>
+            </div>
+
+            <!-- Panneau 2 : Parrainage Club -->
+            <div class="fc-tab-panel" id="fc-panel-parrainage">
+              <div class="fc-phone-card fc-card-referral">
+                <div class="fc-card-head">
+                  <strong>🤝 Programme Parrainage</strong>
+                  <span id="fc-ref-count">1 / 3 amis (Palier Or)</span>
+                </div>
+                <div class="fc-promo-box">
+                  <small style="font-weight:700;">Code de partage :</small>
+                  <strong class="fc-promo-code">LAST-LISA</strong>
+                  <button type="button" class="fc-copy-code-btn" id="fc-copy-code-btn">Copier</button>
+                </div>
+                <div class="fc-ref-tiers" id="fc-ref-tiers">
+                  <span class="fc-tier-pill is-reached">✓ 1 ami (-10%)</span>
+                  <span class="fc-tier-pill" id="fc-tier-2">2 amis (Cadeau)</span>
+                  <span class="fc-tier-pill" id="fc-tier-3">3 amis (VIP Or)</span>
+                </div>
               </div>
-              <small id="fc-jackpot-msg">Chaque visite et parrainage rapproche toute la communauté du tirage à 100 % !</small>
+              <button type="button" class="fc-screen-action-btn pop-btn-violet" id="fc-screen-btn-refer">
+                🤝 Simuler un ami parrainé (+1 ami)
+              </button>
+            </div>
+
+            <!-- Panneau 3 : Jackpot Collectif -->
+            <div class="fc-tab-panel" id="fc-panel-jackpot">
+              <div class="fc-phone-card fc-card-jackpot">
+                <div class="fc-card-head">
+                  <strong>🎰 Cagnotte Collective</strong>
+                  <span id="fc-jackpot-pct">88 %</span>
+                </div>
+                <div class="fc-jackpot-bar-outer">
+                  <div class="fc-jackpot-bar-inner" id="fc-jackpot-bar" style="width: 88%;"></div>
+                </div>
+                <small id="fc-jackpot-msg">Chaque visite et parrainage rapproche toute la communauté du tirage à 100 % !</small>
+              </div>
+              <button type="button" class="fc-screen-action-btn pop-btn-orange" id="fc-screen-btn-jackpot">
+                🎰 Déclencher le tirage au sort (à 100%)
+              </button>
             </div>
           </div>
         </div>

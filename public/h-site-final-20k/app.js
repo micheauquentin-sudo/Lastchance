@@ -1575,6 +1575,37 @@
     let fcRefs = 1;
     let fcJackpot = 88;
 
+    /* Navigation interactive interne au smartphone (3 onglets) */
+    const fcTabs = $$(".fc-tab-btn");
+    const fcPanels = {
+      passeport: $("#fc-panel-passeport"),
+      parrainage: $("#fc-panel-parrainage"),
+      jackpot: $("#fc-panel-jackpot"),
+    };
+    const switchFcTab = (tabName) => {
+      fcTabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.fcTab === tabName));
+      Object.entries(fcPanels).forEach(([name, panel]) => {
+        if (panel) panel.classList.toggle("active", name === tabName);
+      });
+    };
+    fcTabs.forEach((btn) => {
+      btn.addEventListener("click", () => switchFcTab(btn.dataset.fcTab));
+    });
+
+    /* Bouton copier le code parrain */
+    const fcCopyCodeBtn = $("#fc-copy-code-btn");
+    if (fcCopyCodeBtn) {
+      fcCopyCodeBtn.addEventListener("click", () => {
+        try {
+          navigator.clipboard.writeText("LAST-LISA");
+        } catch {}
+        fcCopyCodeBtn.textContent = "✓ Copié !";
+        setTimeout(() => {
+          fcCopyCodeBtn.textContent = "Copier";
+        }, 1800);
+      });
+    }
+
     const updateFcTrioUI = (logHtml) => {
       const stampsCountEl = $("#fc-stamps-count");
       const stampsTrackEl = $("#fc-stamps-track");
@@ -1631,29 +1662,55 @@
       }
     };
 
-    fcBtnVisit.addEventListener("click", () => {
+    const handleVisitAction = () => {
       fcStamps = Math.min(5, fcStamps + 1);
       fcJackpot = Math.min(100, fcJackpot + 4);
+      switchFcTab("passeport");
       updateFcTrioUI(
         `🛂 <b>Passage client validé (+100 pts) :</b> Solde porté à <b>${fcStamps * 100} pts</b> sur Google Wallet / Écran d'accueil <b>ET +4 % ajoutés au Jackpot Collectif (${fcJackpot} %)</b> !`
       );
-    });
+    };
 
-    fcBtnRefer.addEventListener("click", () => {
+    const handleReferAction = () => {
       fcRefs = Math.min(3, fcRefs + 1);
       fcJackpot = Math.min(100, fcJackpot + 6);
+      switchFcTab("parrainage");
       updateFcTrioUI(
         `🤝 <b>Nouvel ami parrainé validé :</b> Le parrain passe à ${fcRefs} ami(s) invité(s) <b>ET fait bondir le Jackpot Collectif de +6 % (${fcJackpot} %)</b> !`
       );
-    });
+    };
+
+    fcBtnVisit.addEventListener("click", handleVisitAction);
+    fcBtnRefer.addEventListener("click", handleReferAction);
+
+    /* Boutons d'action directs sur l'écran du smartphone */
+    const fcScreenBtnVisit = $("#fc-screen-btn-visit");
+    const fcScreenBtnRefer = $("#fc-screen-btn-refer");
+    const fcScreenBtnJackpot = $("#fc-screen-btn-jackpot");
+
+    if (fcScreenBtnVisit) fcScreenBtnVisit.addEventListener("click", handleVisitAction);
+    if (fcScreenBtnRefer) fcScreenBtnRefer.addEventListener("click", handleReferAction);
+    if (fcScreenBtnJackpot) {
+      fcScreenBtnJackpot.addEventListener("click", () => {
+        fcJackpot = 100;
+        updateFcTrioUI(
+          `🎉 <b>GRAND TIRAGE DU JACKPOT EN COURS !</b> Félicitations à toute la communauté pour avoir franchi les 100 % !`
+        );
+        const GE = window.LC_GAMES_ENGINE;
+        if (GE && typeof GE.burstConfetti === "function") {
+          GE.burstConfetti(fcScreenBtnJackpot);
+        }
+      });
+    }
 
     if (fcBtnReset) {
       fcBtnReset.addEventListener("click", () => {
         fcStamps = 3;
         fcRefs = 1;
         fcJackpot = 88;
+        switchFcTab("passeport");
         updateFcTrioUI(
-          `↺ <b>Démonstration réinitialisée :</b> Cliquez sur l'un des boutons ci-dessus pour observer la réaction en chaîne des 3 briques.`
+          `↺ <b>Démonstration réinitialisée :</b> Naviguez dans le téléphone ci-contre ou testez les simulations pour voir le Passeport s'actualiser en direct.`
         );
       });
     }
