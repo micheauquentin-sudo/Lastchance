@@ -1,4 +1,4 @@
-/* eslint-disable @next/next/no-location-assign-relative-destination */
+﻿/* eslint-disable @next/next/no-location-assign-relative-destination */
 /* ============================================================
    SITE FINAL 20K (H) — LASTCHANCE
    Accueille l'interactivité de index.html ET de vitrine-reservation.html
@@ -117,7 +117,7 @@
     },
     {
       id: "loyalty",
-      emoji: "🛂",
+      emoji: "🎟️",
       short: "Passeport Fidélité",
       title: "Passeport Fidélité 100% Mobile",
       cat: "Fidéliser sans carte papier",
@@ -1483,7 +1483,7 @@
     }
   }
 
-  
+
   /* ── 6B. INTERACTIVITÉ DU CALENDRIER SURPRISE (jeux-pronostics.html) ── */
   const csTodayBtn = $("#cs-today-btn");
   if (csTodayBtn) {
@@ -1592,12 +1592,58 @@
       btn.addEventListener("click", () => switchFcTab(btn.dataset.fcTab));
     });
 
+    /* Bascule mode validation : QR Code client vs Code du comptoir */
+    const fcValTabQr = $("#fc-val-tab-qr");
+    const fcValTabCode = $("#fc-val-tab-code");
+    const fcViewQr = $("#fc-view-qr");
+    const fcViewCode = $("#fc-view-code");
+    if (fcValTabQr && fcValTabCode && fcViewQr && fcViewCode) {
+      fcValTabQr.addEventListener("click", () => {
+        fcValTabQr.classList.add("active");
+        fcValTabCode.classList.remove("active");
+        fcViewQr.classList.add("active");
+        fcViewCode.classList.remove("active");
+      });
+      fcValTabCode.addEventListener("click", () => {
+        fcValTabCode.classList.add("active");
+        fcValTabQr.classList.remove("active");
+        fcViewCode.classList.add("active");
+        fcViewQr.classList.remove("active");
+      });
+    }
+
+    /* Décompte vivant du jeton QR Code client */
+    let qrSeconds = 252;
+    const qrTimerEl = $("#fc-qr-timer");
+    if (qrTimerEl) {
+      setInterval(() => {
+        qrSeconds = qrSeconds > 1 ? qrSeconds - 1 : 300;
+        const m = Math.floor(qrSeconds / 60);
+        const s = qrSeconds % 60;
+        qrTimerEl.textContent = `${m}:${s < 10 ? "0" : ""}${s}`;
+      }, 1000);
+    }
+
+    /* Animation pop de tampon validé */
+    const triggerStampPop = () => {
+      const feedback = $("#fc-stamp-feedback");
+      if (!feedback) return;
+      feedback.classList.add("is-visible");
+      const GE = window.LC_GAMES_ENGINE;
+      if (GE && typeof GE.burstConfetti === "function") {
+        GE.burstConfetti(feedback);
+      }
+      setTimeout(() => {
+        feedback.classList.remove("is-visible");
+      }, 1400);
+    };
+
     /* Bouton copier le code parrain */
     const fcCopyCodeBtn = $("#fc-copy-code-btn");
     if (fcCopyCodeBtn) {
       fcCopyCodeBtn.addEventListener("click", () => {
         try {
-          navigator.clipboard.writeText("LAST-LISA");
+          navigator.clipboard.writeText("LISA-774");
         } catch {}
         fcCopyCodeBtn.textContent = "✓ Copié !";
         setTimeout(() => {
@@ -1607,45 +1653,68 @@
     }
 
     const updateFcTrioUI = (logHtml) => {
-      const stampsCountEl = $("#fc-stamps-count");
-      const stampsTrackEl = $("#fc-stamps-track");
+      const pointsValEl = $("#fc-points-val");
+      const visitesCountEl = $("#fc-visites-count");
+      const pointsBarEl = $("#fc-points-bar");
       const loyaltyMsgEl = $("#fc-loyalty-msg");
+      const tierBadgeEl = $("#fc-tier-badge");
+      const tierProgressTextEl = $("#fc-tier-progress-text");
+      const tierBarEl = $("#fc-tier-bar");
+      const palierDessertEl = $("#fc-palier-dessert");
+      const palierDessertBadgeEl = $("#fc-palier-dessert-badge");
       const refCountEl = $("#fc-ref-count");
       const tier2El = $("#fc-tier-2");
       const tier3El = $("#fc-tier-3");
       const jackpotPctEl = $("#fc-jackpot-pct");
       const jackpotBarEl = $("#fc-jackpot-bar");
       const jackpotMsgEl = $("#fc-jackpot-msg");
-      const memberStatusEl = $("#fc-member-status");
 
-      if (stampsCountEl) stampsCountEl.textContent = `${fcStamps * 100} / 500 pts`;
-      if (stampsTrackEl) {
-        stampsTrackEl.innerHTML = [1, 2, 3, 4, 5]
-          .map((num) => {
-            if (num <= fcStamps) {
-              return `<span class="fc-stamp is-filled">${num === 5 ? "🎁" : "★"}</span>`;
-            }
-            return `<span class="fc-stamp ${num === 5 ? "is-gift" : ""}">${num === 5 ? "🎁" : num}</span>`;
-          })
-          .join("");
-      }
+      const pts = fcStamps * 100;
+
+      if (pointsValEl) pointsValEl.textContent = `${pts}`;
+      if (visitesCountEl) visitesCountEl.textContent = `${fcStamps} visites validées`;
+      if (pointsBarEl) pointsBarEl.style.width = `${Math.min(100, (fcStamps / 5) * 100)}%`;
+
       if (loyaltyMsgEl) {
         loyaltyMsgEl.innerHTML =
           fcStamps >= 5
-            ? `🎉 <b>500 points atteints (5 visites) !</b> Récompense débloquée sur Google Wallet / Écran d'accueil !`
-            : `Plus que ${(5 - fcStamps) * 100} pts (${5 - fcStamps} visite(s)) avant votre récompense !`;
+            ? `🎉 <b>500 points atteints !</b> Récompense Dessert du Chef débloquée en caisse !`
+            : `Plus que <strong>${(5 - fcStamps) * 100} pts</strong> (${5 - fcStamps} visite(s)) avant votre <strong>Dessert offert !</strong>`;
       }
 
-      if (refCountEl) refCountEl.textContent = `${fcRefs} / 3 amis (Palier Or)`;
-      if (tier2El) tier2El.classList.toggle("is-reached", fcRefs >= 2);
-      if (tier2El) tier2El.textContent = fcRefs >= 2 ? "✓ 2 amis (Cadeau)" : "2 amis (Cadeau)";
-      if (tier3El) tier3El.classList.toggle("is-reached", fcRefs >= 3);
-      if (tier3El) tier3El.textContent = fcRefs >= 3 ? "✓ 3 amis (VIP Or)" : "3 amis (VIP Or)";
+      if (tierBadgeEl) {
+        tierBadgeEl.textContent = fcStamps >= 5 ? "🏆 NIVEAU OR" : "🥈 NIVEAU ARGENT";
+      }
+      if (tierProgressTextEl) {
+        tierProgressTextEl.textContent =
+          fcStamps >= 5
+            ? "800 pts cumulés · Statut VIP Or débloqué !"
+            : `${pts + 100} pts cumulés · Objectif Or (800)`;
+      }
+      if (tierBarEl) {
+        tierBarEl.style.width = `${Math.min(100, ((pts + 100) / 800) * 100)}%`;
+      }
 
-      if (memberStatusEl) {
-        memberStatusEl.textContent = `Solde : ${fcStamps * 100} pts (${fcStamps} visites) · ${
-          fcRefs >= 3 || fcStamps >= 5 ? "Ambassadeur Or 🏆" : "Membre Habitué"
-        }`;
+      if (palierDessertEl && palierDessertBadgeEl) {
+        if (fcStamps >= 5) {
+          palierDessertEl.classList.add("is-unlocked");
+          palierDessertBadgeEl.className = "fc-palier-badge unlocked";
+          palierDessertBadgeEl.textContent = "✓ Débloqué";
+        } else {
+          palierDessertEl.classList.remove("is-unlocked");
+          palierDessertBadgeEl.className = "fc-palier-badge progress";
+          palierDessertBadgeEl.textContent = `${pts} / 500`;
+        }
+      }
+
+      if (refCountEl) refCountEl.textContent = `${fcRefs} / 3 amis invités`;
+      if (tier2El) {
+        tier2El.classList.toggle("is-reached", fcRefs >= 2);
+        tier2El.textContent = fcRefs >= 2 ? "✓ 2 amis (Dessert)" : "2 amis (Dessert)";
+      }
+      if (tier3El) {
+        tier3El.classList.toggle("is-reached", fcRefs >= 3);
+        tier3El.textContent = fcRefs >= 3 ? "✓ 3 amis (VIP Or)" : "3 amis (VIP Or)";
       }
 
       if (jackpotPctEl) jackpotPctEl.textContent = `${fcJackpot} %`;
@@ -1654,7 +1723,7 @@
         jackpotMsgEl.innerHTML =
           fcJackpot >= 100
             ? `🎆 <b>100 % ATTEINT !</b> Le grand tirage du Jackpot Collectif est déclenché pour toute la communauté !`
-            : `Chaque visite et parrainage rapproche toute la communauté du tirage à 100 % !`;
+            : `Plus que ${100 - fcJackpot} % pour déclencher le grand tirage collectif !`;
       }
 
       if (fcLiveLog && logHtml) {
@@ -1666,8 +1735,9 @@
       fcStamps = Math.min(5, fcStamps + 1);
       fcJackpot = Math.min(100, fcJackpot + 4);
       switchFcTab("passeport");
+      triggerStampPop();
       updateFcTrioUI(
-        `🛂 <b>Passage client validé (+100 pts) :</b> Solde porté à <b>${fcStamps * 100} pts</b> sur Google Wallet / Écran d'accueil <b>ET +4 % ajoutés au Jackpot Collectif (${fcJackpot} %)</b> !`
+        `🎟️ <b>Passage client validé (+100 pts) :</b> Le solde de Lisa passe à <b>${fcStamps * 100} pts</b> (${fcStamps} visites) et la Cagnotte Collective grimpe à <b>${fcJackpot} %</b> !`
       );
     };
 
@@ -1676,19 +1746,21 @@
       fcJackpot = Math.min(100, fcJackpot + 6);
       switchFcTab("parrainage");
       updateFcTrioUI(
-        `🤝 <b>Nouvel ami parrainé validé :</b> Le parrain passe à ${fcRefs} ami(s) invité(s) <b>ET fait bondir le Jackpot Collectif de +6 % (${fcJackpot} %)</b> !`
+        `🤝 <b>Nouvel ami parrainé validé :</b> Le parrain passe à ${fcRefs} ami(s) invité(s) et fait bondir le Jackpot Collectif de +6 % (${fcJackpot} %) !`
       );
     };
 
     fcBtnVisit.addEventListener("click", handleVisitAction);
     fcBtnRefer.addEventListener("click", handleReferAction);
 
-    /* Boutons d'action directs sur l'écran du smartphone */
-    const fcScreenBtnVisit = $("#fc-screen-btn-visit");
+    /* Boutons de déclenchement directs sur l'écran du smartphone */
+    const fcBtnTriggerScan = $("#fc-btn-trigger-scan");
+    const fcBtnTriggerCode = $("#fc-btn-trigger-code");
     const fcScreenBtnRefer = $("#fc-screen-btn-refer");
     const fcScreenBtnJackpot = $("#fc-screen-btn-jackpot");
 
-    if (fcScreenBtnVisit) fcScreenBtnVisit.addEventListener("click", handleVisitAction);
+    if (fcBtnTriggerScan) fcBtnTriggerScan.addEventListener("click", handleVisitAction);
+    if (fcBtnTriggerCode) fcBtnTriggerCode.addEventListener("click", handleVisitAction);
     if (fcScreenBtnRefer) fcScreenBtnRefer.addEventListener("click", handleReferAction);
     if (fcScreenBtnJackpot) {
       fcScreenBtnJackpot.addEventListener("click", () => {
@@ -1710,7 +1782,7 @@
         fcJackpot = 88;
         switchFcTab("passeport");
         updateFcTrioUI(
-          `↺ <b>Démonstration réinitialisée :</b> Naviguez dans le téléphone ci-contre ou testez les simulations pour voir le Passeport s'actualiser en direct.`
+          `↺ <b>Démonstration réinitialisée :</b> Testez la validation par QR Code client ou code du comptoir pour voir le Passeport s'actualiser en direct.`
         );
       });
     }
