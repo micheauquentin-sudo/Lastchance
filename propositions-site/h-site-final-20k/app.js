@@ -1764,7 +1764,11 @@
     faqFilterPills.forEach((pill) => {
       pill.addEventListener("click", () => {
         const cat = pill.dataset.faqCat;
-        faqFilterPills.forEach((p) => p.classList.toggle("active", p === pill));
+        faqFilterPills.forEach((p) => {
+          const isActive = p === pill;
+          p.classList.toggle("active", isActive);
+          p.setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
 
         let firstOpened = false;
         faqItems.forEach((item) => {
