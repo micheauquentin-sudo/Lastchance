@@ -203,13 +203,19 @@
 
         <!-- Téléphone interactif avec navigation directe (Passeport, Parrainage & Jackpot) -->
         <div class="lavender-photo-frame">
-          <div class="vr-interactive-phone fc-trio-phone" id="fc-trio-phone" style="background-size:cover;background-position:center;">
-            <!-- Barre de statut Smartphone (Heure, Encoche, Batterie) -->
-            <div class="fc-phone-status-bar">
-              <span>09:41</span>
-              <div class="fc-phone-notch" aria-hidden="true"></div>
-              <span>5G 📶 100% 🔋</span>
-            </div>
+          <div class="fc-phone-case">
+            <span class="fc-phone-btn-vol-up" aria-hidden="true"></span>
+            <span class="fc-phone-btn-vol-down" aria-hidden="true"></span>
+            <span class="fc-phone-btn-power" aria-hidden="true"></span>
+            <div class="fc-phone-screen fc-trio-phone" id="fc-trio-phone" style="background-size:cover;background-position:center;">
+              <!-- Barre de statut Smartphone (Heure, Dynamic Island, Batterie) -->
+              <div class="fc-phone-status-bar">
+                <span>09:41</span>
+                <div class="fc-dynamic-island" aria-hidden="true">
+                  <span class="fc-camera-lens"></span>
+                </div>
+                <span>5G 📶 100% 🔋</span>
+              </div>
 
             <!-- En-tête Club & Compte Membre -->
             <div class="fc-phone-header">
@@ -285,8 +291,12 @@
                 🎰 Déclencher le tirage au sort (à 100%)
               </button>
             </div>
+
+            <!-- Barre tactile Home en bas du smartphone -->
+            <div class="fc-home-indicator" aria-hidden="true"></div>
           </div>
         </div>
+      </div>
       </div>
     </section>
 
