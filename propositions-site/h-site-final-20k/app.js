@@ -1757,6 +1757,35 @@
     }
   }
 
+  /* ── 8B. FILTRAGE THÉMATIQUE DE LA FAQ (Kermesse Hub) ── */
+  const faqFilterPills = $$(".faq-filter-pill");
+  const faqItems = $$(".faq-item-pop");
+  if (faqFilterPills.length && faqItems.length) {
+    faqFilterPills.forEach((pill) => {
+      pill.addEventListener("click", () => {
+        const cat = pill.dataset.faqCat;
+        faqFilterPills.forEach((p) => {
+          const isActive = p === pill;
+          p.classList.toggle("active", isActive);
+          p.setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
+
+        let firstOpened = false;
+        faqItems.forEach((item) => {
+          const itemCat = item.dataset.faqCat;
+          const match = cat === "all" || itemCat === cat;
+          item.classList.toggle("is-hidden", !match);
+          if (match && !firstOpened) {
+            item.setAttribute("open", "");
+            firstOpened = true;
+          } else {
+            item.removeAttribute("open");
+          }
+        });
+      });
+    });
+  }
+
   /* ── 9. REVEAL FLUIDE AU SCROLL ── */
   const revealElements = $$(".reveal");
   if ("IntersectionObserver" in window) {

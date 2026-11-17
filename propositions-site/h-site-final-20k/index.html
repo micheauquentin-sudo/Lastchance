@@ -520,44 +520,119 @@
          ========================================================== -->
     <section class="section section-narrow" id="faq">
       <div class="center">
-        <p class="section-script">réponses claires et directes</p>
+        <p class="section-script">réponses claires, directes &amp; sans détour</p>
         <h2 class="section-title">QUESTIONS FRÉQUENTES.</h2>
+        <p class="section-lead" style="max-width:640px;margin:0.45rem auto 1.2rem;font-size:0.95rem;">
+          Cliquez sur un thème pour trouver instantanément la réponse à vos questions :
+        </p>
       </div>
-      <div class="faq-accordion-pop">
-        <details class="faq-item-pop" open>
-          <summary>Mes clients doivent-ils télécharger une application pour jouer ou utiliser leur fidélité&nbsp;?</summary>
+
+      <!-- Filtres Thématiques Cartoon Pop (Kermesse Hub) -->
+      <div class="faq-filter-bar" role="group" aria-label="Catégories des questions fréquentes">
+        <button type="button" class="faq-filter-pill active" data-faq-cat="all" aria-pressed="true">⭐ Toutes (9)</button>
+        <button type="button" class="faq-filter-pill" data-faq-cat="scan">📱 Zéro Appli &amp; Scan (3)</button>
+        <button type="button" class="faq-filter-pill" data-faq-cat="caisse">⚡ En Caisse (2)</button>
+        <button type="button" class="faq-filter-pill" data-faq-cat="tarifs">💰 Tarifs &amp; 0% Comm (2)</button>
+        <button type="button" class="faq-filter-pill" data-faq-cat="jeux">🎮 15 Jeux &amp; Fidélité (2)</button>
+      </div>
+
+      <div class="faq-accordion-pop" id="faq-accordion-pop">
+        <!-- 1. Zéro appli (scan) -->
+        <details class="faq-item-pop" data-faq-cat="scan" open>
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-scan">📱 ZÉRO APPLI</span>
+              <span>Mes clients doivent-ils télécharger une application pour jouer ou utiliser leur fidélité&nbsp;?</span>
+            </span>
+          </summary>
           <p><b>Non, aucune application à installer&nbsp;!</b> Vos clients ouvrent simplement l'appareil photo de leur smartphone, scannent votre QR code et l'expérience se lance instantanément dans leur navigateur. Pour le Passeport fidélité, ils peuvent l'ajouter en 1 clic dans leur <b>Google Wallet</b> ou sur l'écran d'accueil de leur téléphone sans rien télécharger.</p>
         </details>
-        <details class="faq-item-pop">
-          <summary>Comment l'équipe en caisse valide-t-elle les gains et les passages sans matériel spécifique&nbsp;?</summary>
+
+        <!-- 2. Caisse (caisse) -->
+        <details class="faq-item-pop" data-faq-cat="caisse">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-caisse">⏱️ 1 SECONDE</span>
+              <span>Comment l'équipe en caisse valide-t-elle les gains et les passages sans matériel spécifique&nbsp;?</span>
+            </span>
+          </summary>
           <p>Depuis n'importe quel smartphone, tablette ou ordinateur de caisse avec l'écran <b>Caisse Universelle Lastchance</b>. Un scan caméra d'une seconde ou la saisie rapide du code à 4 chiffres valide immédiatement le lot ou la réduction, crédite les points de fidélité et désactive le gain pour éviter toute réutilisation.</p>
         </details>
-        <details class="faq-item-pop">
-          <summary>Puis-je changer de jeu, d'offre ou d'habillage selon la saison (Noël, Saint-Valentin, été...)&nbsp;?</summary>
+
+        <!-- 3. Jeux & Saisons (jeux) -->
+        <details class="faq-item-pop" data-faq-cat="jeux">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-jeux">🎪 15 JEUX &amp; 18 THÈMES</span>
+              <span>Puis-je changer de jeu, d'offre ou d'habillage selon la saison (Noël, Saint-Valentin, été...)&nbsp;?</span>
+            </span>
+          </summary>
           <p><b>Oui, à volonté et en illimité&nbsp;!</b> Vous disposez de <b>15 mécaniques de jeu</b> (roue de la fortune, coffre secret, machine à sous, carte à gratter, bonneteau...) et de <b>18 thèmes graphiques complets</b>. Votre QR code imprimé ne change jamais : modifiez l'animation ou les lots dans votre Studio, vos clients voient instantanément la nouveauté dès leur prochain scan. <a href="jeux-pronostics.html" style="font-weight:800;color:#800038;">Explorer les 15 jeux →</a></p>
         </details>
-        <details class="faq-item-pop">
-          <summary>Y a-t-il des commissions prélevées sur mes réservations de table ou de rendez-vous&nbsp;?</summary>
+
+        <!-- 4. Commissions (tarifs) -->
+        <details class="faq-item-pop" data-faq-cat="tarifs">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-tarifs">🎯 0 % DE COMMISSION</span>
+              <span>Y a-t-il des commissions prélevées sur mes réservations de table ou de rendez-vous&nbsp;?</span>
+            </span>
+          </summary>
           <p><b>0 % de commission&nbsp;!</b> Que vous receviez 10 ou 500 réservations par mois, 100 % de votre chiffre d'affaires reste dans votre poche. Vous gérez vos créneaux, vos cartes et vos tarifs en toute liberté sans reverser le moindre pourcentage par couvert ou par rendez-vous. <a href="vitrine-reservation.html" style="font-weight:800;color:#800038;">Voir la Vitrine &amp; Réservation →</a></p>
         </details>
-        <details class="faq-item-pop">
-          <summary>Comment fonctionne l'essai gratuit de 7 jours et puis-je tester avant de m'engager&nbsp;?</summary>
+
+        <!-- 5. Essai gratuit (tarifs) -->
+        <details class="faq-item-pop" data-faq-cat="tarifs">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-tarifs">🆓 7 JOURS GRATUITS</span>
+              <span>Comment fonctionne l'essai gratuit de 7 jours et puis-je tester avant de m'engager&nbsp;?</span>
+            </span>
+          </summary>
           <p>Le <b>Studio de Configuration</b> est 100 % ouvert et gratuit, même sans créer de compte : vous personnalisez librement vos fiches, vos lots et vos couleurs avec un rendu réel en direct. Lorsque vous activez votre essai de 7 jours, vous profitez de l'ensemble des fonctionnalités. C'est <b>sans engagement</b> et résiliable en 1 clic à tout moment depuis votre espace. <a href="studio.html" style="font-weight:800;color:#800038;">Ouvrir le Studio →</a></p>
         </details>
-        <details class="faq-item-pop">
-          <summary>Que se passe-t-il si la connexion internet est faible dans mon établissement&nbsp;?</summary>
+
+        <!-- 6. Connexion internet (scan) -->
+        <details class="faq-item-pop" data-faq-cat="scan">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-scan">📶 3G / 4G FAIBLE</span>
+              <span>Que se passe-t-il si la connexion internet est faible dans mon établissement&nbsp;?</span>
+            </span>
+          </summary>
           <p>Nos pages sont ultra-optimisées et pèsent moins lourd qu'une simple photo de réseau social : elles se chargent en <b>moins d'une seconde</b>, même avec un réseau 3G ou 4G faible. Tout a été conçu pour un affichage immédiat au comptoir, en salle ou en terrasse sans aucun ralentissement.</p>
         </details>
-        <details class="faq-item-pop">
-          <summary>Puis-je imprimer facilement mon QR code sur mes tables, mon comptoir ou ma vitrine&nbsp;?</summary>
+
+        <!-- 7. Impression kit (scan) -->
+        <details class="faq-item-pop" data-faq-cat="scan">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-scan">🖨️ PRÊT À IMPRIMER</span>
+              <span>Puis-je imprimer facilement mon QR code sur mes tables, mon comptoir ou ma vitrine&nbsp;?</span>
+            </span>
+          </summary>
           <p><b>Absolument&nbsp;!</b> Dès que vous validez votre création dans le Studio, vous téléchargez votre <b>kit d'affiches haute définition prêt à imprimer</b> : formats chevalets de table, vitrine A4/A5, sous-bocks et stickers comptoir, parfaitement ajustés avec votre nom, votre logo et vos couleurs.</p>
         </details>
-        <details class="faq-item-pop">
-          <summary>Comment le Parrainage et le Jackpot collectif font-ils venir de nouveaux clients&nbsp;?</summary>
+
+        <!-- 8. Parrainage & Jackpot (jeux) -->
+        <details class="faq-item-pop" data-faq-cat="jeux">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-jeux">🤝 BOUCHE-À-OREILLE</span>
+              <span>Comment le Parrainage et le Jackpot collectif font-ils venir de nouveaux clients&nbsp;?</span>
+            </span>
+          </summary>
           <p>Chaque client fidèle dispose d'un lien de parrainage sur son passeport pour inviter ses collègues et amis. Dès qu'un proche vient pour la première fois, le parrain et le filleul reçoivent une récompense, et une jauge collective (le <b>Jackpot</b>) grimpe jusqu'à déclencher un tirage au sort géant pour toute votre communauté. C'est le bouche-à-oreille local 100 % automatisé&nbsp;! <a href="fidelite-communaute.html" style="font-weight:800;color:#800038;">Découvrir le Passeport &amp; Jackpot →</a></p>
         </details>
-        <details class="faq-item-pop">
-          <summary>Puis-je limiter le nombre de gagnants par jour et maîtriser mes marges&nbsp;?</summary>
+
+        <!-- 9. Quotas & Marges (caisse) -->
+        <details class="faq-item-pop" data-faq-cat="caisse">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-caisse">🛡️ MARGES MAÎTRISÉES</span>
+              <span>Puis-je limiter le nombre de gagnants par jour et maîtriser mes marges&nbsp;?</span>
+            </span>
+          </summary>
           <p><b>Oui, vous avez le contrôle total.</b> Vous choisissez précisément vos lots (un café offert, -15 %, un dessert maison, etc.), la probabilité de chaque gain ainsi que les quotas quotidiens. Vous maîtrisez ainsi vos coûts à l'euro près tout en garantissant une expérience amusante et valorisante pour vos visiteurs.</p>
         </details>
       </div>

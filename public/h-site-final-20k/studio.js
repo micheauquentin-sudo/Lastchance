@@ -457,7 +457,7 @@
               ["modern", "Moderne (Épurée)"],
               ["script", "Manuscrite (Artisan)"],
             ].map(([fk, flbl]) => `
-              <button type="button" class="k-choice-tile ${v.heading === fk ? "active" : ""}" data-action="set-field" data-path="vitrine.heading" data-val="${fk}">
+              <button type="button" class="k-choice-tile kp-tile-font-${fk} ${v.heading === fk ? "active" : ""}" data-action="set-field" data-path="vitrine.heading" data-val="${fk}">
                 <strong>${flbl}</strong>
               </button>
             `).join("")}
@@ -1256,11 +1256,13 @@
       return `<span class="kp-v-game-pill">${map[k] || k}</span>`;
     }).join("");
 
+    const headingFontClass = `kp-heading-${v.heading || "elegant"}`;
+
     return `
-      <div class="kp-vitrine-surface" style="background-color:${v.secondary};color:#211d16;${motifCss}">
+      <div class="kp-vitrine-surface ${headingFontClass}" style="background-color:${v.secondary};color:#211d16;${motifCss}">
         <div class="kp-vitrine-hero" style="background:${v.primary};color:#ffffff;">
           <span class="kp-vitrine-open-badge">${escapeHtml(v.badge)}</span>
-          <h3>${escapeHtml(v.nom)}</h3>
+          <h3 class="kp-v-title">${escapeHtml(v.nom)}</h3>
           ${v.blocs.includes("accroche") ? `<p>${escapeHtml(v.accroche)}</p>` : ""}
         </div>
 
