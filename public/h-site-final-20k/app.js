@@ -1999,179 +1999,233 @@
   }, 220);
 
   /* ── 10. PAGE DÉDIÉE ABONNEMENTS & FORMULES (abonnements.html) ── */
-  const abStage = $("#ab-detail-stage");
-  const abGrid = $("#ab-cards-grid");
-  const btnMonthly = $("#btn-billing-monthly");
-  const btnAnnual = $("#btn-billing-annual");
-  const abTabBtns = $$(".ab-tab-btn");
+  const abCompareTable = $(".ab-compare-table");
+  const abCalcWrapper = $(".ab-calc-wrapper");
 
-  if ((abStage || abGrid) && O) {
+  if (abCompareTable || abCalcWrapper) {
     let isAnnual = false;
-    let currentSelectedPlan = "engagement"; // Le Club par défaut
 
-    const PLAN_TARGETS = {
-      core: {
-        cible: "Bars, brasseries & commerces souhaitant animer leur comptoir sans contrainte",
-        roi: "Rentabilisé dès 1 client supplémentaire par semaine grâce au QR code de comptoir.",
-        capacites: "Scans illimités · 15 mini-jeux · Caisse universelle · Zéro matériel requis",
-      },
-      engagement: {
-        cible: "Restaurants, cafés, coiffeurs & boutiques souhaitant faire revenir leurs habitués",
-        roi: "Multiplie la fréquence de visite par 1,8 grâce aux tampons du passeport et au parrainage.",
-        capacites: "Passeport fidélité & Parrainage illimités · Zéro appli à installer · Scans illimités",
-      },
-      place: {
-        cible: "Salons de beauté, instituts, restaurants & chambres d'hôtes souhaitant des réservations directes",
-        roi: "Économisez les 15% à 25% de commission prélevés par les plateformes de réservation.",
-        capacites: "Agenda en ligne · Créneaux configurables · Carte numérique QR bilingue · 0% commission",
-      },
-      live: {
-        cible: "Bars d'ambiance, pubs sportifs, tiers-lieux & restaurants animant des soirées",
-        roi: "Remplissez vos mardis et jeudis soirs avec des quiz géants et des concours de pronostics.",
-        capacites: "Jusqu'à 250 joueurs simultanés sur grand écran · Télécommande animateur · Scans illimités",
-      },
-      full: {
-        cible: "Établissements ambitieux voulant toute la puissance de LastChance sans compromis",
-        roi: "La solution tout-en-un ultime : fidélisation, réservation et animation réunies au meilleur prix.",
-        capacites: "Toutes les briques existantes et futures en illimité · Écran géant 250 pers. · Support VIP",
-      },
+    const PLAN_PRICES = {
+      none: { nom: "Sans formule de base", prix: 0, annual: 0, rights: [] },
+      core: { nom: "Coup d'envoi", prix: 29, annual: 23, rights: ["games"] },
+      engagement: { nom: "Le Club", prix: 59, annual: 47, rights: ["games", "passport", "referral"] },
+      place: { nom: "Sur Place", prix: 79, annual: 63, rights: ["games", "vitrine", "rdv", "moments"] },
+      live: { nom: "Le Grand Jeu", prix: 89, annual: 71, rights: ["games", "screen", "prono"] },
+      full: { nom: "La Totale", prix: 129, annual: 103, rights: ["games", "passport", "referral", "vitrine", "rdv", "moments", "screen", "prono"] },
     };
 
-    const getPlanPrice = (plan) => {
-      if (!isAnnual) return `${plan.prix} €`;
-      const annualMonthly = Math.round(plan.prix * 0.8);
-      return `${annualMonthly} €`;
+    const ADDON_PRICES = {
+      vitrine: { nom: "Vitrine & Carte QR", prix: 20 },
+      rdv: { nom: "Prise de RDV en Ligne", prix: 20 },
+      moments: { nom: "Moments VIP & Ateliers", prix: 20 },
+      passport: { nom: "Passeport Fidélité & Cagnotte", prix: 19 },
+      referral: { nom: "Module Parrainage Ambassadeurs", prix: 12 },
     };
 
-    const renderPlanDetail = (planId) => {
-      if (!abStage) return;
-      const plan = O.FORMULES.find((f) => f.id === planId) || O.FORMULES[1];
-      const targetInfo = PLAN_TARGETS[plan.id] || PLAN_TARGETS.engagement;
-      const displayPrice = getPlanPrice(plan);
+    // Toggle de facturation synchronisé (Hero + En-tête de tableau)
+    const setBillingPeriod = (annual) => {
+      isAnnual = Boolean(annual);
 
-      abStage.innerHTML = `
-        <div class="ab-detail-card">
-          <div class="ab-detail-top">
-            <div class="ab-detail-title-group">
-              <span class="ab-detail-target-pill">🎯 Cible : ${targetInfo.cible}</span>
-              <h3>Formule ${plan.nom}</h3>
-              <p class="ab-detail-tagline">« ${plan.tagline} »</p>
-            </div>
-            <div class="ab-detail-price-box">
-              <div class="ab-price-big">${displayPrice}</div>
-              <span class="ab-price-period">${isAnnual ? "par mois (facturé annuellement · 2 mois offerts)" : "par mois · sans engagement"}</span>
-            </div>
-          </div>
+      // Met à jour les boutons du hero
+      const heroMonthly = $("#btn-billing-monthly");
+      const heroAnnual = $("#btn-billing-annual");
+      if (heroMonthly && heroAnnual) {
+        heroMonthly.classList.toggle("active", !isAnnual);
+        heroMonthly.setAttribute("aria-pressed", String(!isAnnual));
+        heroAnnual.classList.toggle("active", isAnnual);
+        heroAnnual.setAttribute("aria-pressed", String(isAnnual));
+      }
 
-          <div class="ab-detail-grid">
-            <div class="ab-detail-section">
-              <h4><span>✓</span> Ce qui est inclus dans votre formule :</h4>
-              <ul class="ab-points-list">
-                ${plan.points.map((pt) => `
-                  <li>
-                    <span class="ab-check-icon">✓</span>
-                    <span>${pt}</span>
-                  </li>
-                `).join("")}
-              </ul>
-            </div>
+      // Met à jour les boutons du tableau comparatif
+      const tblMonthly = $("#btn-tbl-monthly");
+      const tblAnnual = $("#btn-tbl-annual");
+      if (tblMonthly && tblAnnual) {
+        tblMonthly.classList.toggle("active", !isAnnual);
+        tblMonthly.setAttribute("aria-pressed", String(!isAnnual));
+        tblAnnual.classList.toggle("active", isAnnual);
+        tblAnnual.setAttribute("aria-pressed", String(isAnnual));
+      }
 
-            <div class="ab-detail-section">
-              <h4><span>💎</span> Modules &amp; Capacités activées :</h4>
-              <div class="ab-modules-chips">
-                ${plan.droits.map((d) => `
-                  <span class="ab-module-chip">✓ ${O.label(d)}</span>
-                `).join("")}
-              </div>
-              <div style="margin-top:1.2rem;background:#fdfaf0;border:2px dashed var(--ink);border-radius:14px;padding:0.75rem 0.95rem;">
-                <strong style="font:800 0.8rem var(--fun-font);display:block;margin-bottom:0.25rem;color:#78350f;">💡 Retour sur investissement garanti :</strong>
-                <p style="font-size:0.78rem;color:#451a03;margin:0;line-height:1.4;">${targetInfo.roi}</p>
-              </div>
-            </div>
-          </div>
+      // Met à jour les prix du tableau comparatif
+      $$(".th-plan-price").forEach((el) => {
+        const monthly = el.dataset.monthly;
+        const annualPrice = el.dataset.annual;
+        const price = isAnnual ? annualPrice : monthly;
+        el.innerHTML = `${price} €<small>/mois</small>`;
+      });
 
-          <div class="ab-detail-footer">
-            <span class="ab-limits-pill">
-              <span>⚡ Jauges garanties :</span>
-              <strong>${targetInfo.capacites}</strong>
-            </span>
-            <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
-              <a class="ticket-btn ticket-btn-large pop-btn-ink" href="/signup?plan=${encodeURIComponent(plan.id)}">
-                🎟️ Démarrer mon essai gratuit 7 jours (${plan.nom}) →
-              </a>
-              <a class="ticket-btn pop-btn-white" href="studio.html">
-                🛠️ Personnaliser dans le Studio
-              </a>
-            </div>
-          </div>
-        </div>
-      `;
+      // Met à jour les prix du pied de tableau
+      $$(".tfoot-price").forEach((el) => {
+        const planKey = el.dataset.plan;
+        const info = PLAN_PRICES[planKey];
+        if (info) {
+          const price = isAnnual ? info.annual : info.prix;
+          el.innerHTML = `${price} €<small>/mois</small>`;
+        }
+      });
+
+      // Met à jour les liens des boutons du tableau
+      $$(".tbl-cta-btn").forEach((btn) => {
+        const baseHref = btn.dataset.baseHref || btn.getAttribute("href").split("&billing=")[0];
+        btn.setAttribute("href", `${baseHref}&billing=${isAnnual ? "annual" : "monthly"}`);
+      });
+
+      // Synchronise le calculateur
+      const calcPeriodMonthly = $("#calc-period-monthly");
+      const calcPeriodAnnual = $("#calc-period-annual");
+      if (calcPeriodMonthly && calcPeriodAnnual) {
+        calcPeriodMonthly.classList.toggle("active", !isAnnual);
+        calcPeriodAnnual.classList.toggle("active", isAnnual);
+      }
+
+      updateCalculator();
     };
 
-    const renderPlansGrid = () => {
-      if (!abGrid) return;
-      abGrid.innerHTML = O.FORMULES.map((plan) => {
-        const isClub = plan.id === "engagement";
-        const isFull = plan.id === "full";
-        const displayPrice = getPlanPrice(plan);
-
-        return `
-          <div class="ab-card-item ${isClub ? "is-featured" : ""}">
-            ${isClub ? `<span class="ab-card-featured-badge">⭐ Coup de cœur</span>` : ""}
-            ${isFull ? `<span class="ab-card-featured-badge" style="background:#4c1d95;color:#ffffff;">🚀 Tout inclus</span>` : ""}
-            <div>
-              <div class="ab-card-head">
-                <strong>${plan.nom}</strong>
-                <small style="font-weight:700;color:#666;">${plan.promesse}</small>
-              </div>
-              <div class="ab-card-price-row">
-                <span class="ab-card-price-num">${displayPrice}</span>
-                <small style="font-weight:700;color:#555;">/mois</small>
-              </div>
-              <ul class="ab-card-points-preview">
-                ${plan.points.slice(0, 4).map((pt) => `<li>✓ ${pt}</li>`).join("")}
-              </ul>
-            </div>
-            <a class="ticket-btn ${isClub ? "pop-btn-yellow" : isFull ? "pop-btn-pink" : "pop-btn-ink"} w-full" href="/signup?plan=${encodeURIComponent(plan.id)}">
-              Essai 7j offert →
-            </a>
-          </div>
-        `;
-      }).join("");
+    // Attache les événements sur les boutons du hero et du tableau
+    const bindTogglePair = (btnMId, btnAId) => {
+      const btnM = $(btnMId);
+      const btnA = $(btnAId);
+      if (btnM) btnM.addEventListener("click", () => setBillingPeriod(false));
+      if (btnA) btnA.addEventListener("click", () => setBillingPeriod(true));
     };
 
-    abTabBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const planId = btn.dataset.plan;
-        currentSelectedPlan = planId;
-        abTabBtns.forEach((b) => b.classList.toggle("active", b.dataset.plan === planId));
-        renderPlanDetail(planId);
+    bindTogglePair("#btn-billing-monthly", "#btn-billing-annual");
+    bindTogglePair("#btn-tbl-monthly", "#btn-tbl-annual");
+
+    // Boutons de période dans le calculateur
+    const calcPeriodMonthly = $("#calc-period-monthly");
+    const calcPeriodAnnual = $("#calc-period-annual");
+    if (calcPeriodMonthly) calcPeriodMonthly.addEventListener("click", () => setBillingPeriod(false));
+    if (calcPeriodAnnual) calcPeriodAnnual.addEventListener("click", () => setBillingPeriod(true));
+
+    const userCheckedAddons = new Set();
+
+    // Calculateur de budget sur-mesure
+    function updateCalculator() {
+      if (!abCalcWrapper) return;
+
+      const selectedPlanInput = $('input[name="calc-plan"]:checked');
+      const selectedPlanKey = selectedPlanInput ? selectedPlanInput.value : "engagement";
+      const planInfo = PLAN_PRICES[selectedPlanKey] || PLAN_PRICES.engagement;
+
+      // Met à jour l'affichage de la formule choisie
+      const sumPlanName = $("#calc-summary-plan-name");
+      const sumPlanPrice = $("#calc-summary-plan-price");
+      if (sumPlanName) sumPlanName.textContent = `Formule « ${planInfo.nom} »`;
+      if (sumPlanPrice) sumPlanPrice.textContent = `${planInfo.prix},00 €`;
+
+      // Gestion des add-ons inclus automatiquement
+      let addonsCost = 0;
+      const selectedAddonKeys = [];
+      const addonRows = $$(".calc-addon-check");
+
+      addonRows.forEach((row) => {
+        const input = row.querySelector('input[type="checkbox"]');
+        if (!input) return;
+        const key = input.value;
+        const isIncluded = planInfo.rights.includes(key);
+
+        if (isIncluded) {
+          row.classList.add("is-included-in-plan");
+          input.checked = true;
+          input.disabled = true;
+          const note = row.querySelector(".calc-check-note");
+          if (note) note.textContent = "✓ Inclus d'office sans surcoût dans cette formule";
+        } else {
+          row.classList.remove("is-included-in-plan");
+          input.disabled = false;
+          input.checked = userCheckedAddons.has(key);
+          const note = row.querySelector(".calc-check-note");
+          if (note) note.textContent = "Option à la carte activable à la demande";
+          if (input.checked) {
+            addonsCost += Number(input.dataset.price || 0);
+            selectedAddonKeys.push(key);
+          }
+        }
+      });
+
+      // Remplissage de la liste des add-ons dans le récapitulatif
+      const addonsList = $("#calc-summary-addons-list");
+      if (addonsList) {
+        if (selectedAddonKeys.length === 0) {
+          addonsList.innerHTML = `<span style="font-size:0.75rem;color:#6b5f79;font-style:italic;">Aucun add-on payant supplémentaire</span>`;
+        } else {
+          addonsList.innerHTML = selectedAddonKeys.map((key) => {
+            const add = ADDON_PRICES[key];
+            return `
+              <div class="calc-sum-addon-item">
+                <span>+ ${add.nom}</span>
+                <span>+${add.prix},00 €</span>
+              </div>
+            `;
+          }).join("");
+        }
+      }
+
+      // Calcul total
+      const subtotal = planInfo.prix + addonsCost;
+      const totalDisplay = $("#calc-total-display");
+      const discountLine = $("#calc-discount-line");
+      const periodCaption = $("#calc-period-caption");
+      const checkoutBtn = $("#calc-checkout-btn");
+
+      let finalTotal = subtotal;
+      if (isAnnual) {
+        finalTotal = Math.round(subtotal * 0.8);
+        if (discountLine) discountLine.hidden = false;
+        if (periodCaption) periodCaption.textContent = "par mois (facturé annuellement · 2 mois offerts)";
+      } else {
+        if (discountLine) discountLine.hidden = true;
+        if (periodCaption) periodCaption.textContent = "par mois sans engagement";
+      }
+
+      if (totalDisplay) totalDisplay.textContent = `${finalTotal} €`;
+
+      // Mise à jour du CTA Stripe Checkout
+      if (checkoutBtn) {
+        const checkoutPlan = selectedPlanKey !== "none" ? selectedPlanKey : "addon_custom";
+        const urlParams = new URLSearchParams({
+          plan: checkoutPlan,
+          billing: isAnnual ? "annual" : "monthly",
+          addons: selectedAddonKeys.join(","),
+        });
+        checkoutBtn.setAttribute("href", `/signup?${urlParams.toString()}`);
+        checkoutBtn.textContent = selectedPlanKey !== "none"
+          ? `Démarrer mon essai gratuit de 7 jours (${planInfo.nom}) →`
+          : `Activer mes options à la carte (${finalTotal} €) →`;
+      }
+
+      // Sauvegarde du brouillon de commande en mémoire
+      try {
+        localStorage.setItem("lc_checkout_draft", JSON.stringify({
+          plan: selectedPlanKey,
+          isAnnual,
+          addons: selectedAddonKeys,
+          finalTotal,
+          updatedAt: new Date().toISOString(),
+        }));
+      } catch {
+        // Ignoré si le localStorage est indisponible en mode navigation privée
+      }
+    }
+
+    // Écouteurs sur les sélections du calculateur
+    $$('input[name="calc-plan"]').forEach((radio) => {
+      radio.addEventListener("change", updateCalculator);
+    });
+
+    $$('input[name="calc-addon"]').forEach((chk) => {
+      chk.addEventListener("change", () => {
+        if (chk.checked) {
+          userCheckedAddons.add(chk.value);
+        } else {
+          userCheckedAddons.delete(chk.value);
+        }
+        updateCalculator();
       });
     });
 
-    if (btnMonthly && btnAnnual) {
-      btnMonthly.addEventListener("click", () => {
-        isAnnual = false;
-        btnMonthly.classList.add("active");
-        btnMonthly.setAttribute("aria-pressed", "true");
-        btnAnnual.classList.remove("active");
-        btnAnnual.setAttribute("aria-pressed", "false");
-        renderPlanDetail(currentSelectedPlan);
-        renderPlansGrid();
-      });
-
-      btnAnnual.addEventListener("click", () => {
-        isAnnual = true;
-        btnAnnual.classList.add("active");
-        btnAnnual.setAttribute("aria-pressed", "true");
-        btnMonthly.classList.remove("active");
-        btnMonthly.setAttribute("aria-pressed", "false");
-        renderPlanDetail(currentSelectedPlan);
-        renderPlansGrid();
-      });
-    }
-
-    renderPlanDetail(currentSelectedPlan);
-    renderPlansGrid();
+    // Initialisation
+    setBillingPeriod(false);
   }
 })();
