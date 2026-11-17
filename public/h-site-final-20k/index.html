@@ -28,6 +28,7 @@
           <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
           <a href="fidelite-communaute.html">Fidélité &amp; Jackpot</a>
           <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+          <a href="abonnements.html">💎 Abonnements</a>
           <a href="studio.html" class="nav-highlight-link">🛠️ Studio</a>
         </nav>
         <div class="nav-right-actions">
@@ -184,95 +185,149 @@
             <li><b>3. Validation universelle :</b> un seul écran côté équipe valide les codes de toutes vos expériences.</li>
           </ul>
           <div class="lavender-cta-group">
-            <button type="button" class="ticket-btn pop-btn-yellow" id="demo-story-trigger">▶ Animer les 3 écrans</button>
+            <button type="button" class="ticket-btn pop-btn-yellow" id="demo-story-trigger">▶ Relancer le Motion Design</button>
             <a class="ticket-btn pop-btn-pink" href="jeux-pronostics.html">Voir les 15 mécaniques →</a>
           </div>
         </div>
 
-        <!-- STORYBOARD 3 ÉCRANS EXPLICITES -->
-        <div class="storyboard-3-screens reveal" id="storyboard-demo" tabindex="0" role="region" aria-label="Démonstration en 3 écrans : scanner, jouer, gagner">
-          <!-- ÉCRAN 1 : LE SCAN -->
-          <div class="story-phone-card story-step-1 is-active" data-step="1" tabindex="0">
-            <div class="story-step-header">
-              <span class="story-badge">ÉTAPE 1</span>
-              <strong>ILS SCANNENT</strong>
-            </div>
-            <div class="story-phone-screen screen-scan-bg">
-              <div class="camera-viewfinder">
-                <span class="vf-corner vf-tl"></span>
-                <span class="vf-corner vf-tr"></span>
-                <span class="vf-corner vf-bl"></span>
-                <span class="vf-corner vf-br"></span>
-                <div class="laser-scan-line"></div>
-                <img src="img/qr-code.svg" alt="Scan du QR code" width="96" height="96" class="story-qr-img" />
+        <!-- MOTION DESIGN & VIDÉO ANIMÉE DU FONCTIONNEMENT -->
+        <div class="motion-player-wrapper reveal" id="motion-stage" role="region" aria-label="Motion design animé : comment fonctionne le parcours client">
+          <div class="motion-player-card">
+            <!-- Barre de contrôle supérieure -->
+            <div class="motion-player-topbar">
+              <div class="motion-live-pill">
+                <span class="motion-live-dot">●</span>
+                <span>MOTION DESIGN · EN DIRECT</span>
               </div>
-              <div class="camera-toast">📷 QR détecté · Ouverture...</div>
+              <div class="motion-timeline-track" aria-hidden="true">
+                <div class="motion-timeline-progress" id="motion-progress-bar"></div>
+              </div>
+              <button type="button" class="motion-play-pause-btn" id="motion-play-pause" aria-label="Mettre en pause ou reprendre l'animation">
+                ⏸️ Pause
+              </button>
             </div>
-            <p class="story-caption">En vitrine, à l'accueil, sur un produit, un miroir ou un stand.</p>
-          </div>
 
-          <!-- ÉCRAN 2 : LE CHOIX DU JEU (Showcase 4 jeux horizontal et lisible) -->
-          <div class="story-phone-card story-step-2" data-step="2" tabindex="0">
-            <div class="story-step-header">
-              <span class="story-badge">ÉTAPE 2</span>
-              <strong>ILS JOUENT</strong>
-            </div>
-            <div class="story-phone-screen screen-spin-bg">
-              <div class="mini-phone-topbar">✨ 15 mécaniques au choix</div>
-              <div class="story-games-showcase" id="story-games-showcase">
-                <div class="sgs-card sgs-card-yellow">
-                  <span class="sgs-emoji">🎰</span>
-                  <div class="sgs-info">
-                    <strong>Machine à sous</strong>
-                    <small>3 rouleaux &amp; jackpots</small>
+            <!-- Écran smartphone du Motion Design -->
+            <div class="motion-screen-frame">
+              <!-- Scène 1 : ILS SCANNENT -->
+              <div class="motion-scene motion-scene-scan is-active" id="m-scene-1" data-step="1">
+                <div class="m-scene-kicker">1. EN VITRINE OU AU COMPTOIR</div>
+                <div class="m-scan-stage">
+                  <!-- Chevalet QR Code LastChance de comptoir -->
+                  <div class="m-counter-stand">
+                    <div class="m-stand-badge">🎟️ SCANNEZ &amp; JOUEZ</div>
+                    <div class="m-stand-qr-box">
+                      <img src="img/qr-code.svg" alt="QR Code sur chevalet" width="110" height="110" class="m-stand-qr-img" />
+                    </div>
+                    <span class="m-stand-base"></span>
                   </div>
-                </div>
-                <div class="sgs-card sgs-card-pink">
-                  <span class="sgs-emoji">🧰</span>
-                  <div class="sgs-info">
-                    <strong>Coffre mystère</strong>
-                    <small>Suspense instantané</small>
-                  </div>
-                </div>
-                <div class="sgs-card sgs-card-blue">
-                  <span class="sgs-emoji">⚡</span>
-                  <div class="sgs-info">
-                    <strong>Jeu de réflexe</strong>
-                    <small>Défi chrono au centième</small>
-                  </div>
-                </div>
-                <div class="sgs-card sgs-card-purple">
-                  <span class="sgs-emoji">🎫</span>
-                  <div class="sgs-info">
-                    <strong>Carte à gratter</strong>
-                    <small>Frisson tactile au doigt</small>
-                  </div>
-                </div>
-              </div>
-              <span class="story-spin-pill">🎮 Hasard, adresse, quiz ou défi !</span>
-            </div>
-            <p class="story-caption">Vous changez de mécanique de jeu en 1 clic quand vous voulez.</p>
-          </div>
 
-          <!-- ÉCRAN 3 : LE GAIN & LE CODE UNIQUE -->
-          <div class="story-phone-card story-step-3" data-step="3" tabindex="0">
-            <div class="story-step-header">
-              <span class="story-badge">ÉTAPE 3</span>
-              <strong>ILS GAGNENT !</strong>
-            </div>
-            <div class="story-phone-screen screen-win-bg">
-              <div class="win-confetti-row">🎉 BRAVO ! 🎉</div>
-              <div class="story-voucher-box">
-                <span class="voucher-gift-icon">🎁</span>
-                <strong id="story-prize-label">-20% ou Cadeau Offert</strong>
-                <div class="voucher-code-pill">
-                  <small>CODE UNIQUE :</small>
-                  <code id="story-prize-code">LC-7K2M</code>
+                  <!-- Faisceau laser scanner et ondes -->
+                  <div class="m-laser-beam"></div>
+                  <div class="m-scan-waves" aria-hidden="true">
+                    <span></span><span></span><span></span>
+                  </div>
+
+                  <!-- Détection Pop Instantanée -->
+                  <div class="m-scan-toast">
+                    <span class="m-toast-icon">⚡</span>
+                    <div class="m-toast-text">
+                      <strong>QR Code Détecté !</strong>
+                      <small>Ouverture instantanée dans le navigateur (Zéro appli)</small>
+                    </div>
+                  </div>
                 </div>
-                <span class="voucher-valid-stamp">✓ Caisse Universelle</span>
+              </div>
+
+              <!-- Scène 2 : ILS JOUENT -->
+              <div class="motion-scene motion-scene-play" id="m-scene-2" data-step="2">
+                <div class="m-scene-kicker">2. SUR LEUR SMARTPHONE</div>
+                <div class="m-play-stage">
+                  <div class="m-slot-cabinet">
+                    <div class="m-slot-header">🎰 MACHINE À SOUS POP</div>
+                    <div class="m-slot-window">
+                      <div class="m-slot-reel" id="m-reel-1">
+                        <div class="m-reel-strip">
+                          <span>💎</span><span>🍒</span><span>⭐</span><span>7️⃣</span><span>💎</span>
+                        </div>
+                      </div>
+                      <div class="m-slot-reel" id="m-reel-2">
+                        <div class="m-reel-strip">
+                          <span>💎</span><span>🔔</span><span>🍋</span><span>⭐</span><span>💎</span>
+                        </div>
+                      </div>
+                      <div class="m-slot-reel" id="m-reel-3">
+                        <div class="m-reel-strip">
+                          <span>💎</span><span>7️⃣</span><span>⭐</span><span>🍒</span><span>💎</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="m-slot-spin-sparkles" aria-hidden="true">✨ ⭐ ✨</div>
+                    <div class="m-slot-status" id="m-slot-status">
+                      <span class="m-status-star">⭐</span>
+                      <strong>LES ROULEAUX TOURNENT !</strong>
+                    </div>
+                  </div>
+                  <div class="m-play-subtext">15 mécaniques interchangeables en 1 clic dans le Studio</div>
+                </div>
+              </div>
+
+              <!-- Scène 3 : ILS GAGNENT -->
+              <div class="motion-scene motion-scene-win" id="m-scene-3" data-step="3">
+                <div class="m-scene-kicker">3. EN CAISSE &amp; IMMÉDIAT</div>
+                <div class="m-win-stage">
+                  <div class="m-confetti-rain" aria-hidden="true">
+                    <span style="left:10%;animation-delay:0s;background:#ffd93d;"></span>
+                    <span style="left:25%;animation-delay:0.3s;background:#ff6b8b;"></span>
+                    <span style="left:40%;animation-delay:0.1s;background:#6ee7b7;"></span>
+                    <span style="left:55%;animation-delay:0.4s;background:#c4b5fd;"></span>
+                    <span style="left:70%;animation-delay:0.2s;background:#ffd93d;"></span>
+                    <span style="left:85%;animation-delay:0.5s;background:#ff6b8b;"></span>
+                  </div>
+
+                  <!-- Le Ticket Gagnant perforé Pop -->
+                  <div class="m-win-ticket">
+                    <div class="m-ticket-notches">
+                      <span class="m-notch m-notch-l"></span>
+                      <span class="m-notch m-notch-r"></span>
+                    </div>
+                    <div class="m-ticket-head">
+                      <span class="m-ticket-sparkle">🎉</span>
+                      <strong>FÉLICITATIONS !</strong>
+                    </div>
+                    <div class="m-ticket-reward">
+                      <span class="m-reward-kicker">VOTRE GAIN :</span>
+                      <h4 id="m-reward-title">-20% SUR L'ADDITION</h4>
+                    </div>
+                    <div class="m-ticket-code-box">
+                      <small>CODE CAISSE SÉCURISÉ :</small>
+                      <code id="m-ticket-code">LC-7K2M</code>
+                    </div>
+                    <!-- Tampon vert de caisse -->
+                    <div class="m-ticket-stamp" aria-hidden="true">
+                      ✓ VALIDÉ EN CAISSE
+                    </div>
+                  </div>
+
+                  <div class="m-win-subtext">
+                    Le commerçant valide le code sur son écran universel sans matériel supplémentaire.
+                  </div>
+                </div>
               </div>
             </div>
-            <p class="story-caption">Un code unique sécurisé, enregistré dans le portefeuille du joueur.</p>
+
+            <!-- Boutons de navigation directe d'étape -->
+            <div class="motion-steps-nav" role="group" aria-label="Choisir l'étape du motion design">
+              <button type="button" class="m-step-btn active" data-step="1">
+                <span>1</span> 📷 <b>Ils Scannent</b>
+              </button>
+              <button type="button" class="m-step-btn" data-step="2">
+                <span>2</span> 🎰 <b>Ils Jouent</b>
+              </button>
+              <button type="button" class="m-step-btn" data-step="3">
+                <span>3</span> 🎟️ <b>Ils Gagnent</b>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -475,7 +530,7 @@
           <div class="config-step-label">1. Votre formule principale (essai 7 jours offert) :</div>
           <div class="config-plan-radios" id="f-config-plans"></div>
 
-          <div class="config-step-label">2. Briques complémentaires à la carte (optionnel, sans engagement) :</div>
+          <div class="config-step-label">2. Modules &amp; Add-ons Stripe à la carte (sans engagement ou à l'unité) :</div>
           <div class="config-addon-checks" id="f-config-addons"></div>
 
           <div class="config-total-bar">
@@ -721,6 +776,7 @@
         <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
         <a href="fidelite-communaute.html">Fidélité, Parrainage &amp; Jackpot</a>
         <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+        <a href="abonnements.html">💎 Abonnements</a>
         <a href="#formules">5 Formules</a>
         <a href="/legal">Mentions légales</a>
         <a href="/privacy">Confidentialité</a>

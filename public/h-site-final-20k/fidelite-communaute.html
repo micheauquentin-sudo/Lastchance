@@ -26,6 +26,7 @@
           <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
           <a href="fidelite-communaute.html" class="nav-active">Fidélité &amp; Jackpot</a>
           <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+          <a href="abonnements.html">💎 Abonnements</a>
           <a href="studio.html?module=fidelite" class="nav-highlight-link">🛠️ Studio</a>
         </nav>
         <div class="nav-right-actions">
@@ -231,46 +232,42 @@
 
                   <!-- 1. En-tête Client du Passeport (EntetePasseport) -->
                   <div class="fc-passport-header">
-                    <div class="fc-passport-logo-disc" aria-hidden="true">🎟️</div>
-                    <p class="fc-passport-merchant-name">BISTROT L'ÉTOILE</p>
-                    <h3 class="fc-passport-title">Passeport Fidélité Gourmand</h3>
+                    <div class="fc-passport-header-top">
+                      <div class="fc-passport-logo-disc" aria-hidden="true">🎟️</div>
+                      <div class="fc-passport-header-titles">
+                        <p class="fc-passport-merchant-name">BISTROT L'ÉTOILE</p>
+                        <h3 class="fc-passport-title">Passeport Fidélité Gourmand</h3>
+                      </div>
+                    </div>
                     <div class="fc-passport-user-pill">
                       <span>👤 Lisa M.</span>
                       <span class="fc-pill-sep">·</span>
-                      <span id="fc-member-badge">Habituée</span>
+                      <span class="fc-user-status-tag" id="fc-member-badge">Habituée · Niveau Argent</span>
                     </div>
                   </div>
 
-                  <!-- 2. Solde & Points (SoldePanel) -->
+                  <!-- 2. Solde & Niveau unifié (SoldePanel & TierPanel) -->
                   <div class="fc-phone-card fc-card-points">
                     <div class="fc-card-head">
-                      <span class="fc-head-kicker">MES POINTS</span>
-                      <span class="fc-points-badge" id="fc-visites-count">3 visites validées</span>
+                      <span class="fc-head-kicker">MES POINTS FIDÉLITÉ</span>
+                      <span class="fc-points-badge" id="fc-visites-count">3 passages validés</span>
                     </div>
                     <div class="fc-points-hero">
                       <span class="fc-points-number" id="fc-points-val">300</span>
-                      <span class="fc-points-unit">points</span>
+                      <span class="fc-points-unit">pts</span>
                     </div>
                     <div class="fc-progress-track">
                       <div class="fc-progress-bar" id="fc-points-bar" style="width: 60%;"></div>
                     </div>
-                    <p class="fc-progress-msg" id="fc-loyalty-msg">
-                      Plus que <strong>200 pts</strong> (2 visites) avant votre <strong>Dessert offert !</strong>
-                    </p>
-                  </div>
-
-                  <!-- 3. Statut & Progression de Niveau (TierPanel) -->
-                  <div class="fc-phone-card fc-card-tier">
-                    <div class="fc-tier-row">
-                      <span class="fc-tier-badge" id="fc-tier-badge">🥈 NIVEAU ARGENT</span>
-                      <small id="fc-tier-progress-text">400 pts cumulés · Objectif Or (800)</small>
-                    </div>
-                    <div class="fc-tier-track">
-                      <div class="fc-tier-fill" id="fc-tier-bar" style="width: 50%;"></div>
+                    <div class="fc-points-footer">
+                      <p class="fc-progress-msg" id="fc-loyalty-msg">
+                        Plus que <strong>200 pts</strong> (2 visites) avant votre <strong>Dessert offert !</strong>
+                      </p>
+                      <span class="fc-tier-badge" id="fc-tier-badge">🥈 ARGENT</span>
                     </div>
                   </div>
 
-                  <!-- 4. Zone de validation du passage client (QR Code / Code du Jour) -->
+                  <!-- 3. Validation de visite (QR Code Client / Code du Jour) -->
                   <div class="fc-phone-card fc-card-validation">
                     <div class="fc-validation-switch" role="group" aria-label="Mode de validation de visite">
                       <button type="button" class="fc-val-mode-btn active" id="fc-val-tab-qr" data-val-mode="qr">
@@ -281,14 +278,14 @@
                       </button>
                     </div>
 
-                    <!-- Option A : QR Code personnel à présenter au commerçant (Mode Staff) -->
+                    <!-- Option A : QR Code personnel à présenter au commerçant -->
                     <div class="fc-val-mode-view active" id="fc-view-qr">
                       <p class="fc-val-sub">
-                        Montrez ce QR code au commerçant : il le scanne pour valider votre visite.
+                        Faites scanner ce QR code unique en caisse pour créditer <b>+100 points</b> :
                       </p>
                       <div class="fc-qr-display-box" id="fc-qr-display-box">
                         <div class="fc-qr-inner-frame">
-                          <img src="img/qr-passeport.svg" alt="Mon QR code personnel de fidélité" width="130" height="130" class="fc-client-qr-img" />
+                          <img src="img/qr-passeport.svg" alt="Mon QR code personnel de fidélité" width="138" height="138" class="fc-client-qr-img" />
                           <div class="fc-client-qr-badge" aria-hidden="true">🎟️</div>
                         </div>
                         <div class="fc-qr-token-pill">
@@ -298,18 +295,18 @@
                         </div>
                       </div>
                       <button type="button" class="fc-client-action-btn pop-btn-yellow" id="fc-btn-trigger-scan">
-                        📲 Faire scanner mon QR Code (+100 pts)
+                        📲 Simuler le scan en caisse (+100 pts)
                       </button>
                     </div>
 
-                    <!-- Option B : Saisie du Code du Jour affiché au comptoir (Mode rotating_code) -->
+                    <!-- Option B : Saisie du Code du Jour affiché au comptoir -->
                     <div class="fc-val-mode-view" id="fc-view-code">
                       <p class="fc-val-sub">
                         Saisissez le code à 6 chiffres affiché à l'écran du comptoir :
                       </p>
                       <div class="fc-daily-code-box">
                         <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="fc-daily-code-input" id="fc-code-input" value="482910" placeholder="000000" aria-label="Code à 6 chiffres affiché au comptoir" />
-                        <small class="fc-code-help">Le code change régulièrement — demandez-le en caisse.</small>
+                        <small class="fc-code-help">Code rotatif quotidien sécurisé · Change chaque jour.</small>
                       </div>
                       <button type="button" class="fc-client-action-btn pop-btn-yellow" id="fc-btn-trigger-code">
                         ⚡ Tamponner ma carte (+100 pts)
@@ -323,18 +320,18 @@
                     </div>
                   </div>
 
-                  <!-- 5. Boutique des Paliers (BoutiquePaliers) -->
+                  <!-- 4. Boutique des Paliers (BoutiquePaliers) -->
                   <div class="fc-phone-card fc-card-boutique">
                     <div class="fc-card-head">
-                      <strong>🎁 Boutique de récompenses</strong>
-                      <small style="font-weight:700;color:#6b5a3e;">Chaque palier à son prix</small>
+                      <strong>🎁 Paliers &amp; Récompenses</strong>
+                      <small style="font-weight:700;color:#6b5a3e;">Débloquez vos cadeaux</small>
                     </div>
                     <div class="fc-palier-list">
                       <div class="fc-palier-item is-unlocked">
                         <div class="fc-palier-icon">☕</div>
                         <div class="fc-palier-info">
                           <strong>Boisson ou Café offert</strong>
-                          <small>200 points</small>
+                          <small>Palier 200 points</small>
                         </div>
                         <span class="fc-palier-badge unlocked">✓ Débloqué</span>
                       </div>
@@ -342,7 +339,7 @@
                         <div class="fc-palier-icon">🍰</div>
                         <div class="fc-palier-info">
                           <strong>Dessert du Chef offert</strong>
-                          <small>500 points</small>
+                          <small>Palier 500 points</small>
                         </div>
                         <span class="fc-palier-badge progress" id="fc-palier-dessert-badge">300 / 500</span>
                       </div>
@@ -350,67 +347,196 @@
                         <div class="fc-palier-icon">🎰</div>
                         <div class="fc-palier-info">
                           <strong>Tour de Roue Jackpot</strong>
-                          <small>1000 points</small>
+                          <small>Palier 1000 points</small>
                         </div>
                         <span class="fc-palier-badge locked" id="fc-palier-roue-badge">🔒 1000 pts</span>
                       </div>
                     </div>
                   </div>
 
-                  <!-- 6. Mention Wallet discrète (InstallerPasseport) -->
+                  <!-- 5. Mention & Intégration Apple / Google Wallet stylisée -->
                   <div class="fc-wallet-mention-box">
-                    <span class="fc-wallet-icon">📱</span>
+                    <div class="fc-wallet-pill-icon">📲</div>
                     <div class="fc-wallet-text">
-                      <strong>Compatible Apple Wallet &amp; Google Wallet</strong>
-                      <small>Ajout en 1 clic sur votre écran d'accueil sans rien installer</small>
+                      <strong>Disponible dans Apple Wallet &amp; Google Wallet</strong>
+                      <small>S'ajoute en 1 clic sur l'écran d'accueil sans aucune application</small>
                     </div>
                   </div>
 
                 </div>
 
-                <!-- Panneau 2 : Parrainage Club -->
+                <!-- Panneau 2 : Parrainage Club (Vue Complète & Structurée) -->
                 <div class="fc-tab-panel" id="fc-panel-parrainage">
+                  <!-- En-tête Parrainage -->
+                  <div class="fc-passport-header">
+                    <div class="fc-passport-header-top">
+                      <div class="fc-passport-logo-disc" aria-hidden="true">🤝</div>
+                      <div class="fc-passport-header-titles">
+                        <p class="fc-passport-merchant-name">PROGRAMME AMBASSADEUR</p>
+                        <h3 class="fc-passport-title">Parrainez vos proches</h3>
+                      </div>
+                    </div>
+                    <div class="fc-passport-user-pill">
+                      <span>👤 Lisa M.</span>
+                      <span class="fc-pill-sep">·</span>
+                      <span class="fc-user-status-tag" id="fc-ref-count">1 ami parrainé</span>
+                    </div>
+                  </div>
+
                   <div class="fc-phone-card fc-card-referral">
                     <div class="fc-card-head">
-                      <strong>🤝 Inviter des proches</strong>
-                      <span id="fc-ref-count">1 / 3 amis invités</span>
+                      <strong>🎁 Votre lien d'invitation</strong>
+                      <span class="fc-ref-gain-badge">+10% chacun</span>
                     </div>
                     <p class="fc-card-desc">
-                      Partagez votre code personnel : chaque ami qui découvre l'enseigne vous fait franchir un palier !
+                      Offrez <b>-10%</b> à vos amis sur leur premier passage. Dès qu'ils viennent, vous gagnez aussi votre cadeau !
                     </p>
                     <div class="fc-promo-box">
-                      <small style="font-weight:700;">Code de partage :</small>
+                      <small style="font-weight:700;">Votre code de parrain :</small>
                       <strong class="fc-promo-code">LISA-774</strong>
                       <button type="button" class="fc-copy-code-btn" id="fc-copy-code-btn">Copier</button>
                     </div>
-                    <div class="fc-ref-tiers" id="fc-ref-tiers">
-                      <span class="fc-tier-pill is-reached">✓ 1 ami (-10%)</span>
-                      <span class="fc-tier-pill" id="fc-tier-2">2 amis (Dessert)</span>
-                      <span class="fc-tier-pill" id="fc-tier-3">3 amis (VIP Or)</span>
+                  </div>
+
+                  <!-- Paliers de parrainage complets -->
+                  <div class="fc-phone-card">
+                    <div class="fc-card-head">
+                      <strong>🏆 Vos récompenses parrain</strong>
+                      <small style="font-weight:700;color:#6b5a3e;">3 paliers exclusifs</small>
+                    </div>
+                    <div class="fc-palier-list" id="fc-ref-tiers">
+                      <div class="fc-palier-item is-unlocked">
+                        <div class="fc-palier-icon">🎟️</div>
+                        <div class="fc-palier-info">
+                          <strong>1er ami parrainé</strong>
+                          <small>-10% sur votre prochaine addition</small>
+                        </div>
+                        <span class="fc-palier-badge unlocked">✓ Gagné</span>
+                      </div>
+                      <div class="fc-palier-item" id="fc-ref-palier-2">
+                        <div class="fc-palier-icon">🍰</div>
+                        <div class="fc-palier-info">
+                          <strong>2e ami parrainé</strong>
+                          <small>1 Dessert du Chef offert</small>
+                        </div>
+                        <span class="fc-palier-badge progress" id="fc-tier-2">En attente</span>
+                      </div>
+                      <div class="fc-palier-item" id="fc-ref-palier-3">
+                        <div class="fc-palier-icon">👑</div>
+                        <div class="fc-palier-info">
+                          <strong>3e ami parrainé</strong>
+                          <small>Statut VIP Or &amp; Invitations dégustation</small>
+                        </div>
+                        <span class="fc-palier-badge locked" id="fc-tier-3">🔒 3 amis</span>
+                      </div>
                     </div>
                   </div>
+
+                  <!-- Filleuls récents -->
+                  <div class="fc-phone-card fc-card-filleuls">
+                    <div class="fc-card-head">
+                      <strong>👥 Activité de vos amis</strong>
+                      <small style="color:#5f5647;">Temps réel</small>
+                    </div>
+                    <div class="fc-filleul-item">
+                      <span class="fc-filleul-avatar">🧑</span>
+                      <div class="fc-filleul-info">
+                        <strong>Marc D.</strong>
+                        <small>Visite validée · -10% débloqué pour vous</small>
+                      </div>
+                      <span class="fc-filleul-date">Hier</span>
+                    </div>
+                    <div class="fc-filleul-item">
+                      <span class="fc-filleul-avatar">👩</span>
+                      <div class="fc-filleul-info">
+                        <strong>Thomas B.</strong>
+                        <small>Invitation reçue · En attente de visite</small>
+                      </div>
+                      <span class="fc-filleul-date">En cours</span>
+                    </div>
+                  </div>
+
                   <button type="button" class="fc-client-action-btn pop-btn-violet" id="fc-screen-btn-refer">
                     🤝 Simuler un ami parrainé (+1 ami &amp; +6% Cagnotte)
                   </button>
                 </div>
 
-                <!-- Panneau 3 : Jackpot Collectif -->
+                <!-- Panneau 3 : Jackpot Collectif (Vue Complète & Structurée) -->
                 <div class="fc-tab-panel" id="fc-panel-jackpot">
+                  <!-- En-tête Jackpot -->
+                  <div class="fc-passport-header">
+                    <div class="fc-passport-header-top">
+                      <div class="fc-passport-logo-disc" aria-hidden="true">🎰</div>
+                      <div class="fc-passport-header-titles">
+                        <p class="fc-passport-merchant-name">CAGNOTTE DU MOIS</p>
+                        <h3 class="fc-passport-title">Le Grand Tirage Collectif</h3>
+                      </div>
+                    </div>
+                    <div class="fc-passport-user-pill">
+                      <span>👥 84 habitués participent</span>
+                      <span class="fc-pill-sep">·</span>
+                      <span class="fc-user-status-tag" id="fc-jackpot-pct-pill">Jauge à 88%</span>
+                    </div>
+                  </div>
+
                   <div class="fc-phone-card fc-card-jackpot">
                     <div class="fc-card-head">
-                      <strong>🎰 Cagnotte Collective</strong>
-                      <span id="fc-jackpot-pct">88 %</span>
+                      <strong>🔥 Jauge Collective en Direct</strong>
+                      <span class="fc-jackpot-big-pct" id="fc-jackpot-pct">88 %</span>
                     </div>
-                    <p class="fc-card-desc">
-                      Chaque visite et chaque parrainage fait monter la jauge collective. À 100 %, le grand tirage est déclenché pour tous !
-                    </p>
                     <div class="fc-jackpot-bar-outer">
                       <div class="fc-jackpot-bar-inner" id="fc-jackpot-bar" style="width: 88%;"></div>
                     </div>
-                    <small id="fc-jackpot-msg">Plus que 12 % pour déclencher le grand tirage collectif !</small>
+                    <p class="fc-jackpot-msg" id="fc-jackpot-msg">
+                      Plus que <strong>12 %</strong> de visites collectives pour déclencher le grand tirage !
+                    </p>
                   </div>
+
+                  <!-- Le Grand Lot en Jeu -->
+                  <div class="fc-phone-card fc-card-lot">
+                    <div class="fc-card-head">
+                      <strong>🎁 Lot exceptionnel en jeu</strong>
+                      <span class="fc-lot-badge">Tirage ce mois-ci</span>
+                    </div>
+                    <div class="fc-lot-content">
+                      <span class="fc-lot-icon">🍾</span>
+                      <div class="fc-lot-text">
+                        <strong>Menu Dégustation Gourmand pour 2</strong>
+                        <small>Entrées + Plats + Desserts &amp; Vins de vignerons inclus</small>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Comment ça marche -->
+                  <div class="fc-phone-card fc-card-how">
+                    <div class="fc-card-head">
+                      <strong>⚡ Comment fonctionne la cagnotte ?</strong>
+                    </div>
+                    <ul class="fc-jackpot-rules">
+                      <li><b>1.</b> Chaque tampon fidélité ou parrainage ajoute <b>+4 %</b> à la jauge.</li>
+                      <li><b>2.</b> Plus les habitués viennent, plus vite la jauge atteint 100 %.</li>
+                      <li><b>3.</b> À 100 %, un tirage au sort désigne le gagnant parmi tous les participants !</li>
+                    </ul>
+                  </div>
+
+                  <!-- Derniers gagnants -->
+                  <div class="fc-phone-card fc-card-winners">
+                    <div class="fc-card-head">
+                      <strong>🎉 Derniers gagnants</strong>
+                      <small style="color:#5f5647;">Félicitations !</small>
+                    </div>
+                    <div class="fc-winner-row">
+                      <span>🏆 <b>Julien R.</b> a remporté le Panier Terroir</span>
+                      <small>Le 12/11</small>
+                    </div>
+                    <div class="fc-winner-row">
+                      <span>🏆 <b>Camille S.</b> a remporté 1 Repas Duo</span>
+                      <small>Le 28/10</small>
+                    </div>
+                  </div>
+
                   <button type="button" class="fc-client-action-btn pop-btn-orange" id="fc-screen-btn-jackpot">
-                    🎰 Déclencher le tirage au sort (à 100%)
+                    🎰 Simuler le tirage au sort (à 100%)
                   </button>
                 </div>
               </div>

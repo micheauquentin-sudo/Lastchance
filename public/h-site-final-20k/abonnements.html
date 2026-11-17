@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Abonnements &amp; Formules — LastChance · Zéro Commission &amp; Sans Engagement</title>
+  <meta name="description" content="Découvrez nos 5 formules d'animation et de fidélisation pour commerces de proximité. 7 jours d'essai gratuit, résiliation en 1 clic, zéro commission." />
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Space+Grotesk:wght@500;700;800;900&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="page-abonnements">
+  <div class="top-nav-ribbon" role="region" aria-label="Bandeau de réassurance">
+    <div class="ribbon-ticker">
+      <span>🎟️ 7 JOURS D'ESSAI GRATUIT</span>
+      <span class="ribbon-star" aria-hidden="true">★</span>
+      <span>⚡ 0 % DE COMMISSION SUR VOS VENTES</span>
+      <span class="ribbon-star" aria-hidden="true">★</span>
+      <span>🔒 SANS ENGAGEMENT · RÉSILIATION EN 1 CLIC</span>
+      <span class="ribbon-star" aria-hidden="true">★</span>
+      <span>📱 AUCUNE APPLICATION À TÉLÉCHARGER</span>
+      <span class="ribbon-star" aria-hidden="true">★</span>
+      <span>💳 PAIEMENT SÉCURISÉ STRIPE</span>
+    </div>
+  </div>
+
+  <header class="site-header" id="site-header">
+    <div class="header-inner">
+      <a class="site-logo" href="index.html" aria-label="LastChance — Retour à l'accueil">
+        <span class="logo-mark" aria-hidden="true">🎟️</span>
+        <span class="logo-text">LAST<b>CHANCE</b></span>
+      </a>
+
+      <nav class="main-nav" aria-label="Navigation principale">
+        <a class="nav-item" href="index.html">Accueil</a>
+        <a class="nav-item" href="studio.html">🛠️ Studio</a>
+        <a class="nav-item" href="vitrine-reservation.html">🌐 Vitrine &amp; Réservation</a>
+        <a class="nav-item" href="jeux-pronostics.html">🎰 Jeux &amp; Pronos</a>
+        <a class="nav-item" href="fidelite-communaute.html">🎟️ Fidélité &amp; Jackpot</a>
+        <a class="nav-item active" href="abonnements.html">💎 Abonnements</a>
+      </nav>
+
+      <div class="header-actions">
+        <a class="ticket-btn pop-btn-ink nav-cta" href="index.html#configurateur">Simulateur →</a>
+        <a class="ticket-btn pop-btn-yellow nav-cta" href="/signup">Essai 7j Gratuit</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <!-- HÉRO DE LA PAGE ABONNEMENTS -->
+    <section class="subpage-hero subpage-hero-abonnements">
+      <div class="hero-split-wrap">
+        <div class="hero-left-col">
+          <span class="hero-fun-badge">💎 TARIFS TRANSPARENTS · 0 % COMMISSION · SANS ENGAGEMENT</span>
+          <h1 class="hero-brand-title">
+            DES FORMULES QUI S'ADAPTENT<br />
+            <span class="hero-title-fun-highlight">À VOTRE COMMERCE.</span>
+          </h1>
+          <p class="hero-brand-desc">
+            Du bar au restaurant en passant par le salon de coiffure ou le commerce de quartier : choisissez la formule conçue pour booster votre fréquentation et fidéliser vos clients. <b>Essai 7 jours 100% offert sur toutes nos offres</b>.
+          </p>
+
+          <!-- Toggle Mensuel / Annuel -->
+          <div class="billing-toggle-container" role="group" aria-label="Périodicité de facturation">
+            <button type="button" class="billing-toggle-btn active" id="btn-billing-monthly" aria-pressed="true">
+              Facturation Mensuelle (Sans engagement)
+            </button>
+            <button type="button" class="billing-toggle-btn" id="btn-billing-annual" aria-pressed="false">
+              Facturation Annuelle <span class="annual-saving-pill">🎁 2 mois offerts (-20%)</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="hero-right-col">
+          <div class="ab-guarantee-card">
+            <div class="ab-guarantee-head">
+              <span class="ab-badge-star">⭐</span>
+              <strong>POURQUOI COMMERÇANTS NOUS FONT CONFIANCE ?</strong>
+            </div>
+            <ul class="ab-guarantee-list">
+              <li><b>⚡ Zéro commission :</b> Vous gardez 100% de vos encaissements et réservations.</li>
+              <li><b>📱 Zéro matériel :</b> Tout fonctionne sur votre téléphone, tablette ou ordinateur.</li>
+              <li><b>🎯 Sans engagement :</b> Vous résiliez ou modifiez votre formule en 1 clic.</li>
+              <li><b>🔒 Sécurité bancaire :</b> Géré par Stripe, le leader mondial du paiement.</li>
+              <li><b>✨ Scans illimités :</b> Aucune limite de clients ou de QR codes scannés.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DAMIER TRANSITION -->
+    <div class="checker-strip" aria-hidden="true"></div>
+
+    <!-- SÉLECTEUR INTERACTIF PAR ABONNEMENT (LE TOGGLE IMMERSIF) -->
+    <section class="section section-wide" id="selecteur-abonnements">
+      <div class="center">
+        <p class="section-script">explorez chaque formule en détail</p>
+        <h2 class="section-title">QUEL ABONNEMENT EST FAIT POUR VOUS ?</h2>
+        <p class="section-lead" style="max-width:640px;margin:0.5rem auto 1.5rem;">
+          Cliquez sur une formule pour découvrir ses fonctionnalités, sa cible et ses modules inclus :
+        </p>
+
+        <!-- Toggle des 5 formules -->
+        <div class="ab-tabs-bar" role="group" aria-label="Choisir une formule à inspecter">
+          <button type="button" class="ab-tab-btn" data-plan="core">
+            ⚡ 1. Coup d'envoi <span class="tab-price-tag">29 €</span>
+          </button>
+          <button type="button" class="ab-tab-btn active" data-plan="engagement">
+            🎟️ 2. Le Club <span class="tab-badge-pop">Coup de cœur</span> <span class="tab-price-tag">59 €</span>
+          </button>
+          <button type="button" class="ab-tab-btn" data-plan="place">
+            📅 3. Sur Place <span class="tab-price-tag">79 €</span>
+          </button>
+          <button type="button" class="ab-tab-btn" data-plan="live">
+            📺 4. Le Grand Jeu <span class="tab-price-tag">89 €</span>
+          </button>
+          <button type="button" class="ab-tab-btn" data-plan="full">
+            🚀 5. La Totale <span class="tab-badge-vip">VIP</span> <span class="tab-price-tag">129 €</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Fiche détaillée immersive de l'abonnement sélectionné -->
+      <div class="ab-detail-stage" id="ab-detail-stage">
+        <!-- Rendu dynamique par JS selon l'abonnement actif -->
+      </div>
+    </section>
+
+    <!-- LES 5 CARTES CÔTE À CÔTE (VUE SYNTHÉTIQUE) -->
+    <section class="section" id="grille-abonnements" style="background:#fffcf2;border-top:3px solid var(--ink);border-bottom:3px solid var(--ink);">
+      <div class="center">
+        <p class="section-script">comparatif rapide</p>
+        <h2 class="section-title">LES 5 FORMULES EN UN COUP D'ŒIL.</h2>
+        <p class="section-lead" style="max-width:640px;margin:0.5rem auto 2rem;">
+          Toutes nos formules incluent <b>7 jours d'essai gratuit</b> sans engagement et l'accès au Studio de création d'affiches.
+        </p>
+      </div>
+
+      <div class="ab-cards-grid" id="ab-cards-grid">
+        <!-- Cartes rendues dynamiquement depuis LC_OFFRE -->
+      </div>
+    </section>
+
+    <!-- LES ADD-ONS & OPTIONS À LA CARTE STRIPE -->
+    <section class="section section-wide" id="addons-stripe">
+      <div class="center">
+        <p class="section-script">modules à la demande</p>
+        <h2 class="section-title">COMPLÉTEZ VOTRE FORMULE AVEC LES ADD-ONS.</h2>
+        <p class="section-lead" style="max-width:700px;margin:0.5rem auto 2rem;">
+          Vous avez besoin d'une option précise ? Nos add-ons Stripe s'activent à la demande, en complément de votre formule ou sous forme de pass événementiels autonomes.
+        </p>
+      </div>
+
+      <div class="ab-addons-layout">
+        <!-- Bloc 1 : Options mensuelles récurrentes -->
+        <div class="ab-addon-col">
+          <div class="ab-addon-col-head" style="background:#e8fdf5;">
+            <span class="ab-col-icon">📅</span>
+            <div>
+              <h3>OPTIONS MENSUELLES (SANS ENGAGEMENT)</h3>
+              <p>S'ajoutent à votre abonnement et se résilient quand vous voulez.</p>
+            </div>
+          </div>
+          <div class="ab-addon-items">
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>🌐 Vitrine &amp; Carte QR Interactive</strong>
+                <span class="ab-card-price">+20 €/mois</span>
+              </div>
+              <p>Votre menu, carte et horaires en direct au QR code. Photos, descriptions et mise à jour en temps réel.</p>
+              <small class="ab-card-rule">Compris dans « Sur Place » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>🍷 Moments &amp; Ateliers</strong>
+                <span class="ab-card-price">+20 €/mois</span>
+              </div>
+              <p>Réservations pour ateliers de dégustation, événements spéciaux et offres limitées.</p>
+              <small class="ab-card-rule">Compris dans « Sur Place » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>📅 Prise de Rendez-vous en Ligne</strong>
+                <span class="ab-card-price">+20 €/mois</span>
+              </div>
+              <p>Agenda numérique, créneaux horaires configurables et ajout en 1 clic au calendrier du client.</p>
+              <small class="ab-card-rule">Compris dans « Sur Place » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>🎟️ Passeport Fidélité des Habitués</strong>
+                <span class="ab-card-price">+19 €/mois</span>
+              </div>
+              <p>Tampons dématérialisés, boutique de récompenses et QR code client personnel.</p>
+              <small class="ab-card-rule">Compris dans « Le Club » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>🤝 Parrainage &amp; Ambassadeurs</strong>
+                <span class="ab-card-price">+12 €/mois</span>
+              </div>
+              <p>Bouche-à-oreille récompensé : codes promos partagés et paliers de parrainage.</p>
+              <small class="ab-card-rule">Compris dans « Le Club » et « La Totale ».</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bloc 2 : Pass ponctuels & Campagnes événementielles -->
+        <div class="ab-addon-col">
+          <div class="ab-addon-col-head" style="background:#fff3d4;">
+            <span class="ab-col-icon">⚡</span>
+            <div>
+              <h3>PASS ÉVÉNEMENTIELS &amp; CAMPAGNES (ACHAT UNIQUE)</h3>
+              <p>Facturés une seule fois, activables dans les 90 jours suivant l'achat.</p>
+            </div>
+          </div>
+          <div class="ab-addon-items">
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>🎯 Chasse au QR Code</strong>
+                <span class="ab-card-price">29 € (Pass 30j)</span>
+              </div>
+              <p>Parcours de découverte géolocalisé pour créer du trafic entre vos espaces ou partenaires.</p>
+              <small class="ab-card-rule">Compris dans « Le Club » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>🎁 Calendrier à Surprises</strong>
+                <span class="ab-card-price">29 € (Pass 31j)</span>
+              </div>
+              <p>Campagne quotidienne pour fidéliser (ex: Calendrier de l'Avent, mois anniversaire).</p>
+              <small class="ab-card-rule">Compris dans « Le Club » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>⚡ Quiz Express Événementiel</strong>
+                <span class="ab-card-price">15 € (Pass 7j)</span>
+              </div>
+              <p>Semaine à thème avec quiz interactif au comptoir ou sur table.</p>
+              <small class="ab-card-rule">Compris dans « Le Club », « Sur Place », « Le Grand Jeu » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>🎰 Cagnotte Collective &amp; Jackpot</strong>
+                <span class="ab-card-price">29 € (Pass 30j)</span>
+              </div>
+              <p>Jauge communautaire qui monte à chaque visite avec grand tirage au sort automatique.</p>
+              <small class="ab-card-rule">Compris dans « Le Grand Jeu » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>🏆 Saison Complète de Pronostics</strong>
+                <span class="ab-card-price">39 € (Jusqu'à 12 mois)</span>
+              </div>
+              <p>Un grand championnat (Ligue 1, Ligue des Champions...) animé du début à la fin.</p>
+              <small class="ab-card-rule">Compris dans « Le Grand Jeu » et « La Totale ».</small>
+            </div>
+
+            <div class="ab-addon-card">
+              <div class="ab-card-top">
+                <strong>📺 Pass Soirée en Jeu Live</strong>
+                <span class="ab-card-price">dès 9 € (24h de jeu)</span>
+              </div>
+              <p>Écran géant live, quiz de salle et télécommande animateur (10 à 50 joueurs simultanés).</p>
+              <small class="ab-card-rule">Compris dans « Le Grand Jeu » et « La Totale ».</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TABLEAU COMPARATIF INTERACTIF COMPLET -->
+    <section class="section section-wide" id="comparatif-detaille">
+      <div class="center">
+        <p class="section-script">la transparence absolue</p>
+        <h2 class="section-title">TABLEAU COMPARATIF DÉTAILLÉ.</h2>
+        <p class="section-lead" style="max-width:640px;margin:0.5rem auto 2rem;">
+          Comparez chaque fonctionnalité incluse dans nos 5 offres :
+        </p>
+      </div>
+
+      <div class="ab-table-wrapper">
+        <table class="ab-compare-table">
+          <thead>
+            <tr>
+              <th scope="col" class="th-feature">Fonctionnalités &amp; Modules</th>
+              <th scope="col" class="th-plan">⚡ Coup d'envoi<br /><small>29 €/mois</small></th>
+              <th scope="col" class="th-plan highlight">🎟️ Le Club<br /><small>59 €/mois</small></th>
+              <th scope="col" class="th-plan">📅 Sur Place<br /><small>79 €/mois</small></th>
+              <th scope="col" class="th-plan">📺 Le Grand Jeu<br /><small>89 €/mois</small></th>
+              <th scope="col" class="th-plan">🚀 La Totale<br /><small>129 €/mois</small></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>15 mini-jeux instantanés</b> (roue, grattage, coffre...)</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Jeux à table</b> (Duo Miroir &amp; Portrait de la Bande)</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Scans QR &amp; visiteurs illimités</b></td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Caisse universelle sécurisée</b></td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Studio d'affiches prêtes à imprimer</b></td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Passeport fidélité digital</b> (tampons &amp; boutique)</td>
+              <td class="cross">—</td>
+              <td class="chk highlight">✓</td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Programme de parrainage ambassadeurs</b></td>
+              <td class="cross">—</td>
+              <td class="chk highlight">✓</td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Calendrier surprise quotidien</b></td>
+              <td class="cross">—</td>
+              <td class="chk highlight">✓</td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Chasse au QR géolocalisée</b></td>
+              <td class="cross">—</td>
+              <td class="chk highlight">✓</td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Vitrine numérique &amp; carte interactive QR</b></td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Prise de RDV en ligne &amp; synchronisation agenda</b></td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Réservations de tables &amp; ateliers</b></td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Écran géant live pour soirées</b></td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">250 pers.</td>
+              <td class="chk">250 pers.</td>
+            </tr>
+            <tr>
+              <td><b>Pronostics sportifs sur championnats</b></td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Jackpot &amp; cagnotte collective</b></td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="cross">—</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+            </tr>
+            <tr>
+              <td><b>Quiz interactifs de salle</b></td>
+              <td class="cross">—</td>
+              <td class="chk highlight">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+              <td class="chk">✓</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td><b>Démarrer avec 7 jours offerts :</b></td>
+              <td><a class="ticket-btn pop-btn-ink" href="/signup?plan=core">Tester →</a></td>
+              <td class="highlight"><a class="ticket-btn pop-btn-yellow" href="/signup?plan=engagement">Tester Le Club →</a></td>
+              <td><a class="ticket-btn pop-btn-ink" href="/signup?plan=place">Tester →</a></td>
+              <td><a class="ticket-btn pop-btn-ink" href="/signup?plan=live">Tester →</a></td>
+              <td><a class="ticket-btn pop-btn-pink" href="/signup?plan=full">Tester La Totale →</a></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+    <!-- FAQ SPÉCIALE ABONNEMENTS -->
+    <section class="section section-narrow" id="faq-abonnements">
+      <div class="center">
+        <p class="section-script">tout savoir avant de se lancer</p>
+        <h2 class="section-title">QUESTIONS SUR LES ABONNEMENTS.</h2>
+        <p class="section-lead" style="max-width:640px;margin:0.5rem auto 1.5rem;">
+          Des réponses franches pour vous lancer en toute sérénité :
+        </p>
+      </div>
+
+      <div class="faq-accordion-pop">
+        <details class="faq-item-pop" open>
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-tarifs">💰 SANS ENGAGEMENT</span>
+              <span>Puis-je changer de formule ou résilier à tout moment ?</span>
+            </span>
+            <span class="faq-chevron" aria-hidden="true">▼</span>
+          </summary>
+          <p>
+            <b>Oui, absolument !</b> Nos abonnements sont 100 % sans engagement. Vous pouvez passer d'une offre à une autre ou résilier votre abonnement d'un simple clic depuis votre espace de gestion Stripe. Aucun préavis n'est exigé et vous conservez vos accès jusqu'au terme de la période payée.
+          </p>
+        </details>
+
+        <details class="faq-item-pop">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-tarifs">🎁 7 JOURS D'ESSAI</span>
+              <span>Comment fonctionne l'essai gratuit de 7 jours ?</span>
+            </span>
+            <span class="faq-chevron" aria-hidden="true">▼</span>
+          </summary>
+          <p>
+            Dès la création de votre compte, vous bénéficiez de <b>7 jours complets d'accès illimité</b> pour tester votre formule, configurer vos affiches dans le Studio et faire jouer vos premiers clients au comptoir. Si vous ne souhaitez pas continuer, vous annulez avant le 7e jour sans débourser un centime.
+          </p>
+        </details>
+
+        <details class="faq-item-pop">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-tarifs">⚡ COMMISSION 0%</span>
+              <span>Prenez-vous une commission sur les réservations ou les ventes ?</span>
+            </span>
+            <span class="faq-chevron" aria-hidden="true">▼</span>
+          </summary>
+          <p>
+            <b>Non, strictement 0 % de commission !</b> Contrairement aux plateformes de réservation ou de livraison qui prélèvent 15 à 30 % de vos recettes, LastChance fonctionne sur un abonnement fixe transparent. Vous conservez 100 % de ce que vos clients dépensent chez vous.
+          </p>
+        </details>
+
+        <details class="faq-item-pop">
+          <summary>
+            <span class="faq-summary-left">
+              <span class="faq-cat-tag faq-tag-tarifs">🔒 STRIPE</span>
+              <span>Mes coordonnées bancaires sont-elles sécurisées ?</span>
+            </span>
+            <span class="faq-chevron" aria-hidden="true">▼</span>
+          </summary>
+          <p>
+            <b>Oui, sécurité maximale garantie par Stripe.</b> Vos données bancaires ne transitent jamais par nos serveurs : elles sont chiffrées selon les normes bancaires internationales les plus strictes (PCI-DSS niveau 1). Vos factures avec TVA sont générées automatiquement chaque mois.
+          </p>
+        </details>
+      </div>
+    </section>
+
+    <!-- GRAND FINALE BANNER -->
+    <section class="grand-finale">
+      <div class="finale-inner">
+        <p class="section-script">prêt à booster votre commerce ?</p>
+        <h2 class="section-title">COMMENCEZ VOTRE ESSAI GRATUIT DE 7 JOURS MAINTENANT.</h2>
+        <p class="section-lead" style="margin-bottom:1.5rem;">
+          Configurez vos jeux, vos affiches et votre passeport fidélité dès aujourd'hui. Vos clients vont adorer !
+        </p>
+        <div class="finale-cta-row">
+          <a class="ticket-btn ticket-btn-large pop-btn-ink" href="/signup?plan=engagement">🎟️ Démarrer avec Le Club (59 €) →</a>
+          <a class="ticket-btn ticket-btn-large pop-btn-white" href="studio.html">🛠️ Tester d'abord dans le Studio</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-wrap">
+      <div class="footer-col">
+        <span class="footer-logo">LAST<b>CHANCE</b></span>
+        <p>L'animation et la fidélisation moderne pour commerces de proximité.</p>
+      </div>
+      <div class="footer-col">
+        <strong>Nos Modules</strong>
+        <a href="fidelite-communaute.html">🎟️ Passeport Fidélité &amp; Jackpot</a>
+        <a href="vitrine-reservation.html">🌐 Vitrine &amp; Réservation</a>
+        <a href="jeux-pronostics.html">🎰 15 Jeux &amp; Pronostics</a>
+        <a href="abonnements.html">💎 Abonnements &amp; Add-ons</a>
+      </div>
+      <div class="footer-col">
+        <strong>Outils &amp; Studio</strong>
+        <a href="studio.html">🛠️ Studio Créatif</a>
+        <a href="index.html#configurateur">✦ Simulateur Sur-Mesure</a>
+        <a href="index.html#faq">❓ FAQ &amp; Aide</a>
+      </div>
+      <div class="footer-col">
+        <strong>Légal &amp; Sécurité</strong>
+        <span>🔒 Paiement Stripe sécurisé</span>
+        <span>🇫🇷 Hébergé en France</span>
+        <span>© 2026 LastChance. Tous droits réservés.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../shared/offre.js"></script>
+  <script src="codebase.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,11 +1,11 @@
-ï»¿/* ============================================================
-   SITE FINAL 20K (H) â€” LASTCHANCE
+/* ============================================================
+   SITE FINAL 20K (H) — LASTCHANCE
    Direction Artistique :
    - Fond Beige Chaud (#fcf7eb) + Bulles Roses Flottantes
-   - HÃ©ro Azur Pixar dÃ¨s 0px + Typographie Fun & Ronde (Fredoka) + QR Cartoon 3D
-   - Communication Globale (Boutiques, Salons, Ã‰vÃ©nements, Marques, Lieux de vie)
-   - Storyboard 3 Ã‰crans Explicites (1. Ils scannent Â· 2. Ils jouent Â· 3. Ils gagnent)
-   - Bloc Accrocheur & Page DÃ©diÃ©e Â« Vitrine & RÃ©servation Â»
+   - Héro Azur Pixar dès 0px + Typographie Fun & Ronde (Fredoka) + QR Cartoon 3D
+   - Communication Globale (Boutiques, Salons, Événements, Marques, Lieux de vie)
+   - Storyboard 3 Écrans Explicites (1. Ils scannent · 2. Ils jouent · 3. Ils gagnent)
+   - Bloc Accrocheur & Page Dédiée « Vitrine & Réservation »
    ============================================================ */
 
 :root {
@@ -80,7 +80,7 @@ h2 { font-size: clamp(1.75rem, 2.7vw, 2.5rem); }
 h3 { font-size: 1.18rem; }
 .center { text-align: center; }
 
-/* â”€â”€ BULLES ROSES SUR FOND BEIGE (ArriÃ¨re-plan strict z-index: 0) â”€â”€ */
+/* -- BULLES ROSES SUR FOND BEIGE (Arrière-plan strict z-index: 0) -- */
 .floating-bubbles {
   position: fixed;
   inset: 0;
@@ -108,7 +108,7 @@ h3 { font-size: 1.18rem; }
 
 header, main, section, footer { position: relative; z-index: 2; }
 
-/* â”€â”€ BOUTONS & MARQUEURS POP ART â”€â”€ */
+/* -- BOUTONS & MARQUEURS POP ART -- */
 .ticket-btn {
   display: inline-flex;
   align-items: center;
@@ -148,7 +148,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 .pop-mark-yellow { background: var(--yellow); color: var(--ink); }
 .pop-mark-pink { background: var(--pink); color: var(--ink); }
 
-/* â”€â”€ BARRE DE NAVIGATION Ã‰PURÃ‰E & LARGE â”€â”€ */
+/* -- BARRE DE NAVIGATION ÉPURÉE & LARGE -- */
 .header-nav {
   position: sticky;
   top: 0.55rem;
@@ -238,8 +238,8 @@ header, main, section, footer { position: relative; z-index: 2; }
 .dot-p { background: var(--pink); }
 
 /* ==========================================================
-   1. HERO AZUR PIXAR Ã‰PURÃ‰ & FUN (NUAGES DÃˆS 0PX EN HAUT)
-      + TITRE & QR RAPPROCHÃ‰S AU CENTRE + SOL DAMIER 3D DIRECT
+   1. HERO AZUR PIXAR ÉPURÉ & FUN (NUAGES DÈS 0PX EN HAUT)
+      + TITRE & QR RAPPROCHÉS AU CENTRE + SOL DAMIER 3D DIRECT
    ========================================================== */
 .hero-master-pixar {
   position: relative;
@@ -255,8 +255,8 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   NOUVEAUX HÃ‰ROS THÃ‰MATIQUES DES PAGES ANNEXES (PORTAILS DÃ‰DIÃ‰S)
-   IdentitÃ© visuelle propre Ã  chaque univers, sans nuages ni damier
+   NOUVEAUX HÉROS THÉMATIQUES DES PAGES ANNEXES (PORTAILS DÉDIÉS)
+   Identité visuelle propre à chaque univers, sans nuages ni damier
    ========================================================== */
 .hero-annex-portal {
   position: relative;
@@ -269,7 +269,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: #ffffff;
 }
 
-/* 1. ThÃ¨me Jeux & Pronostics : Arcade & ArÃ¨ne festive */
+/* 1. Thème Jeux & Pronostics : Arcade & Arène festive */
 .hero-portal-jeux {
   background-color: #21123d;
   background-image:
@@ -277,7 +277,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     url("img/hero_jeux_arcade.jpg");
 }
 
-/* 2. ThÃ¨me FidÃ©litÃ© & Jackpot : Coffre dorÃ© & Wallet */
+/* 2. Thème Fidélité & Jackpot : Coffre doré & Wallet */
 .hero-portal-fidelite {
   background-color: #172a24;
   background-image:
@@ -285,7 +285,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     url("img/hero_fidelite_vault.jpg");
 }
 
-/* 3. ThÃ¨me Vitrine & RÃ©servation : Bistro, Terrasse & Boutique */
+/* 3. Thème Vitrine & Réservation : Bistro, Terrasse & Boutique */
 .hero-portal-vitrine {
   background-color: #3b231e;
   background-image:
@@ -293,7 +293,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     url("img/hero_vitrine_bistro.jpg");
 }
 
-/* Header adaptÃ© aux hÃ©ros sombres/colorÃ©s des pages annexes */
+/* Header adapté aux héros sombres/colorés des pages annexes */
 .header-nav-annex {
   background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(12px);
@@ -319,7 +319,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: #ffffff !important;
 }
 
-/* Fil d'Ariane Ã©purÃ© */
+/* Fil d'Ariane épuré */
 .annex-breadcrumb-wrap {
   width: min(var(--max), 92vw);
   margin: 0 auto 1.2rem;
@@ -350,7 +350,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   opacity: 0.95;
 }
 
-/* Grille du HÃ©ro de page annexe */
+/* Grille du Héro de page annexe */
 .hero-annex-grid {
   width: min(var(--max), 92vw);
   margin: 0 auto;
@@ -397,7 +397,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   max-width: 500px;
 }
 
-/* Carte Objet 3D du QR Code spÃ©cifique Ã  chaque page */
+/* Carte Objet 3D du QR Code spécifique à chaque page */
 .hero-annex-right {
   display: flex;
   justify-content: center;
@@ -504,7 +504,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   max-width: 500px;
 }
 
-/* Nouveau Titre HÃ©ro Fun, Rond & Cartoon 3D (Fredoka) */
+/* Nouveau Titre Héro Fun, Rond & Cartoon 3D (Fredoka) */
 .hero-fun-title {
   font-family: var(--fun-font);
   font-weight: 700;
@@ -561,7 +561,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   border: 2px solid var(--ink);
 }
 
-/* â”€â”€ COLONNE DROITE DU HÃ‰RO : QR CODE CARTOON 3D SIMPLE QUI FLOTTE â”€â”€ */
+/* -- COLONNE DROITE DU HÉRO : QR CODE CARTOON 3D SIMPLE QUI FLOTTE -- */
 .hero-right-qr-only {
   display: flex;
   justify-content: center;
@@ -653,7 +653,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   font-size: 1.45rem;
 }
 
-/* Pilules de sÃ©lection du QR Code immersif */
+/* Pilules de sélection du QR Code immersif */
 .qr-mode-switch {
   display: flex;
   gap: 0.35rem;
@@ -697,7 +697,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   FIN DU HÃ‰RO IMMERSIVE Ã‰PURÃ‰E : DAMIER 3D PERSPECTIVE DIRECT
+   FIN DU HÉRO IMMERSIVE ÉPURÉE : DAMIER 3D PERSPECTIVE DIRECT
    ========================================================== */
 .lottie-stage-wrapper {
   position: relative;
@@ -734,7 +734,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   2. BANDEAU DÃ‰FILANT VIOLET CIEL + BARRE MENTHE AUX 4 PILULES PRODUIT
+   2. BANDEAU DÉFILANT VIOLET CIEL + BARRE MENTHE AUX 4 PILULES PRODUIT
    ========================================================== */
 .ticker-banner {
   background: linear-gradient(90deg, #b692ff 0%, #d4beff 50%, #b692ff 100%);
@@ -791,7 +791,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   3. BLOC 2 : LES 3 CASES ORGANIQUES DÃ‰COUPÃ‰ES
+   3. BLOC 2 : LES 3 CASES ORGANIQUES DÉCOUPÉES
    ========================================================== */
 .organic-pillars-section {
   width: min(var(--max), 92vw);
@@ -885,7 +885,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 
 /* ==========================================================
    4. ILS SCANNENT. ILS JOUENT. ILS GAGNENT.
-   (NOUVEAU STORYBOARD VISUEL 3 Ã‰CRANS DE TÃ‰LÃ‰PHONE EXPLICITES)
+   (NOUVEAU STORYBOARD VISUEL 3 ÉCRANS DE TÉLÉPHONE EXPLICITES)
    ========================================================== */
 .clog-lavender-split {
   background: var(--lilac);
@@ -930,7 +930,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   flex-wrap: wrap;
 }
 
-/* Grille des 3 Ã‰crans Storyboard */
+/* Grille des 3 Écrans Storyboard */
 .storyboard-3-screens {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -990,7 +990,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 .screen-spin-bg { background: linear-gradient(180deg, #ffe0f0 0%, #fff6df 100%); }
 .screen-win-bg  { background: linear-gradient(180deg, #d7faeb 0%, #fff5c0 100%); }
 
-/* Ã‰cran 1 : Viseur de scan QR */
+/* Écran 1 : Viseur de scan QR */
 .camera-viewfinder {
   position: relative;
   width: 118px;
@@ -1037,7 +1037,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   border-radius: 999px;
 }
 
-/* Ã‰cran 2 : Roue animÃ©e dans le tÃ©lÃ©phone */
+/* Écran 2 : Roue animée dans le téléphone */
 .mini-phone-topbar {
   font: 700 0.68rem var(--fun-font);
   background: #ffffff;
@@ -1078,7 +1078,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   font: 700 0.68rem var(--fun-font);
 }
 
-/* Ã‰cran 3 : Ticket gagnant & Code unique */
+/* Écran 3 : Ticket gagnant & Code unique */
 .win-confetti-row {
   font: 700 0.78rem var(--fun-font);
   color: var(--pink-hot);
@@ -1123,7 +1123,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   5. BLOC ACCROCHEUR DÃ‰DIÃ‰ : VITRINE & RÃ‰SERVATION SUR L'ACCUEIL
+   5. BLOC ACCROCHEUR DÉDIÉ : VITRINE & RÉSERVATION SUR L'ACCUEIL
    ========================================================== */
 .vitrine-spotlight-section {
   width: min(var(--max), 92vw);
@@ -1192,7 +1192,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 .vf-item strong { display: block; font: 700 0.9rem var(--fun-font); }
 .vf-item small { font-size: 0.8rem; font-weight: 600; color: #463c57; }
 
-/* Pile de cartes aperÃ§u Ã  droite du bloc Vitrine & RÃ©servation */
+/* Pile de cartes aperçu à droite du bloc Vitrine & Réservation */
 .vitrine-preview-stack {
   display: flex;
   flex-direction: column;
@@ -1285,7 +1285,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   6. LES 14 EXPÃ‰RIENCES POP ART
+   6. LES 14 EXPÉRIENCES POP ART
    ========================================================== */
 .section {
   width: min(var(--max), 92vw);
@@ -1406,8 +1406,8 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   6b. LE MANÃˆGE INTERACTIF DES 10 MÃ‰CANIQUES DE JEU
-       (Nuage organique de Jetons + ScÃ¨ne AnimÃ©e Live + Ruban Forain)
+   6b. LE MANÈGE INTERACTIF DES 10 MÉCANIQUES DE JEU
+       (Nuage organique de Jetons + Scène Animée Live + Ruban Forain)
    ========================================================== */
 .jukebox-sub {
   max-width: 640px;
@@ -1476,7 +1476,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   background: #ffffff;
 }
 
-/* ScÃ¨ne AnimÃ©e en Direct (Forme organique dÃ©coupÃ©e) */
+/* Scène Animée en Direct (Forme organique découpée) */
 .jukebox-live-stage {
   background: #c4a3ff;
   border: var(--border-thick);
@@ -1509,7 +1509,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   font: 700 0.74rem var(--fun-font);
 }
 
-/* FenÃªtre d'animation interactive du jeu */
+/* Fenêtre d'animation interactive du jeu */
 .jukebox-visual-box {
   background: #ffffff;
   border: var(--border-thick);
@@ -1539,7 +1539,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Mini-animations spÃ©cifiques dans la scÃ¨ne */
+/* Mini-animations spécifiques dans la scène */
 .jb-stamps-row {
   display: flex;
   gap: 0.5rem;
@@ -1664,7 +1664,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   transform: translateY(-2px);
 }
 
-/* Ruban Forain DÃ©filant de Tickets InclinÃ©s */
+/* Ruban Forain Défilant de Tickets Inclinés */
 .carnival-ribbon-wrap {
   position: relative;
   width: 100%;
@@ -1723,7 +1723,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   opacity: 0.85;
 }
 
-/* â”€â”€ DAMIERS PONCTUELS â”€â”€ */
+/* -- DAMIERS PONCTUELS -- */
 .damier-separator { width: 100%; position: relative; z-index: 10; display: block; }
 .damier-bw {
   height: 22px;
@@ -1737,7 +1737,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   7. MANIFESTE JAUNE SOLAIRE (Tous Ã‰tablissements)
+   7. MANIFESTE JAUNE SOLAIRE (Tous Établissements)
    ========================================================== */
 .clog-yellow-manifesto {
   background: var(--yellow);
@@ -1831,7 +1831,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 .plan-amount small { font: 800 0.8rem var(--body); }
 .plan-summary-text { font-size: 0.82rem; font-weight: 600; margin: 0; min-height: 2.8em; }
 .plan-ticket ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.45rem; font-size: 0.8rem; }
-.plan-ticket ul li::before { content: "âœ“ "; font-weight: 900; }
+.plan-ticket ul li::before { content: "? "; font-weight: 900; }
 .plan-chips { display: flex; flex-wrap: wrap; gap: 0.28rem; margin-top: auto; }
 .plan-chips span {
   font: 800 0.64rem var(--body);
@@ -1920,21 +1920,82 @@ header, main, section, footer { position: relative; z-index: 2; }
   grid-template-columns: repeat(3, 1fr);
   gap: 0.55rem;
 }
-.cfg-addon-label {
+.config-addon-checks {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 0.45rem;
+}
+.cfg-addon-group-title {
+  font: 900 0.74rem var(--fun-font);
+  color: #4b415a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0.45rem 0 0.15rem;
+}
+.cfg-addon-label {
+  display: block;
   background: #ffffff;
   border: var(--border-thin);
   border-radius: 12px;
   padding: 0.55rem 0.75rem;
   font: 800 0.76rem var(--body);
   cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cfg-addon-label:hover {
+  transform: translateY(-1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.cfg-addon-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
 }
 .cfg-addon-label input {
   accent-color: var(--pink);
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.cfg-addon-texts {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.cfg-addon-texts strong {
+  font: 800 0.78rem var(--fun-font);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.cfg-addon-price {
+  color: #b45309;
+  font-weight: 900;
+  font-size: 0.74rem;
+}
+.cfg-addon-texts small {
+  font-size: 0.68rem;
+  color: #666;
+  font-weight: 600;
+}
+.cfg-addon-status-pill {
+  font: 800 0.65rem var(--body);
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--ink);
+  white-space: nowrap;
+}
+.cfg-addon-status-pill.in-plan {
+  background: #a7f3d0;
+  color: #065f46;
+}
+.cfg-addon-status-pill.optional {
+  background: #f3f4f6;
+  color: #4b5563;
 }
 .config-total-bar {
   margin-top: 1.25rem;
@@ -2031,8 +2092,8 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   9. STYLES SPÃ‰CIFIQUES PAGE DÃ‰DIÃ‰E VITRINE & RÃ‰SERVATION
-      (HÃ©ro Ã©ditorial Ã©purÃ©, centrÃ©, sans nuages ni tuiles flottantes)
+   9. STYLES SPÉCIFIQUES PAGE DÉDIÉE VITRINE & RÉSERVATION
+      (Héro éditorial épuré, centré, sans nuages ni tuiles flottantes)
    ========================================================== */
 .hero-vr-editorial {
   background: linear-gradient(180deg, #fff5d6 0%, var(--cream) 100%);
@@ -2093,7 +2154,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   flex-wrap: wrap;
 }
 
-/* Simulateur Interactif de la page Vitrine & RÃ©servation */
+/* Simulateur Interactif de la page Vitrine & Réservation */
 .vr-sector-switcher-label {
   font: 700 0.86rem var(--fun-font);
   margin: 0.8rem 0 0.45rem;
@@ -2263,11 +2324,11 @@ header, main, section, footer { position: relative; z-index: 2; }
 .vr-combo-step p { margin: 0; font-size: 0.88rem; font-weight: 600; }
 
 /* ==========================================================
-   10. QUESTIONS FRÃ‰QUENTES, FINALE & FOOTER
+   10. QUESTIONS FRÉQUENTES, FINALE & FOOTER
    ========================================================== */
 .faq-accordion-pop { max-width: 840px; margin: 0.8rem auto 0; display: grid; gap: 0.85rem; }
 
-/* Barre de filtre thÃ©matique FAQ (Kermesse Hub) */
+/* Barre de filtre thématique FAQ (Kermesse Hub) */
 .faq-filter-bar {
   display: flex;
   justify-content: center;
@@ -2352,7 +2413,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   transition: all 0.2s ease;
 }
 .faq-item-pop[open] summary::after {
-  content: "âˆ’";
+  content: "-";
   background: var(--pink);
   color: #ffffff;
 }
@@ -2408,7 +2469,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   11. AJOUTS ACCUEIL : GRILLE MULTI-JEUX & DUO PASSERELLES DÃ‰DIÃ‰ES
+   11. AJOUTS ACCUEIL : GRILLE MULTI-JEUX & DUO PASSERELLES DÉDIÉES
    ========================================================== */
 .organic-link-pill {
   display: inline-flex;
@@ -2543,7 +2604,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   12. PAGE JEUX INSTANTANÃ‰S & PRONOSTICS (jeux-pronostics.html)
+   12. PAGE JEUX INSTANTANÉS & PRONOSTICS (jeux-pronostics.html)
    ========================================================== */
 .jp-filter-bar {
   display: flex;
@@ -2972,7 +3033,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   13. PAGE FIDÃ‰LITÃ‰, PARRAINAGE & JACKPOT (fidelite-communaute.html)
+   13. PAGE FIDÉLITÉ, PARRAINAGE & JACKPOT (fidelite-communaute.html)
    ========================================================== */
 .fc-loop-banner {
   width: min(var(--max), 92vw);
@@ -3054,7 +3115,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   padding: 0.5rem 0;
 }
 
-/* ModÃ©lisation Coque Smartphone Vertical RÃ©aliste (Sortie du ratio 16:9) */
+/* Modélisation Coque Smartphone Vertical Réaliste (Sortie du ratio 16:9) */
 .fc-phone-case {
   width: 100%;
   max-width: 360px;
@@ -3072,7 +3133,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   box-sizing: border-box;
 }
 
-/* Boutons physiques latÃ©raux */
+/* Boutons physiques latéraux */
 .fc-phone-btn-vol-up {
   position: absolute;
   left: -7px;
@@ -3101,7 +3162,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   border-radius: 0 4px 4px 0;
 }
 
-/* Ã‰cran du Smartphone (Format Portrait 9:18.5) */
+/* Écran du Smartphone (Format Portrait 9:18.5) */
 .fc-phone-screen.fc-trio-phone {
   background: #fdfaf2;
   border: 2px solid var(--ink);
@@ -3203,7 +3264,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   box-shadow: 1px 1px 0 var(--ink);
 }
 
-/* Corps DÃ©filant Vertical du Smartphone (Visu Client RÃ©elle) */
+/* Corps Défilant Vertical du Smartphone (Visu Client Réelle) */
 .fc-phone-scroll-body {
   flex: 1;
   overflow-y: auto;
@@ -3254,15 +3315,22 @@ header, main, section, footer { position: relative; z-index: 2; }
   line-height: 1.35;
 }
 
-/* â”€â”€ 1. En-tÃªte Client Authentique (EntetePasseport) â”€â”€ */
+/* -- 1. En-tête Client Authentique (EntetePasseport) -- */
 .fc-passport-header {
   text-align: center;
-  padding: 0.35rem 0.2rem 0.15rem;
+  padding: 0.25rem 0.2rem 0.15rem;
+}
+.fc-passport-header-top {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-align: left;
+  margin-bottom: 0.35rem;
 }
 .fc-passport-logo-disc {
   width: 44px;
   height: 44px;
-  margin: 0 auto 0.35rem;
+  margin: 0;
   border-radius: 50%;
   border: 2px solid var(--ink);
   background: #ffffff;
@@ -3270,6 +3338,11 @@ header, main, section, footer { position: relative; z-index: 2; }
   place-items: center;
   font-size: 1.45rem;
   box-shadow: 2px 2px 0 var(--ink);
+  flex-shrink: 0;
+}
+.fc-passport-header-titles {
+  display: flex;
+  flex-direction: column;
 }
 .fc-passport-merchant-name {
   font: 800 0.68rem var(--body);
@@ -3279,16 +3352,16 @@ header, main, section, footer { position: relative; z-index: 2; }
   text-transform: uppercase;
 }
 .fc-passport-title {
-  font: 900 1.05rem var(--fun-font);
+  font: 900 1rem var(--fun-font);
   color: var(--ink);
-  margin: 0.15rem 0 0.35rem;
+  margin: 0.1rem 0 0;
   line-height: 1.2;
 }
 .fc-passport-user-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
   border: 1.5px solid var(--ink);
   border-radius: 999px;
   padding: 0.2rem 0.65rem;
@@ -3296,11 +3369,15 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: var(--ink);
   box-shadow: 1px 1px 0 var(--ink);
 }
+.fc-user-status-tag {
+  font-weight: 800;
+  color: #854d0e;
+}
 .fc-pill-sep {
   color: #bbb;
 }
 
-/* â”€â”€ 2. Carte Mes Points (SoldePanel) â”€â”€ */
+/* -- 2. Carte Mes Points (SoldePanel) -- */
 .fc-card-points {
   background: #fde9ba;
   border: 2px solid var(--ink);
@@ -3347,51 +3424,32 @@ header, main, section, footer { position: relative; z-index: 2; }
   border-radius: 999px;
   transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.fc-progress-msg {
-  font-size: 0.76rem;
-  color: #433522;
-  margin: 0;
-  line-height: 1.35;
-}
-
-/* â”€â”€ 3. Carte Niveau & Statut (TierPanel) â”€â”€ */
-.fc-card-tier {
-  background: rgba(255, 255, 255, 0.95);
-  padding: 0.6rem 0.85rem;
-  border: 2px solid var(--ink);
-}
-.fc-tier-row {
+.fc-points-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font: 800 0.74rem var(--fun-font);
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+.fc-progress-msg {
+  font-size: 0.74rem;
+  color: #433522;
+  margin: 0;
+  line-height: 1.35;
+  flex: 1;
 }
 .fc-tier-badge {
-  background: #f4eee2;
+  background: #ffffff;
   border: 1.5px solid var(--ink);
   border-radius: 999px;
-  padding: 0.15rem 0.5rem;
-}
-.fc-tier-row small {
-  font-size: 0.7rem;
-  color: #555;
-}
-.fc-tier-track {
-  width: 100%;
-  height: 6px;
-  background: #e5e5e5;
-  border-radius: 999px;
-  overflow: hidden;
-  margin-top: 0.35rem;
-}
-.fc-tier-fill {
-  height: 100%;
-  background: #ffb703;
-  border-radius: 999px;
-  transition: width 0.4s ease;
+  padding: 0.2rem 0.5rem;
+  font: 900 0.68rem var(--fun-font);
+  color: var(--ink);
+  white-space: nowrap;
+  box-shadow: 1px 1px 0 var(--ink);
 }
 
-/* â”€â”€ 4. Zone Validation Client (QR / Code) â”€â”€ */
+/* -- 4. Zone Validation Client (QR / Code) -- */
 .fc-card-validation {
   background: #ffffff;
   border: 2px solid var(--ink);
@@ -3582,7 +3640,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   letter-spacing: 0.05em;
 }
 
-/* â”€â”€ 5. Boutique des Paliers (BoutiquePaliers) â”€â”€ */
+/* -- 5. Boutique des Paliers (BoutiquePaliers) -- */
 .fc-card-boutique {
   background: rgba(255, 255, 255, 0.95);
 }
@@ -3646,33 +3704,142 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: #6b7280;
 }
 
-/* â”€â”€ 6. Mention Wallet discrÃ¨te (InstallerPasseport) â”€â”€ */
+/* -- 6. Mention Wallet discrète (InstallerPasseport) -- */
 .fc-wallet-mention-box {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1.5px dashed var(--ink);
-  border-radius: 12px;
-  padding: 0.45rem 0.65rem;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2px dashed rgba(33, 29, 22, 0.45);
+  border-radius: 14px;
+  padding: 0.55rem 0.75rem;
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.65rem;
   margin-top: 0.2rem;
+  box-shadow: 1px 1px 0 var(--ink);
 }
+.fc-wallet-pill-icon,
 .fc-wallet-icon {
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   flex-shrink: 0;
 }
 .fc-wallet-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 .fc-wallet-text strong {
-  font: 800 0.72rem var(--fun-font);
+  font: 800 0.74rem var(--fun-font);
   color: var(--ink);
 }
 .fc-wallet-text small {
+  font-size: 0.68rem;
+  color: #555;
+}
+
+/* -- Éléments Parrainage & Jackpot enrichis (Utilisation optimale de l'espace) -- */
+.fc-ref-gain-badge {
+  background: var(--yellow);
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font: 900 0.68rem var(--fun-font);
+  color: var(--ink);
+}
+.fc-filleul-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px dashed rgba(33, 29, 22, 0.15);
+}
+.fc-filleul-item:last-child {
+  border-bottom: none;
+}
+.fc-filleul-avatar {
+  font-size: 1.2rem;
+}
+.fc-filleul-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.fc-filleul-info strong {
+  font: 800 0.72rem var(--fun-font);
+  color: var(--ink);
+}
+.fc-filleul-info small {
   font-size: 0.66rem;
   color: #666;
+}
+.fc-filleul-date {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #888;
+}
+
+/* -- Carte Lot & Jackpot -- */
+.fc-jackpot-big-pct {
+  font: 900 1.35rem var(--fun-font);
+  color: #c2410c;
+}
+.fc-card-lot {
+  background: #fff8e6;
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.fc-lot-badge {
+  background: #ffedd5;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font: 800 0.65rem var(--body);
+  color: #9a3412;
+}
+.fc-lot-content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.2rem;
+}
+.fc-lot-icon {
+  font-size: 1.7rem;
+  flex-shrink: 0;
+}
+.fc-lot-text strong {
+  display: block;
+  font: 800 0.76rem var(--fun-font);
+  color: var(--ink);
+}
+.fc-lot-text small {
+  display: block;
+  font-size: 0.67rem;
+  color: #666;
+}
+.fc-jackpot-rules {
+  list-style: none;
+  padding: 0;
+  margin: 0.2rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.71rem;
+  line-height: 1.3;
+  color: #3f3944;
+}
+.fc-winner-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0;
+  border-bottom: 1px dashed rgba(33, 29, 22, 0.15);
+  font-size: 0.7rem;
+}
+.fc-winner-row:last-child {
+  border-bottom: none;
+}
+.fc-winner-row small {
+  color: #888;
+  font-weight: 700;
 }
 
 .fc-card-head {
@@ -3834,8 +4001,8 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   14. DA Â« LA KERMESSE Â» â€” STUDIO DE CRÃ‰ATION & MODALE /PLAY
-       (100% fidÃ¨le Ã  src/app/globals.css & src/components/ui/kermesse.tsx)
+   14. DA « LA KERMESSE » — STUDIO DE CRÉATION & MODALE /PLAY
+       (100% fidèle à src/app/globals.css & src/components/ui/kermesse.tsx)
    ========================================================== */
 :root {
   --k-bg: #fdf6e3;
@@ -4019,7 +4186,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 .k-btn-lg { padding: 0.78rem 1.25rem; font-size: 0.88rem; }
 .k-btn-full { width: 100%; }
 
-/* Bandeau CapacitÃ© (canExplore / canEditDraft / canPublish) */
+/* Bandeau Capacité (canExplore / canEditDraft / canPublish) */
 .k-capability-banner {
   background: #fff9e6;
   border-bottom: 2px solid var(--k-ink);
@@ -4298,7 +4465,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   font-weight: 600;
 }
 
-/* Colonne Droite : AperÃ§u Smartphone Live */
+/* Colonne Droite : Aperçu Smartphone Live */
 .k-preview-pane {
   position: sticky;
   top: 76px;
@@ -4516,8 +4683,8 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   15. MODALE INTERACTIVE HÃ‰RO /PLAY (CLIC QR CODE ACCUEIL)
-       Permet de jouer ET de basculer entre les 18 thÃ¨mes du code source
+   15. MODALE INTERACTIVE HÉRO /PLAY (CLIC QR CODE ACCUEIL)
+       Permet de jouer ET de basculer entre les 18 thèmes du code source
    ========================================================== */
 .hero-play-modal-card {
   width: min(1140px, 96vw);
@@ -4574,7 +4741,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   16. BARRE FLOTTANTE DE REPRISE DE BROUILLON (CACHE MÃ‰MOIRE)
+   16. BARRE FLOTTANTE DE REPRISE DE BROUILLON (CACHE MÉMOIRE)
    ========================================================== */
 .lc-floating-draft-bar {
   position: fixed;
@@ -4621,7 +4788,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================
-   16B. CLASSES COMPLÃˆTES DU STUDIO KERMESSE (studio.html & studio.js)
+   16B. CLASSES COMPLÈTES DU STUDIO KERMESSE (studio.html & studio.js)
    ========================================================== */
 .k-stripe-bar {
   height: 10px;
@@ -5033,7 +5200,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   flex-wrap: wrap;
 }
 
-/* Colonne de droite : AperÃ§u Client en direct fixe & scrollable dedans (studio.html) */
+/* Colonne de droite : Aperçu Client en direct fixe & scrollable dedans (studio.html) */
 .k-studio-preview-col {
   position: sticky;
   top: 84px;
@@ -5121,7 +5288,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   background: var(--k-ink);
 }
 
-/* Surface Vitrine & /Play Ã  l'intÃ©rieur du tÃ©lÃ©phone d'aperÃ§u */
+/* Surface Vitrine & /Play à l'intérieur du téléphone d'aperçu */
 .kp-vitrine-surface, .kp-play-surface {
   min-height: 500px;
   display: flex;
@@ -5145,7 +5312,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   margin: 0 0 0.2rem;
 }
 
-/* Polices de titres dynamiques pour l'aperÃ§u du Studio (vitrine.heading) */
+/* Polices de titres dynamiques pour l'aperçu du Studio (vitrine.heading) */
 .kp-heading-elegant h3, .kp-heading-elegant .kp-v-title, .kp-heading-elegant .kp-v-kicker, .kp-heading-elegant .kp-vitrine-fiche strong {
   font-family: 'Playfair Display', Georgia, serif !important;
   font-style: italic;
@@ -5176,7 +5343,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   font-weight: 700 !important;
 }
 
-/* AperÃ§u typographique en direct sur les boutons du formulaire */
+/* Aperçu typographique en direct sur les boutons du formulaire */
 .kp-tile-font-elegant strong { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-size: 0.95rem; }
 .kp-tile-font-sans strong { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; font-size: 0.9rem; }
 .kp-tile-font-impact strong { font-family: 'Unbounded', Impact, sans-serif; font-weight: 900; font-size: 0.8rem; }
@@ -5451,7 +5618,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   font: 900 0.78rem var(--display);
 }
 
-/* â”€â”€ COMPOSANTS MOBILES (MASQUÃ‰S SUR DESKTOP PAR DÃ‰FAUT) â”€â”€ */
+/* -- COMPOSANTS MOBILES (MASQUÉS SUR DESKTOP PAR DÉFAUT) -- */
 .plans-mobile-switcher {
   display: none;
   gap: 0.45rem;
@@ -5487,7 +5654,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   display: none;
 }
 
-/* â”€â”€ RESPONSIVE â”€â”€ */
+/* -- RESPONSIVE -- */
 @media (max-width: 1120px) {
   html, body { max-width: 100%; overflow-x: clip; }
   .header-nav nav { gap: 0.85rem; }
@@ -5729,7 +5896,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 @media (max-width: 820px) {
-  /* 1. HÃ©ro & Premier Ã‰cran Mobile */
+  /* 1. Héro & Premier Écran Mobile */
   .hero-clean-grid {
     gap: 1rem;
     margin: 0.45rem auto 0.85rem;
@@ -5801,7 +5968,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     font-size: 0.62rem;
   }
 
-  /* 3. HÃ©ros Pages Annexes */
+  /* 3. Héros Pages Annexes */
   .hero-annex-portal {
     padding: 0.3rem 0 1.6rem;
     overflow-x: clip;
@@ -5826,7 +5993,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     height: 136px;
   }
 
-  /* 4. Grilles GÃ©nÃ©rales & Studio */
+  /* 4. Grilles Générales & Studio */
   .clog-cards-grid,
   .manifesto-photo-duo,
   .config-addon-checks,
@@ -5852,8 +6019,8 @@ header, main, section, footer { position: relative; z-index: 2; }
     padding: 1rem 0.9rem;
   }
 
-  /* 5. ExpÃ©rience Â« ContrÃ´les + TÃ©lÃ©phone Live Â» sur Mobile */
-  /* Modale /play du HÃ©ro */
+  /* 5. Expérience « Contrôles + Téléphone Live » sur Mobile */
+  /* Modale /play du Héro */
   .k-modal-backdrop {
     padding: 0.5rem;
     align-items: flex-start;
@@ -5910,7 +6077,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     min-height: 390px !important;
   }
 
-  /* Storyboard 3 Ã‰crans Horizontal Snap-Scroll */
+  /* Storyboard 3 Écrans Horizontal Snap-Scroll */
   .storyboard-3-screens {
     display: flex;
     overflow-x: auto;
@@ -5927,7 +6094,7 @@ header, main, section, footer { position: relative; z-index: 2; }
     scroll-snap-align: center;
   }
 
-  /* ManÃ¨ge des 10 Univers de Jeu */
+  /* Manège des 10 Univers de Jeu */
   .jukebox-tokens-cloud {
     display: grid;
     grid-template-rows: repeat(2, auto);
@@ -6109,7 +6276,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 /* ==========================================================================
-   MOTEUR DE JEUX INTERACTIFS Rï¿½ELS (15 Mï¿½CANIQUES & MODALE D'APERï¿½U)
+   MOTEUR DE JEUX INTERACTIFS R?ELS (15 M?CANIQUES & MODALE D'APER?U)
    ========================================================================== */
 .lc-sim-root {
   width: 100%;
@@ -6206,7 +6373,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   text-align: center;
 }
 
-/* -- ï¿½CRAN DE GAIN / COUPON -- */
+/* -- ?CRAN DE GAIN / COUPON -- */
 .lc-game-win-card {
   width: 100%;
   background: linear-gradient(135deg, #fffbeb, #fef3c7);
@@ -6324,7 +6491,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   filter: drop-shadow(0 6px 12px rgba(0,0,0,0.18));
 }
 
-/* -- JEU 2 : CARTE ï¿½ GRATTER -- */
+/* -- JEU 2 : CARTE ? GRATTER -- */
 .lc-scratch-wrap {
   position: relative;
   width: 100%;
@@ -6364,7 +6531,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   touch-action: none;
 }
 
-/* -- JEU 3 : MACHINE ï¿½ SOUS -- */
+/* -- JEU 3 : MACHINE ? SOUS -- */
 .lc-slot-machine {
   display: flex;
   align-items: center;
@@ -6480,7 +6647,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 @keyframes lc-shuffle-2 { 0% { transform: translateX(0); } 100% { transform: translateX(-80px); } }
 @keyframes lc-shuffle-3 { 0% { transform: translateX(0); } 100% { transform: translateX(-80px); } }
 
-/* -- JEU 5 : CARTE RETOURNï¿½E -- */
+/* -- JEU 5 : CARTE RETOURN?E -- */
 .lc-cards-3d-arena {
   display: flex;
   gap: 0.65rem;
@@ -6555,7 +6722,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: var(--ink);
 }
 
-/* -- JEU 7 : LANCER DE Dï¿½ -- */
+/* -- JEU 7 : LANCER DE D? -- */
 .lc-dice-arena {
   display: grid;
   place-items: center;
@@ -6721,7 +6888,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   100% { transform: translateY(6px) rotate(8deg); }
 }
 
-/* -- JEU 11 : Rï¿½FLEXE -- */
+/* -- JEU 11 : R?FLEXE -- */
 .lc-reflex-pad {
   width: 100%;
   max-width: 270px;
@@ -6764,7 +6931,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   margin-top: 0.2rem;
 }
 
-/* -- JEU 12 : JAUGE ï¿½ ARRï¿½TER -- */
+/* -- JEU 12 : JAUGE ? ARR?TER -- */
 .lc-gauge-arena {
   width: 100%;
   max-width: 270px;
@@ -6842,7 +7009,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   border-color: #10b981;
 }
 
-/* -- JEU 14 : MOT MYSTï¿½RE -- */
+/* -- JEU 14 : MOT MYST?RE -- */
 .lc-word-clue {
   background: #fff;
   border: 2px dashed var(--ink);
@@ -6951,7 +7118,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   margin-top: 0.3rem;
 }
 
-/* -- MODALE D'APERï¿½U PLEIN ï¿½CRAN POUR LES 15 JEUX -- */
+/* -- MODALE D'APER?U PLEIN ?CRAN POUR LES 15 JEUX -- */
 .lc-game-modal-overlay {
   position: fixed;
   inset: 0;
@@ -7226,7 +7393,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 
 
 /* ============================================================
-   CALENDRIER SURPRISE â€” STYLES & INTERACTION
+   CALENDRIER SURPRISE — STYLES & INTERACTION
    ============================================================ */
 .cs-calendar-showcase {
   max-width: 980px;
@@ -7423,7 +7590,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   margin: 0;
 }
 
-/* BanniÃ¨re de gain pour l'aperÃ§u /play du Studio */
+/* Bannière de gain pour l'aperçu /play du Studio */
 .kp-play-win-banner {
   animation: lc-pop-in 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -7447,5 +7614,984 @@ header, main, section, footer { position: relative; z-index: 2; }
   }
   .cs-day-label {
     font-size: 0.74rem;
+  }
+}
+
+/* ==========================================================
+   MOTION DESIGN & VIDÉO ANIMÉE : ILS SCANNENT / JOUENT / GAGNENT
+   ========================================================== */
+.motion-player-wrapper {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.motion-player-card {
+  background: #ffffff;
+  border: 4px solid var(--ink);
+  border-radius: 32px;
+  box-shadow: 8px 12px 0 var(--ink);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  overflow: hidden;
+  position: relative;
+}
+.motion-player-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 2px dashed rgba(33, 29, 22, 0.2);
+}
+.motion-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #141218;
+  color: var(--yellow);
+  font: 900 0.68rem var(--fun-font);
+  letter-spacing: 0.06em;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  box-shadow: 1px 1px 0 var(--ink);
+  text-transform: uppercase;
+}
+.motion-live-dot {
+  color: #ef4444;
+  font-size: 0.55rem;
+  animation: pulseDot 1.2s infinite;
+}
+.motion-timeline-track {
+  flex: 1;
+  height: 8px;
+  background: #f1edeb;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.motion-timeline-progress {
+  height: 100%;
+  width: 33.33%;
+  background: linear-gradient(90deg, var(--yellow), var(--orange));
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+.motion-play-pause-btn {
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font: 800 0.72rem var(--fun-font);
+  cursor: pointer;
+  box-shadow: 1px 1px 0 var(--ink);
+  transition: all 0.15s ease;
+}
+.motion-play-pause-btn:hover {
+  background: var(--yellow);
+  transform: translateY(-1px);
+}
+
+/* Écran central du Motion Design */
+.motion-screen-frame {
+  background: #fffdf7;
+  border: 3px solid var(--ink);
+  border-radius: 24px;
+  min-height: 380px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+}
+.motion-scene {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  padding: 1rem 1.1rem;
+  box-sizing: border-box;
+  animation: sceneFadeIn 0.35s cubic-bezier(0.2, 0.9, 0.4, 1);
+}
+.motion-scene.is-active {
+  display: flex;
+}
+@keyframes sceneFadeIn {
+  0% { opacity: 0; transform: scale(0.97); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.m-scene-kicker {
+  font: 900 0.72rem var(--fun-font);
+  color: #6a5d4a;
+  letter-spacing: 0.08em;
+  text-align: center;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+/* Scène 1 : ILS SCANNENT */
+.m-scan-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  gap: 0.8rem;
+}
+.m-counter-stand {
+  background: #fff2cc;
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  padding: 0.65rem 0.85rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 4px 5px 0 var(--ink);
+  position: relative;
+  animation: floatStand 3s ease-in-out infinite;
+}
+@keyframes floatStand {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+.m-stand-badge {
+  background: #141218;
+  color: var(--yellow);
+  font: 900 0.65rem var(--fun-font);
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.05em;
+}
+.m-stand-qr-box {
+  background: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  padding: 8px;
+  position: relative;
+}
+.m-stand-qr-img {
+  display: block;
+}
+.m-stand-base {
+  width: 90%;
+  height: 6px;
+  background: #856123;
+  border-radius: 999px;
+  margin-top: 0.45rem;
+}
+.m-laser-beam {
+  position: absolute;
+  top: 30%;
+  left: 20%;
+  right: 20%;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, #00f2fe, #4facfe, #00f2fe, transparent);
+  box-shadow: 0 0 12px #00f2fe;
+  border-radius: 999px;
+  animation: laserScan 1.6s ease-in-out infinite alternate;
+}
+@keyframes laserScan {
+  0% { top: 22%; opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { top: 68%; opacity: 0.9; }
+}
+.m-scan-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  padding: 0.45rem 0.8rem;
+  box-shadow: 3px 3px 0 var(--ink);
+  animation: bouncePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes bouncePop {
+  0% { transform: scale(0.7); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.m-toast-icon {
+  font-size: 1.3rem;
+}
+.m-toast-text strong {
+  display: block;
+  font: 800 0.8rem var(--fun-font);
+  color: var(--ink);
+}
+.m-toast-text small {
+  display: block;
+  font-size: 0.68rem;
+  color: #555;
+}
+
+/* Scène 2 : ILS JOUENT */
+.m-play-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+.m-slot-cabinet {
+  width: 100%;
+  max-width: 290px;
+  background: #fdf0d5;
+  border: 3px solid var(--ink);
+  border-radius: 20px;
+  padding: 0.8rem;
+  box-shadow: 5px 6px 0 var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  position: relative;
+}
+.m-slot-header {
+  font: 900 0.85rem var(--fun-font);
+  background: #ff5e7e;
+  color: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.25rem 0.85rem;
+  box-shadow: 2px 2px 0 var(--ink);
+  letter-spacing: 0.05em;
+}
+.m-slot-window {
+  display: flex;
+  gap: 0.5rem;
+  background: #141218;
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  padding: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+  box-shadow: inset 0 3px 8px rgba(0,0,0,0.5);
+}
+.m-slot-reel {
+  width: 68px;
+  height: 68px;
+  background: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.m-reel-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 2rem;
+  line-height: 68px;
+  animation: reelSpin 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.m-slot-cabinet.is-won .m-reel-strip {
+  animation: none;
+  transform: translateY(0);
+}
+@keyframes reelSpin {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-272px); }
+}
+.m-slot-spin-sparkles {
+  font-size: 1.1rem;
+  letter-spacing: 0.4em;
+  color: var(--yellow);
+  text-shadow: 0 0 6px rgba(255, 217, 61, 0.8);
+  animation: sparkleTwinkle 0.8s alternate infinite;
+}
+@keyframes sparkleTwinkle {
+  0% { opacity: 0.4; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1.1); }
+}
+.m-slot-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font: 900 0.72rem var(--fun-font);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.m-play-subtext {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #665b4c;
+  text-align: center;
+}
+
+/* Scène 3 : ILS GAGNENT */
+.m-win-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  position: relative;
+}
+.m-confetti-rain span {
+  position: absolute;
+  top: -10px;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  animation: rainConfetti 1.8s linear infinite;
+  opacity: 0.9;
+}
+@keyframes rainConfetti {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(320px) rotate(720deg); opacity: 0; }
+}
+.m-win-ticket {
+  background: #ffeaa7;
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  padding: 1rem 1.2rem;
+  width: 100%;
+  max-width: 290px;
+  box-sizing: border-box;
+  box-shadow: 5px 6px 0 var(--ink);
+  position: relative;
+  text-align: center;
+  animation: ticketPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes ticketPop {
+  0% { transform: scale(0.6) rotate(-4deg); opacity: 0; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+.m-ticket-notches {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.m-notch {
+  position: absolute;
+  width: 14px;
+  height: 24px;
+  background: #fffdf7;
+  border: 2px solid var(--ink);
+}
+.m-notch-l {
+  left: -2px;
+  border-left: none;
+  border-radius: 0 14px 14px 0;
+}
+.m-notch-r {
+  right: -2px;
+  border-right: none;
+  border-radius: 14px 0 0 14px;
+}
+.m-ticket-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font: 900 0.82rem var(--fun-font);
+  color: #c0392b;
+  margin-bottom: 0.35rem;
+}
+.m-reward-kicker {
+  font: 800 0.65rem var(--body);
+  color: #7d6608;
+  letter-spacing: 0.08em;
+}
+.m-ticket-reward h4 {
+  font: 900 1.15rem var(--fun-font);
+  color: var(--ink);
+  margin: 0.15rem 0 0.5rem;
+  line-height: 1.2;
+}
+.m-ticket-code-box {
+  background: #ffffff;
+  border: 2px dashed var(--ink);
+  border-radius: 10px;
+  padding: 0.35rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+.m-ticket-code-box small {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #666;
+  letter-spacing: 0.05em;
+}
+.m-ticket-code-box code {
+  font: 900 1.25rem monospace;
+  color: var(--ink);
+  letter-spacing: 0.18em;
+}
+.m-ticket-stamp {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  border: 2px solid #10b981;
+  color: #10b981;
+  background: rgba(255, 255, 255, 0.9);
+  font: 900 0.68rem var(--fun-font);
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  transform: rotate(-8deg);
+  box-shadow: 1px 1px 0 rgba(0,0,0,0.1);
+  animation: stampSlam 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.3s backwards;
+}
+@keyframes stampSlam {
+  0% { transform: scale(2) rotate(-25deg); opacity: 0; }
+  100% { transform: scale(1) rotate(-8deg); opacity: 1; }
+}
+.m-win-subtext {
+  font-size: 0.72rem;
+  color: #665b4c;
+  text-align: center;
+  max-width: 320px;
+  line-height: 1.35;
+}
+
+/* Boutons de navigation du Motion Design */
+.motion-steps-nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.45rem;
+}
+.m-step-btn {
+  border: 2px solid var(--ink);
+  background: #fbf7ee;
+  border-radius: 14px;
+  padding: 0.55rem 0.35rem;
+  font: 700 0.78rem var(--fun-font);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: all 0.2s ease;
+}
+.m-step-btn span {
+  width: 18px;
+  height: 18px;
+  background: var(--ink);
+  color: #ffffff;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.65rem;
+}
+.m-step-btn.active {
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+  transform: translateY(-2px);
+}
+.m-step-btn.active span {
+  background: var(--ink);
+  color: var(--yellow);
+}
+
+/* ==========================================================
+   PAGE DÉDIÉE ABONNEMENTS & FORMULES (abonnements.html)
+   ========================================================== */
+.subpage-hero-abonnements {
+  background: #fbf7ee;
+  border-bottom: 3px solid var(--ink);
+  padding: 3rem 1.5rem 3.5rem;
+}
+.billing-toggle-container {
+  display: inline-flex;
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.35rem;
+  gap: 0.35rem;
+  box-shadow: 4px 4px 0 var(--ink);
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+.billing-toggle-btn {
+  border: none;
+  background: transparent;
+  padding: 0.55rem 1.15rem;
+  border-radius: 999px;
+  font: 800 0.82rem var(--fun-font);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+.billing-toggle-btn.active {
+  background: var(--ink);
+  color: var(--yellow);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.annual-saving-pill {
+  background: #991b1b;
+  color: #ffffff;
+  font: 800 0.68rem var(--body);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--ink);
+}
+.billing-toggle-btn.active .annual-saving-pill {
+  background: var(--yellow);
+  color: #141218;
+}
+
+.ab-guarantee-card {
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 24px;
+  padding: 1.35rem 1.45rem;
+  box-shadow: 6px 8px 0 var(--ink);
+}
+.ab-guarantee-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.85rem;
+  font: 900 0.82rem var(--fun-font);
+  color: #3b3024;
+}
+.ab-guarantee-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+/* Barre de bascule des 5 formules */
+.ab-tabs-bar {
+  display: flex;
+  justify-content: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+}
+.ab-tab-btn {
+  border: 2.5px solid var(--ink);
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 0.65rem 1.05rem;
+  font: 800 0.86rem var(--fun-font);
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: all 0.2s ease;
+}
+.ab-tab-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.ab-tab-btn.active {
+  background: var(--yellow);
+  box-shadow: 4px 4px 0 var(--ink);
+  transform: translateY(-3px);
+}
+.tab-price-tag {
+  background: #ffffff;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font: 900 0.72rem monospace;
+}
+.ab-tab-btn.active .tab-price-tag {
+  background: var(--ink);
+  color: var(--yellow);
+}
+.tab-badge-pop {
+  background: #141218;
+  color: var(--yellow);
+  font: 900 0.65rem var(--body);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--ink);
+}
+.tab-badge-vip {
+  background: #4c1d95;
+  color: #ffffff;
+  font: 900 0.65rem var(--body);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--ink);
+}
+
+/* Fiche détaillée immersive d'abonnement */
+.ab-detail-stage {
+  max-width: 980px;
+  margin: 2rem auto 0;
+}
+.ab-detail-card {
+  background: #ffffff;
+  border: 4px solid var(--ink);
+  border-radius: 32px;
+  box-shadow: 8px 12px 0 var(--ink);
+  padding: 2.2rem 2.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+  animation: sceneFadeIn 0.35s cubic-bezier(0.2, 0.9, 0.4, 1);
+}
+.ab-detail-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding-bottom: 1.4rem;
+  border-bottom: 2px dashed rgba(33, 29, 22, 0.2);
+}
+.ab-detail-title-group h3 {
+  font: 900 2.2rem var(--fun-font);
+  color: var(--ink);
+  margin: 0.2rem 0 0.4rem;
+}
+.ab-detail-target-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #eef2ff;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font: 800 0.72rem var(--body);
+  color: #3730a3;
+}
+.ab-detail-price-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+.ab-price-big {
+  font: 900 2.8rem var(--fun-font);
+  color: var(--ink);
+  line-height: 1;
+}
+.ab-price-period {
+  font: 700 0.85rem var(--body);
+  color: #555;
+  margin-top: 0.2rem;
+}
+.ab-detail-tagline {
+  font: 600 1.05rem var(--body);
+  color: #3f3944;
+  line-height: 1.5;
+  background: #fdfaf0;
+  border-left: 4px solid var(--yellow);
+  padding: 0.85rem 1.15rem;
+  border-radius: 0 14px 14px 0;
+}
+.ab-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.6rem;
+}
+.ab-detail-section h4 {
+  font: 900 0.95rem var(--fun-font);
+  color: var(--ink);
+  margin: 0 0 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.ab-points-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.ab-points-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #2b2530;
+}
+.ab-check-icon {
+  width: 20px;
+  height: 20px;
+  background: #10b981;
+  color: #ffffff;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  border: 1px solid var(--ink);
+}
+.ab-modules-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+}
+.ab-module-chip {
+  background: #ffffff;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font: 800 0.72rem var(--body);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.ab-detail-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  padding-top: 1.4rem;
+  border-top: 2px dashed rgba(33, 29, 22, 0.2);
+}
+.ab-limits-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: #fef3c7;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font: 800 0.74rem var(--body);
+  color: #92400e;
+}
+
+/* Grille de cartes synthétiques */
+.ab-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.ab-card-item {
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 22px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 4px 6px 0 var(--ink);
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.ab-card-item:hover {
+  transform: translateY(-3px);
+  box-shadow: 6px 8px 0 var(--ink);
+}
+.ab-card-item.is-featured {
+  background: #fffdf5;
+  border-color: var(--ink);
+  box-shadow: 6px 10px 0 var(--ink);
+}
+.ab-card-featured-badge {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #c2410c;
+  color: #ffffff;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  font: 900 0.68rem var(--fun-font);
+  padding: 0.2rem 0.65rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.ab-card-head strong {
+  display: block;
+  font: 900 1.25rem var(--fun-font);
+  color: var(--ink);
+}
+.ab-card-price-row {
+  margin: 0.5rem 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+.ab-card-price-num {
+  font: 900 2rem var(--fun-font);
+  color: var(--ink);
+}
+.ab-card-points-preview {
+  list-style: none;
+  padding: 0;
+  margin: 0.85rem 0 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+/* Addons Layout */
+.ab-addons-layout {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.ab-addon-col {
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 6px 8px 0 var(--ink);
+}
+.ab-addon-col-head {
+  padding: 1.2rem 1.4rem;
+  border-bottom: 2px solid var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.ab-col-icon {
+  font-size: 1.8rem;
+}
+.ab-addon-col-head h3 {
+  font: 900 0.95rem var(--fun-font);
+  color: var(--ink);
+  margin: 0 0 0.2rem;
+}
+.ab-addon-col-head p {
+  font-size: 0.74rem;
+  color: #555;
+  margin: 0;
+}
+.ab-addon-items {
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.ab-addon-card {
+  background: #fdfdfd;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.ab-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+.ab-card-top strong {
+  font: 800 0.84rem var(--fun-font);
+  color: var(--ink);
+}
+.ab-card-price {
+  background: #fff8e6;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font: 900 0.74rem monospace;
+  color: #b45309;
+}
+.ab-addon-card p {
+  font-size: 0.76rem;
+  color: #444;
+  margin: 0 0 0.35rem;
+  line-height: 1.35;
+}
+.ab-card-rule {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #4b415a;
+}
+
+/* Tableau comparatif */
+.ab-table-wrapper {
+  max-width: 1100px;
+  margin: 0 auto;
+  overflow-x: auto;
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 24px;
+  box-shadow: 8px 10px 0 var(--ink);
+}
+.ab-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.ab-compare-table th,
+.ab-compare-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1.5px solid rgba(33, 29, 22, 0.12);
+  font-size: 0.84rem;
+}
+.ab-compare-table th {
+  background: #fbf7ee;
+  font: 800 0.86rem var(--fun-font);
+  border-bottom: 2.5px solid var(--ink);
+}
+.ab-compare-table th.highlight,
+.ab-compare-table td.highlight {
+  background: #fff9e6;
+}
+.th-plan {
+  text-align: center;
+  white-space: nowrap;
+}
+.th-plan small {
+  font-size: 0.72rem;
+  color: #4b415a;
+  font-weight: 700;
+}
+.ab-compare-table td.chk {
+  text-align: center;
+  color: #047857;
+  font-weight: 900;
+  font-size: 1.05rem;
+}
+.ab-compare-table td.cross {
+  text-align: center;
+  color: #4b415a;
+  font-weight: 700;
+}
+.ab-compare-table tfoot td {
+  padding: 1.2rem 1rem;
+  border-bottom: none;
+  background: #fcf9f2;
+}
+
+@media (max-width: 860px) {
+  .ab-detail-grid {
+    grid-template-columns: 1fr;
+    gap: 1.2rem;
+  }
+  .ab-addons-layout {
+    grid-template-columns: 1fr;
+  }
+  .ab-detail-card {
+    padding: 1.4rem 1.2rem;
   }
 }
