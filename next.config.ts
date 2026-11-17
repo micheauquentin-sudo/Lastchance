@@ -297,6 +297,10 @@ const nextConfig: NextConfig = {
         destination: "/h-site-final-20k/fidelite-communaute.html",
       },
       {
+        source: "/abonnements",
+        destination: "/h-site-final-20k/abonnements.html",
+      },
+      {
         source: "/studio",
         destination: "/h-site-final-20k/studio.html",
       },

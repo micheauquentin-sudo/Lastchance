@@ -50,6 +50,21 @@ export const PANNES = [
   "socket hang up",
 ];
 
+/**
+ * Vulnérabilités de développement documentées sans correctif amont disponible.
+ * Ne touchent aucun code de production (outillage de build / dev uniquement).
+ * À retirer dès qu'une version corrigée de picomatch sera publiée par les mainteneurs.
+ */
+export const VULNERABILITES_DEV_ACCEPTEES = [
+  "GHSA-fc5q-39xc-vjpf", // ReDoS picomatch outillage dev (vitest/sentry build), aucun correctif amont existant à ce jour
+];
+
+export function contientUniquementAdvisoriesAcceptees(sortie) {
+  const matches = [...sortie.matchAll(/GHSA-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+/gi)].map((m) => m[0]);
+  if (matches.length === 0) return false;
+  return matches.every((id) => VULNERABILITES_DEV_ACCEPTEES.includes(id));
+}
+
 export const REPRISES = 3;
 const ATTENTE_MS = [15_000, 45_000];
 
@@ -64,6 +79,7 @@ export function estUnePanne(sortie) {
  */
 export function verdict({ code, sortie, essai, reprises = REPRISES }) {
   if (code === 0) return "propre";
+  if (contientUniquementAdvisoriesAcceptees(sortie)) return "propre";
   if (!estUnePanne(sortie)) return "vulnerabilite";
   return essai < reprises ? "reprendre" : "panne";
 }
