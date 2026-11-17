@@ -999,7 +999,7 @@
       vrPhoneShell.style.color = "#211d16";
     }
     if (vrSectorTip) {
-      vrSectorTip.innerHTML = `💡 <b>Secteur ${sec.label} :</b> ${sec.defaultAccroche} — Palette officielle <code>${sec.primary}</code> / <code>${sec.secondary}</code> issue de <code>src/components/vitrine/theme.ts</code>.`;
+      vrSectorTip.innerHTML = `💡 <b>Secteur ${sec.label} :</b> ${sec.defaultAccroche} — Palette harmonieuse ${sec.primary} / ${sec.secondary}.`;
     }
 
     vrVitrineList.innerHTML = fiches
@@ -1659,27 +1659,45 @@
     }
   }
 
-  /* ── 8. BARRE FLOTTANTE DE REPRISE DE BROUILLON EN CACHE (LOCALSTORAGE) ── */
+  /* ── 8. BARRE FLOTTANTE DE REPRISE DE CRÉATION EN COURS ── */
   const floatingDraftBar = $("#lc-floating-draft-bar");
-  if (floatingDraftBar && C && C.hasCustomDraft()) {
+  let isDraftDismissed = false;
+  try {
+    isDraftDismissed = sessionStorage.getItem("lc_draft_dismissed") === "1";
+  } catch {
+    // Ignore storage errors
+  }
+  if (floatingDraftBar && C && C.hasCustomDraft() && !isDraftDismissed) {
     const acc = C.loadAuth();
     const d = C.loadDrafts();
     const statusText =
       acc.status === "subscribed"
-        ? `Abonnement actif (${acc.orgName || "Pro"}) · QR prêt`
+        ? `Votre compte actif (${acc.orgName || "Pro"})`
         : acc.status === "free_account"
-        ? `Compte gratuit (${acc.orgName || acc.email}) · Brouillon sauvegardé`
-        : `Brouillon en cache mémoire`;
+        ? `Votre compte gratuit (${acc.orgName || acc.email})`
+        : `Votre création en cours`;
     floatingDraftBar.hidden = false;
     floatingDraftBar.innerHTML = `
-      <div>
-        <strong style="display:block;font:800 0.8rem var(--display);">💾 ${statusText}</strong>
-        <small style="font-size:0.74rem;font-weight:700;">Reprenez votre configuration là où vous l'avez laissée.</small>
+      <div style="flex:1;min-width:0;">
+        <strong style="display:block;font:800 0.8rem var(--display);color:var(--k-ink);">✨ ${statusText}</strong>
+        <small style="font-size:0.74rem;font-weight:700;color:var(--k-muted);">Reprenez votre modification là où vous vous étiez arrêté.</small>
       </div>
       <a class="k-btn k-btn-yellow k-btn-sm" href="studio.html?module=${d.lastModule || "vitrine"}">
-        Reprendre dans le Studio →
+        Reprendre ma création →
       </a>
+      <button type="button" class="lc-draft-close" id="lc-draft-close" aria-label="Fermer cette notification" title="Fermer">✕</button>
     `;
+    const closeBtn = $("#lc-draft-close", floatingDraftBar);
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => {
+        floatingDraftBar.hidden = true;
+        try {
+          sessionStorage.setItem("lc_draft_dismissed", "1");
+        } catch {
+          // Ignore
+        }
+      });
+    }
   }
 
   /* ── 9. REVEAL FLUIDE AU SCROLL ── */

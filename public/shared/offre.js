@@ -22,7 +22,7 @@ window.LC_OFFRE = (function () {
     hunts: { label: "Chasse au QR", desc: "Reliez plusieurs lieux et faites progresser le trafic physique.", objectif: "Créer du trafic" },
     duo: { label: "Duo Miroir", desc: "Un jeu à deux, jouable à table.", objectif: "Animer en direct" },
     bande: { label: "Portrait de la Bande", desc: "Un jeu de groupe, jouable à table.", objectif: "Animer en direct" },
-    vitrine: { label: "Vitrine QR bilingue", desc: "Votre carte publique bilingue, au QR code.", objectif: "Se faire lire" },
+    vitrine: { label: "Vitrine QR interactive", desc: "Votre carte publique toujours à jour, au QR code.", objectif: "Se faire lire" },
     reserver: { label: "Moments & Ateliers", desc: "Ateliers, dégustations, invitations, offres de dernière minute.", objectif: "Se faire réserver" },
     rendez_vous: { label: "Prise de RDV", desc: "Prise de rendez-vous : créneaux, agenda, ajout au calendrier du client.", objectif: "Se faire réserver" },
   };
@@ -63,7 +63,7 @@ window.LC_OFFRE = (function () {
       points: [
         "Prise de rendez-vous en ligne (agenda & créneaux)",
         "Moments & ateliers (réservations & offres spéciales)",
-        "Vitrine & carte numérique au QR code (bilingue)",
+        "Vitrine & carte numérique au QR code (en direct)",
         "Quiz & animations à table (Duo Miroir, Portrait)",
         "Tout Coup d'envoi inclus (15 mini-jeux & scans illimités)",
       ],

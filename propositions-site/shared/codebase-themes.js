@@ -889,9 +889,7 @@
       rayon: 13,
       blocs: ["accroche", "histoire", "cartes", "horaires", "reserver", "experiences"],
       jeux: { duo: true, bande: false, quiz: true, calendars: false, pronostics: true, loyalty: true },
-      customFiches: [
-        { nom: "Formule Déjeuner du Marché", description: "Entrée + Plat ou Plat + Dessert, produits frais du jour.", prix: "19,00 €", badge: "fait_maison", action: "reserver" },
-      ],
+      customFiches: [],
     },
     roue: {
       name: "Jeu Instantané de Bienvenue",
@@ -968,7 +966,7 @@
       const raw = global.localStorage.getItem(STORAGE_KEY_DRAFTS);
       if (!raw) return JSON.parse(JSON.stringify(DEFAULT_DRAFTS));
       const parsed = JSON.parse(raw);
-      return {
+      const res = {
         ...DEFAULT_DRAFTS,
         ...parsed,
         vitrine: { ...DEFAULT_DRAFTS.vitrine, ...(parsed.vitrine || {}) },
@@ -976,6 +974,15 @@
         pronostics: { ...DEFAULT_DRAFTS.pronostics, ...(parsed.pronostics || {}) },
         fidelite: { ...DEFAULT_DRAFTS.fidelite, ...(parsed.fidelite || {}) },
       };
+      if (Array.isArray(res.vitrine?.customFiches)) {
+        res.vitrine.customFiches = res.vitrine.customFiches.filter((f) => {
+          if (f && f.nom === "Formule Déjeuner du Marché" && res.vitrine.secteur !== "restaurant") {
+            return false;
+          }
+          return true;
+        });
+      }
+      return res;
     } catch {
       return JSON.parse(JSON.stringify(DEFAULT_DRAFTS));
     }

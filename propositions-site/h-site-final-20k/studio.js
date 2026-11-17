@@ -19,6 +19,16 @@
   let drafts = CB.loadDrafts();
   let auth = CB.loadAuth();
 
+  // Sécurité cohérence : purge de fiches d'exemples d'un autre secteur restées en mémoire
+  if (Array.isArray(drafts.vitrine?.customFiches)) {
+    drafts.vitrine.customFiches = drafts.vitrine.customFiches.filter((f) => {
+      if (f && f.nom === "Formule Déjeuner du Marché" && drafts.vitrine.secteur !== "restaurant") {
+        return false;
+      }
+      return true;
+    });
+  }
+
   // Lecture des paramètres d'URL (?module=vitrine|roue|pronostics|fidelite&preset=...&mech=...&sector=...)
   const params = new URLSearchParams(window.location.search);
   let currentModule = params.get("module") || drafts.lastModule || "vitrine";
@@ -46,8 +56,12 @@
     drafts.vitrine.secteur = secKey;
     drafts.vitrine.primary = sec.primary;
     drafts.vitrine.secondary = sec.secondary;
+    drafts.vitrine.heading = sec.heading;
     drafts.vitrine.nom = sec.defaultNom;
     drafts.vitrine.accroche = sec.defaultAccroche;
+    drafts.vitrine.histoire = sec.defaultHistoire;
+    drafts.vitrine.badge = sec.defaultBadge;
+    drafts.vitrine.customFiches = [];
   }
 
   drafts.lastModule = currentModule;
@@ -338,9 +352,9 @@
         <div class="k-field-group k-highlight-box">
           <label class="k-checkbox-row">
             <input type="checkbox" ${v.exemplesActifs ? "checked" : ""} data-bind-bool="vitrine.exemplesActifs" />
-            <span><strong>Afficher les fiches d'exemple du métier (${CB.VITRINE_SECTEURS[v.secteur]?.label})</strong> dans l'aperçu (interrupteur <code>exemples.ts</code>)</span>
+            <span><strong>Afficher les fiches d'exemple du métier (${CB.VITRINE_SECTEURS[v.secteur]?.label})</strong> dans l'aperçu</span>
           </label>
-          <small class="k-help">Permet de juger immédiatement le rendu de votre vitrine avec une carte complète de votre secteur.</small>
+          <small class="k-help">Affiche des exemples réalistes et prêts à l'emploi selon votre activité pour tester le rendu de votre vitrine.</small>
         </div>
 
         <div class="k-field-group">
@@ -384,7 +398,7 @@
       ];
       return `
         <div class="k-field-group">
-          <label class="k-label">Blocs affichés sur votre vitrine publique (<code>ordre_blocs</code>)</label>
+          <label class="k-label">Blocs affichés sur votre vitrine publique</label>
           <div class="k-checks-list">
             ${allBlocs.map((b) => `
               <label class="k-checkbox-row">
@@ -395,7 +409,7 @@
           </div>
         </div>
         <div class="k-field-group">
-          <label class="k-label">Expériences affichées dans le bloc Jeux (<code>theme.jeux</code>)</label>
+          <label class="k-label">Expériences affichées dans le bloc Jeux</label>
           <div class="k-choice-grid-3">
             ${[
               ["loyalty", "🛂 Passeport de fidélité"],
@@ -418,7 +432,7 @@
     if (cle === "couleurs") {
       return `
         <div class="k-field-group">
-          <label class="k-label">Couleurs de votre vitrine (Contraste calculé automatiquement via <code>texteSur()</code>)</label>
+          <label class="k-label">Couleurs de votre vitrine (Contraste et lisibilité automatiques)</label>
           <div class="k-grid-2">
             <div class="k-color-picker-box">
               <span>Couleur d'accent (Primary)</span>
@@ -433,7 +447,7 @@
           </div>
         </div>
         <div class="k-field-group">
-          <label class="k-label">Police des titres (<code>FONT_KEYS</code>)</label>
+          <label class="k-label">Police des titres</label>
           <div class="k-choice-grid-3">
             ${[
               ["elegant", "Élégante (Serif)"],
@@ -455,7 +469,7 @@
     if (cle === "allure") {
       return `
         <div class="k-field-group">
-          <label class="k-label">Disposition des fiches (<code>style_cartes</code>)</label>
+          <label class="k-label">Disposition des fiches</label>
           <div class="k-choice-grid-3">
             ${[
               ["liste", "📋 Liste (Classique)"],
@@ -470,7 +484,7 @@
         </div>
 
         <div class="k-field-group">
-          <label class="k-label">Motif de fond (<code>allure.motif</code>)</label>
+          <label class="k-label">Motif de fond</label>
           <div class="k-choice-grid-4">
             ${[
               ["diagonales", "╱ Diagonales"],
@@ -486,7 +500,7 @@
         </div>
 
         <div class="k-field-group">
-          <label class="k-label">Style d'affichage des prix (<code>allure.style_prix</code>)</label>
+          <label class="k-label">Style d'affichage des prix</label>
           <div class="k-choice-grid-3">
             ${[
               ["accent", "Couleur d'accent"],
@@ -501,7 +515,7 @@
         </div>
 
         <div class="k-field-group">
-          <label class="k-label">Barre d'action basse (<code>allure.barre_basse</code>)</label>
+          <label class="k-label">Barre d'action en bas de l'écran</label>
           <div class="k-choice-grid-3">
             ${[
               ["flottante", "Flottante"],
@@ -556,12 +570,12 @@
           <div class="k-choice-grid-3">${adresseCards}</div>
         </div>
         <div class="k-field-group">
-          <label class="k-label">Limite de participation par navigateur (<code>play_limit</code> — ADR-183)</label>
+          <label class="k-label">Limite de participation par joueur</label>
           <div class="k-choice-grid-3">
             ${[
-              ["once", "1 seule fois par navigateur"],
-              ["daily", "1 fois par jour / navigateur"],
-              ["weekly", "1 fois par semaine / navigateur"],
+              ["once", "1 seule fois par joueur"],
+              ["daily", "1 fois par jour"],
+              ["weekly", "1 fois par semaine"],
             ].map(([lk, llbl]) => `
               <button type="button" class="k-choice-tile ${r.playLimit === lk ? "active" : ""}" data-action="set-field" data-path="roue.playLimit" data-val="${lk}">
                 <strong>${llbl}</strong>
@@ -588,7 +602,7 @@
 
       return `
         <div class="k-field-group">
-          <label class="k-label">Vos lots et probabilités (Stock fini & garde de valeur atomique)</label>
+          <label class="k-label">Vos lots et probabilités de gain</label>
           <div class="k-items-stack">${lotsHtml}</div>
         </div>
         <div class="k-field-group k-add-box">
@@ -631,15 +645,15 @@
 
       return `
         <div class="k-field-group">
-          <label class="k-label">1. Les 8 Ambiances de couleurs (<code>WHEEL_PRESETS_AMBIANCE</code>)</label>
+          <label class="k-label">1. Les 8 ambiances de couleurs</label>
           <div class="k-choice-grid-4">${ambiancesHtml}</div>
         </div>
         <div class="k-field-group">
-          <label class="k-label">2. Les 10 Univers thématiques avec fond illustré (<code>WHEEL_PRESETS_UNIVERS</code>)</label>
+          <label class="k-label">2. Les 10 univers thématiques illustrés</label>
           <div class="k-choice-grid-3">${universHtml}</div>
         </div>
         <div class="k-field-group">
-          <label class="k-label">3. Choix explicite du fond d'écran (<code>FOND_KEYS</code> dans <code>src/lib/fonds-ecran.ts</code>)</label>
+          <label class="k-label">3. Choix du fond d'écran illustré</label>
           <div class="k-choice-grid-4">${fondsHtml}</div>
         </div>
       `;
@@ -651,7 +665,7 @@
       if (r.gameType === "slot") {
         specificField = `
           <div class="k-field-group">
-            <label class="k-label">Jeu de symboles de la Machine à sous (<code>SLOT_SYMBOL_SETS</code>)</label>
+            <label class="k-label">Symboles de la Machine à sous</label>
             <div class="k-choice-grid-3">
               ${Object.entries(CB.SLOT_SYMBOL_SETS).map(([sk, sObj]) => `
                 <button type="button" class="k-choice-tile ${r.slotSymbols === sk ? "active" : ""}" data-action="set-field" data-path="roue.slotSymbols" data-val="${sk}">
@@ -737,13 +751,13 @@
 
       return `
         <div class="k-field-group">
-          <label class="k-label">Surface de la page <code>/play</code> (<code>PAGE_THEMES</code>)</label>
+          <label class="k-label">Ambiance de fond du jeu</label>
           <div class="k-choice-grid-2">
             <button type="button" class="k-choice-tile ${r.pageTheme === "kermesse" ? "active" : ""}" data-action="set-surface-theme" data-val="kermesse">
-              <strong>🎪 Kermesse (Crème #fdf6e3 + Bandeau rayé + Encre)</strong>
+              <strong>🎪 Kermesse (Crème festif + Bandeau rayé + Encre)</strong>
             </button>
             <button type="button" class="k-choice-tile ${r.pageTheme === "nuit" ? "active" : ""}" data-action="set-surface-theme" data-val="nuit">
-              <strong>🌙 Nuit / Dégradé radial sur mesure</strong>
+              <strong>🌙 Nuit / Dégradé sombre sur mesure</strong>
             </button>
           </div>
         </div>
@@ -769,9 +783,9 @@
     if (cle === "apres") {
       return `
         <div class="k-field-group">
-          <label class="k-label" for="r-ttl">Durée de validité du code gagnant en caisse (<code>code_ttl_days</code>)</label>
+          <label class="k-label" for="r-ttl">Durée de validité du code gagnant en caisse</label>
           <input id="r-ttl" type="number" class="k-input" min="1" max="90" value="${r.codeTtlDays || 14}" data-bind="roue.codeTtlDays" />
-          <small class="k-help">Nombre de jours pendant lesquels le gagnant peut présenter son QR / code unique en caisse.</small>
+          <small class="k-help">Nombre de jours pendant lesquels le gagnant peut présenter son code unique en caisse.</small>
         </div>
       `;
     }
@@ -807,13 +821,13 @@
           <input id="p-title" type="text" class="k-input" value="${escapeAttr(p.title)}" data-bind="pronostics.title" />
         </div>
         <div class="k-field-group">
-          <label class="k-label">1. Modèle d'événement (11 modèles <code>EVENT_KINDS</code> dans <code>contest-event-kinds.ts</code>)</label>
+          <label class="k-label">1. Type d'événement (11 sports & tournois disponibles)</label>
           <div class="k-choice-grid-2">${kindsHtml}</div>
         </div>
         ${
           p.eventKind === "football"
             ? `<div class="k-field-group">
-                <label class="k-label">2. Compétition officielle synchronisée (<code>COMPETITIONS</code> dans <code>src/lib/competitions.ts</code>)</label>
+                <label class="k-label">2. Compétition officielle synchronisée</label>
                 <div class="k-choice-grid-3">${compsHtml}</div>
               </div>`
             : ""
@@ -837,7 +851,7 @@
       ];
       return `
         <div class="k-field-group">
-          <label class="k-label">Thème saisonnier & Fond d'écran (<code>CONTEST_THEME_ORDER</code> & <code>LAVIS_SAISON</code>)</label>
+          <label class="k-label">Thème saisonnier & Fond d'écran</label>
           <div class="k-choice-grid-3">
             ${themes.map(([tk, tlbl]) => `
               <button type="button" class="k-choice-tile ${p.theme === tk ? "active" : ""}" data-action="set-prono-theme" data-val="${tk}">
@@ -896,7 +910,7 @@
     if (cle === "validation") {
       return `
         <div class="k-field-group">
-          <label class="k-label">Mode de validation des visites (<code>LoyaltyValidationMode</code>)</label>
+          <label class="k-label">Mode de validation des visites</label>
           <div class="k-choice-grid-2">
             <button type="button" class="k-choice-tile ${f.validationMode === "rotating_code" ? "active" : ""}" data-action="set-field" data-path="fidelite.validationMode" data-val="rotating_code">
               <strong>🔢 Code tournant au comptoir (30s à 5 min)</strong>
@@ -912,7 +926,7 @@
         <div class="k-field-group k-highlight-box">
           <label class="k-checkbox-row">
             <input type="checkbox" ${f.linkJackpot ? "checked" : ""} data-bind-bool="fidelite.linkJackpot" />
-            <span><strong>🎰 Relier une Cagnotte / Jackpot Collectif à ce Passeport (<code>jackpot_campaign_id</code>)</strong></span>
+            <span><strong>🎰 Relier une Cagnotte / Jackpot Collectif à ce Passeport</strong></span>
           </label>
           <small class="k-help">Chaque passage validé sur le passeport fait automatiquement grimper la jauge commune du Jackpot Collectif de votre établissement !</small>
           <input type="text" class="k-input" style="margin-top:0.5rem;" value="${escapeAttr(f.jackpotName)}" data-bind="fidelite.jackpotName" />
@@ -923,7 +937,7 @@
     if (cle === "niveaux") {
       return `
         <div class="k-field-group">
-          <p class="k-help" style="margin-bottom:0.75rem;">Dans le moteur Lastchance (<code>LOYALTY_POINTS_PAR_VISITE = 100</code>), <b>1 visite validée = 100 points</b>.</p>
+          <p class="k-help" style="margin-bottom:0.75rem;">Règle simple de calcul : <b>1 visite validée = 100 points</b>.</p>
           <div class="k-grid-2">
             <div>
               <label class="k-label">Seuil Niveau Argent (en points)</label>
@@ -945,13 +959,13 @@
         <div class="k-item-editor-row">
           <div>
             <strong>${m.costPoints} pts (${Math.round(m.costPoints / 100)} visites)</strong> — ${escapeHtml(m.label)}
-            <small style="display:block;">Stock obligatoire : ${m.stock} unités</small>
+            <small style="display:block;">Stock disponible : ${m.stock} unités</small>
           </div>
         </div>
       `).join("");
       return `
         <div class="k-field-group">
-          <label class="k-label">Vos paliers de cadeaux (Plancher économique : 200 points = 2 visites min, stock fini obligatoire)</label>
+          <label class="k-label">Vos paliers de cadeaux (Dès 200 points = 2 visites)</label>
           <div class="k-items-stack">${mList}</div>
         </div>
       `;
@@ -984,7 +998,7 @@
 
     return `
       <div class="k-field-group">
-        <label class="k-label">Fond d'écran thématique du Passeport (<code>loyaltyStyleSchema</code> dans <code>src/lib/loyalty-style.ts</code>)</label>
+        <label class="k-label">Fond d'écran thématique du Passeport</label>
         <div class="k-choice-grid-4">${fondsHtml}</div>
       </div>
       ${renderVerificationStepSummary("fidelite", "Votre écosystème Passeport Fidélité + Parrainage + Jackpot est prêt !")}
@@ -1031,6 +1045,7 @@
           const secKey = el.dataset.val;
           const sec = CB.VITRINE_SECTEURS[secKey];
           if (sec) {
+            const isNewSector = drafts.vitrine.secteur !== secKey;
             drafts.vitrine.secteur = secKey;
             drafts.vitrine.primary = sec.primary;
             drafts.vitrine.secondary = sec.secondary;
@@ -1039,6 +1054,10 @@
             drafts.vitrine.accroche = sec.defaultAccroche;
             drafts.vitrine.histoire = sec.defaultHistoire;
             drafts.vitrine.badge = sec.defaultBadge;
+            if (isNewSector) {
+              // Réinitialise les fiches personnalisées pour afficher uniquement les prestations du secteur choisi
+              drafts.vitrine.customFiches = [];
+            }
           }
           triggerAutoSave();
           renderFormColumn();
@@ -1175,13 +1194,7 @@
     if (currentModule === "vitrine") {
       if (urlPill) urlPill.textContent = `lastchance.app/v/${drafts.vitrine.slug || "mon-commerce"}`;
       if (tools) {
-        tools.innerHTML = `
-          <button type="button" class="k-tool-pill" id="k-tool-lang">${previewLang === "fr" ? "🇫🇷 FR ⇄ 🇬🇧 EN" : "🇬🇧 EN ⇄ 🇫🇷 FR"}</button>
-        `;
-        $("#k-tool-lang", tools)?.addEventListener("click", () => {
-          previewLang = previewLang === "fr" ? "en" : "fr";
-          renderPreviewColumn();
-        });
+        tools.innerHTML = `<span class="k-tool-pill">Aperçu en direct</span>`;
       }
       phone.innerHTML = buildVitrinePreviewHTML();
     } else if (currentModule === "roue") {

@@ -514,16 +514,17 @@ header, main, section, footer { position: relative; z-index: 2; }
 
 .hero-fun-sticker {
   display: inline-block;
-  background: linear-gradient(180deg, #fff385 0%, #ffd93d 100%);
-  color: var(--ink);
-  -webkit-text-stroke: 0px transparent;
-  text-shadow: none;
-  border: 1.6px solid var(--ink);
-  border-radius: 10px;
-  padding: 0.02em 0.28em 0.05em;
-  box-shadow: 2px 2.5px 0 var(--ink);
-  transform: none;
-  margin-top: 0.08em;
+  color: var(--yellow);
+  -webkit-text-stroke: inherit;
+  paint-order: stroke fill;
+  text-shadow: inherit;
+  letter-spacing: -0.01em;
+  transform: rotate(-0.8deg);
+  margin-top: 0.04em;
+  transition: transform 0.25s ease;
+}
+.hero-fun-sticker:hover {
+  transform: rotate(-1.5deg) scale(1.03);
 }
 
 .hero-fun-sub {
@@ -3851,6 +3852,27 @@ header, main, section, footer { position: relative; z-index: 2; }
   animation: draftPopIn 0.35s var(--spring);
 }
 .lc-floating-draft-bar[hidden] { display: none !important; }
+.lc-draft-close {
+  background: transparent;
+  border: 1.5px solid transparent;
+  color: var(--k-ink);
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 7px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+}
+.lc-draft-close:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--k-ink);
+  transform: scale(1.08);
+}
 @keyframes draftPopIn {
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
