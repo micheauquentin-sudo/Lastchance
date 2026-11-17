@@ -2005,24 +2005,58 @@
   if (abCompareTable || abCalcWrapper) {
     let isAnnual = false;
 
-    const PLAN_PRICES = {
-      none: { nom: "Sans formule de base", prix: 0, annual: 0, rights: [] },
+    // Smooth scroll universel pour les ancres internes #... (contourne la redirection de <base href>)
+    document.addEventListener("click", (e) => {
+      const anchor = e.target.closest('a[href*="#"]');
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || href === "#") return;
+      const hashIndex = href.indexOf("#");
+      if (hashIndex === -1) return;
+      const hash = href.slice(hashIndex);
+      if (hash === "#top") {
+        e.preventDefault();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      const targetEl = document.querySelector(hash);
+      if (targetEl) {
+        e.preventDefault();
+        targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        targetEl.classList.add("highlight-pulse");
+        setTimeout(() => targetEl.classList.remove("highlight-pulse"), 1600);
+        try {
+          history.pushState(null, "", "abonnements.html" + hash);
+        } catch {}
+      }
+    });
+
+    const PLAN_DATA = {
+      none: { nom: "100% À la carte", prix: 0, annual: 0, rights: [] },
       core: { nom: "Coup d'envoi", prix: 29, annual: 23, rights: ["games"] },
-      engagement: { nom: "Le Club", prix: 59, annual: 47, rights: ["games", "passport", "referral"] },
+      engagement: { nom: "Le Club", prix: 59, annual: 47, rights: ["games", "passport", "referral", "pass_hunt", "pass_advent"] },
       place: { nom: "Sur Place", prix: 79, annual: 63, rights: ["games", "vitrine", "rdv", "moments"] },
-      live: { nom: "Le Grand Jeu", prix: 89, annual: 71, rights: ["games", "screen", "prono"] },
-      full: { nom: "La Totale", prix: 129, annual: 103, rights: ["games", "passport", "referral", "vitrine", "rdv", "moments", "screen", "prono"] },
+      live: { nom: "Le Grand Jeu", prix: 89, annual: 71, rights: ["games", "pass_screen", "pass_prono", "pass_quiz", "pass_pot"] },
+      full: { nom: "La Totale", prix: 129, annual: 103, rights: ["games", "passport", "referral", "vitrine", "rdv", "moments", "pass_hunt", "pass_advent", "pass_quiz", "pass_pot", "pass_prono", "pass_screen"] },
     };
 
-    const ADDON_PRICES = {
-      vitrine: { nom: "Vitrine & Carte QR", prix: 20 },
-      rdv: { nom: "Prise de RDV en Ligne", prix: 20 },
-      moments: { nom: "Moments VIP & Ateliers", prix: 20 },
-      passport: { nom: "Passeport Fidélité & Cagnotte", prix: 19 },
-      referral: { nom: "Module Parrainage Ambassadeurs", prix: 12 },
+    const ADDON_DATA = {
+      // Options mensuelles récurrentes
+      vitrine: { nom: "Vitrine & Tarifs QR", prix: 20, type: "recurring", unit: "/mois" },
+      rdv: { nom: "Réservation Directe 0%", prix: 20, type: "recurring", unit: "/mois" },
+      moments: { nom: "Moments VIP & Ateliers", prix: 20, type: "recurring", unit: "/mois" },
+      passport: { nom: "Passeport Fidélité & Lots", prix: 19, type: "recurring", unit: "/mois" },
+      referral: { nom: "Parrainage Ambassadeurs", prix: 12, type: "recurring", unit: "/mois" },
+      // Pass événementiels ponctuels
+      pass_hunt: { nom: "Pass Chasse au Trésor", prix: 29, type: "onetime", unit: "unique" },
+      pass_advent: { nom: "Pass Calendrier Surprises", prix: 29, type: "onetime", unit: "unique" },
+      pass_quiz: { nom: "Pass Soirée Quiz & Blind Test", prix: 15, type: "onetime", unit: "unique" },
+      pass_pot: { nom: "Pass Cagnotte & Jackpot", prix: 29, type: "onetime", unit: "unique" },
+      pass_prono: { nom: "Pass Saison Pronostics", prix: 39, type: "onetime", unit: "unique" },
+      pass_screen: { nom: "Pass Grand Écran TV", prix: 9, type: "onetime", unit: "unique" },
     };
 
-    // Toggle de facturation synchronisé (Hero + En-tête de tableau)
+    // Toggle de facturation synchronisé (Hero + En-tête de tableau + Calculateur)
     const setBillingPeriod = (annual) => {
       isAnnual = Boolean(annual);
 
@@ -2034,6 +2068,21 @@
         heroMonthly.setAttribute("aria-pressed", String(!isAnnual));
         heroAnnual.classList.toggle("active", isAnnual);
         heroAnnual.setAttribute("aria-pressed", String(isAnnual));
+      }
+
+      // Met à jour la carte récapitulative du Hero
+      const heroSavingIndicator = $("#hero-saving-indicator");
+      const heroSavingText = $("#hero-saving-text");
+      if (heroSavingIndicator && heroSavingText) {
+        if (isAnnual) {
+          heroSavingIndicator.innerHTML = 'Dès 23 €<small>/mois</small> <span class="hero-save-badge">-20%</span>';
+          heroSavingText.textContent = "Facturation annuelle · 2 mois offerts chaque année";
+        } else {
+          heroSavingIndicator.innerHTML = 'Dès 29 €<small>/mois</small>';
+          heroSavingText.textContent = "Paiement mensuel sans engagement de durée";
+        }
+        heroSavingIndicator.classList.add("highlight-pulse");
+        setTimeout(() => heroSavingIndicator.classList.remove("highlight-pulse"), 1000);
       }
 
       // Met à jour les boutons du tableau comparatif
@@ -2057,7 +2106,7 @@
       // Met à jour les prix du pied de tableau
       $$(".tfoot-price").forEach((el) => {
         const planKey = el.dataset.plan;
-        const info = PLAN_PRICES[planKey];
+        const info = PLAN_DATA[planKey];
         if (info) {
           const price = isAnnual ? info.annual : info.prix;
           el.innerHTML = `${price} €<small>/mois</small>`;
@@ -2070,7 +2119,7 @@
         btn.setAttribute("href", `${baseHref}&billing=${isAnnual ? "annual" : "monthly"}`);
       });
 
-      // Synchronise le calculateur
+      // Synchronise les boutons de période dans le calculateur
       const calcPeriodMonthly = $("#calc-period-monthly");
       const calcPeriodAnnual = $("#calc-period-annual");
       if (calcPeriodMonthly && calcPeriodAnnual) {
@@ -2100,46 +2149,69 @@
 
     const userCheckedAddons = new Set();
 
-    // Calculateur de budget sur-mesure
+    // Calculateur de budget sur-mesure & Add-ons Stripe
     function updateCalculator() {
       if (!abCalcWrapper) return;
 
       const selectedPlanInput = $('input[name="calc-plan"]:checked');
       const selectedPlanKey = selectedPlanInput ? selectedPlanInput.value : "engagement";
-      const planInfo = PLAN_PRICES[selectedPlanKey] || PLAN_PRICES.engagement;
+      const planInfo = PLAN_DATA[selectedPlanKey] || PLAN_DATA.engagement;
 
       // Met à jour l'affichage de la formule choisie
       const sumPlanName = $("#calc-summary-plan-name");
       const sumPlanPrice = $("#calc-summary-plan-price");
+      const planCost = isAnnual ? planInfo.annual : planInfo.prix;
+
       if (sumPlanName) sumPlanName.textContent = `Formule « ${planInfo.nom} »`;
-      if (sumPlanPrice) sumPlanPrice.textContent = `${planInfo.prix},00 €`;
+      if (sumPlanPrice) sumPlanPrice.textContent = `${planCost},00 €`;
 
-      // Gestion des add-ons inclus automatiquement
-      let addonsCost = 0;
-      const selectedAddonKeys = [];
-      const addonRows = $$(".calc-addon-check");
+      // Gestion des add-ons inclus automatiquement vs à la carte
+      let recurringAddonsCost = 0;
+      let onetimeAddonsCost = 0;
+      const selectedRecurringKeys = [];
+      const selectedOnetimeKeys = [];
 
-      addonRows.forEach((row) => {
-        const input = row.querySelector('input[type="checkbox"]');
+      const addonCards = $$(".calc-interactive-addon-card");
+
+      addonCards.forEach((card) => {
+        const input = card.querySelector('input[type="checkbox"]');
         if (!input) return;
         const key = input.value;
+        const data = ADDON_DATA[key];
+        if (!data) return;
+
         const isIncluded = planInfo.rights.includes(key);
+        const badge = card.querySelector(".calc-card-status-badge");
 
         if (isIncluded) {
-          row.classList.add("is-included-in-plan");
+          card.classList.add("is-included-in-plan");
+          card.classList.remove("is-selected");
           input.checked = true;
           input.disabled = true;
-          const note = row.querySelector(".calc-check-note");
-          if (note) note.textContent = "✓ Inclus d'office sans surcoût dans cette formule";
+          if (badge) {
+            badge.className = "calc-card-status-badge included";
+            badge.textContent = "✓ Inclus sans surcoût";
+          }
         } else {
-          row.classList.remove("is-included-in-plan");
+          card.classList.remove("is-included-in-plan");
           input.disabled = false;
           input.checked = userCheckedAddons.has(key);
-          const note = row.querySelector(".calc-check-note");
-          if (note) note.textContent = "Option à la carte activable à la demande";
+          card.classList.toggle("is-selected", input.checked);
+
+          if (badge) {
+            badge.className = "calc-card-status-badge optional";
+            badge.textContent = data.type === "recurring" ? "Option mensuelle" : "Pass ponctuel";
+          }
+
           if (input.checked) {
-            addonsCost += Number(input.dataset.price || 0);
-            selectedAddonKeys.push(key);
+            if (data.type === "recurring") {
+              const itemPrice = isAnnual ? Math.round(data.prix * 0.8) : data.prix;
+              recurringAddonsCost += itemPrice;
+              selectedRecurringKeys.push(key);
+            } else {
+              onetimeAddonsCost += data.prix;
+              selectedOnetimeKeys.push(key);
+            }
           }
         }
       });
@@ -2147,31 +2219,33 @@
       // Remplissage de la liste des add-ons dans le récapitulatif
       const addonsList = $("#calc-summary-addons-list");
       if (addonsList) {
-        if (selectedAddonKeys.length === 0) {
-          addonsList.innerHTML = `<span style="font-size:0.75rem;color:#6b5f79;font-style:italic;">Aucun add-on payant supplémentaire</span>`;
+        const totalCheckedKeys = [...selectedRecurringKeys, ...selectedOnetimeKeys];
+        if (totalCheckedKeys.length === 0) {
+          addonsList.innerHTML = '<span style="font-size:0.75rem;color:#6b5f79;font-style:italic;">Aucun add-on payant supplémentaire coché</span>';
         } else {
-          addonsList.innerHTML = selectedAddonKeys.map((key) => {
-            const add = ADDON_PRICES[key];
+          addonsList.innerHTML = totalCheckedKeys.map((key) => {
+            const add = ADDON_DATA[key];
+            const displayPrice = (add.type === "recurring" && isAnnual) ? Math.round(add.prix * 0.8) : add.prix;
             return `
               <div class="calc-sum-addon-item">
                 <span>+ ${add.nom}</span>
-                <span>+${add.prix},00 €</span>
+                <span>+${displayPrice},00 € <small>${add.unit}</small></span>
               </div>
             `;
           }).join("");
         }
       }
 
-      // Calcul total
-      const subtotal = planInfo.prix + addonsCost;
+      // Calcul total récurrent et affichage
+      const totalMonthly = planCost + recurringAddonsCost;
       const totalDisplay = $("#calc-total-display");
       const discountLine = $("#calc-discount-line");
       const periodCaption = $("#calc-period-caption");
       const checkoutBtn = $("#calc-checkout-btn");
+      const onetimeBox = $("#calc-onetime-total-box");
+      const onetimeAmount = $("#calc-onetime-amount");
 
-      let finalTotal = subtotal;
       if (isAnnual) {
-        finalTotal = Math.round(subtotal * 0.8);
         if (discountLine) discountLine.hidden = false;
         if (periodCaption) periodCaption.textContent = "par mois (facturé annuellement · 2 mois offerts)";
       } else {
@@ -2179,20 +2253,31 @@
         if (periodCaption) periodCaption.textContent = "par mois sans engagement";
       }
 
-      if (totalDisplay) totalDisplay.textContent = `${finalTotal} €`;
+      if (totalDisplay) totalDisplay.textContent = `${totalMonthly} €`;
+
+      // Affichage du sous-total ponctuel si des pass sont cochés
+      if (onetimeBox && onetimeAmount) {
+        if (onetimeAddonsCost > 0) {
+          onetimeBox.style.display = "block";
+          onetimeAmount.textContent = `${onetimeAddonsCost} €`;
+        } else {
+          onetimeBox.style.display = "none";
+        }
+      }
 
       // Mise à jour du CTA Stripe Checkout
       if (checkoutBtn) {
         const checkoutPlan = selectedPlanKey !== "none" ? selectedPlanKey : "addon_custom";
+        const allSelectedAddons = [...selectedRecurringKeys, ...selectedOnetimeKeys];
         const urlParams = new URLSearchParams({
           plan: checkoutPlan,
           billing: isAnnual ? "annual" : "monthly",
-          addons: selectedAddonKeys.join(","),
+          addons: allSelectedAddons.join(","),
         });
         checkoutBtn.setAttribute("href", `/signup?${urlParams.toString()}`);
         checkoutBtn.textContent = selectedPlanKey !== "none"
           ? `Démarrer mon essai gratuit de 7 jours (${planInfo.nom}) →`
-          : `Activer mes options à la carte (${finalTotal} €) →`;
+          : `Activer mes options sur-mesure (${totalMonthly} €/m) →`;
       }
 
       // Sauvegarde du brouillon de commande en mémoire
@@ -2200,12 +2285,14 @@
         localStorage.setItem("lc_checkout_draft", JSON.stringify({
           plan: selectedPlanKey,
           isAnnual,
-          addons: selectedAddonKeys,
-          finalTotal,
+          recurringAddons: selectedRecurringKeys,
+          onetimeAddons: selectedOnetimeKeys,
+          totalMonthly,
+          onetimeAddonsCost,
           updatedAt: new Date().toISOString(),
         }));
       } catch {
-        // Ignoré si le localStorage est indisponible en mode navigation privée
+        // Ignoré si indisponible
       }
     }
 

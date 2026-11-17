@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <base href="/h-site-final-20k/" />
-  <title>Abonnements &amp; Options Stripe — Lastchance</title>
-  <meta name="description" content="Découvrez nos 5 formules et nos options à la carte Stripe pour commerces. Grand tableau comparatif, add-ons transparents, zéro commission et 7 jours d'essai gratuit." />
+  <title>Abonnements &amp; Add-ons Stripe — Lastchance</title>
+  <meta name="description" content="Découvrez nos 5 formules et notre calculateur d'add-ons Stripe à la carte pour commerces. Grand tableau comparatif, options transparentes, zéro commission et 7 jours d'essai gratuit." />
   <link rel="icon" type="image/svg+xml" href="img/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -57,12 +57,12 @@
           </h1>
 
           <p class="hero-annex-sub">
-            De l'animation de comptoir à la solution tout-en-un avec réservations, écran géant et passeport fidélité : choisissez votre formule ou composez à la carte grâce aux add-ons Stripe.
+            De l'animation de comptoir à la solution tout-en-un avec réservations, écran géant et passeport fidélité : choisissez votre formule ou composez sur-mesure grâce à notre calculateur d'add-ons Stripe.
           </p>
 
           <div class="hero-cta-row">
-            <a class="ticket-btn ticket-btn-large pop-btn-yellow" href="#grand-comparatif">📊 Voir le Grand Comparatif ↓</a>
-            <a class="ticket-btn ticket-btn-large pop-btn-white" href="#addons-stripe">🧩 Explorer les Add-ons ↓</a>
+            <a class="ticket-btn ticket-btn-large pop-btn-yellow hero-anchor-btn" href="abonnements.html#grand-comparatif">📊 Voir le Grand Comparatif ↓</a>
+            <a class="ticket-btn ticket-btn-large pop-btn-white hero-anchor-btn" href="abonnements.html#simulateur-geant">🧮 Calculateur &amp; Add-ons ↓</a>
           </div>
         </div>
 
@@ -86,18 +86,18 @@
 
             <div class="ab-hero-summary-box">
               <div class="ab-hero-summary-stat">
-                <span class="ab-hero-summary-num" id="hero-saving-indicator">-20 %</span>
-                <span class="ab-hero-summary-text">d'économies avec la formule annuelle</span>
+                <span class="ab-hero-summary-num" id="hero-saving-indicator">Dès 29 €<small>/mois</small></span>
+                <span class="ab-hero-summary-text" id="hero-saving-text">Paiement mensuel sans engagement</span>
               </div>
               <ul class="ab-hero-checklist">
                 <li><span class="chk-icon">✓</span> <b>0 % commission</b> sur toutes vos ventes &amp; réservations</li>
-                <li><span class="chk-icon">✓</span> <b>Sans engagement</b> · Résiliation en 1 clic sur Stripe</li>
+                <li><span class="chk-icon">✓</span> <b>Sans engagement</b> · Résiliation libre en 1 clic sur Stripe</li>
                 <li><span class="chk-icon">✓</span> <b>Essai 7 jours 100% gratuit</b> sans prélèvement immédiat</li>
                 <li><span class="chk-icon">✓</span> <b>Scans illimités</b> &amp; affiches prêtes à imprimer</li>
               </ul>
             </div>
 
-            <a class="ticket-btn pop-btn-yellow w-full" href="#simulateur-budget">🧮 Simuler mon budget sur-mesure →</a>
+            <a class="ticket-btn pop-btn-yellow w-full hero-anchor-btn" href="abonnements.html#simulateur-geant">🧮 Simuler mon budget sur-mesure →</a>
           </div>
         </div>
       </div>
@@ -113,8 +113,8 @@
       <div class="center">
         <p class="section-script">transparence absolue · comparez chaque brique</p>
         <h2 class="section-title">LE GRAND COMPARATIF DES <mark class="pop-mark pop-mark-yellow">5 FORMULES</mark></h2>
-        <p class="section-lead" style="max-width:760px;margin:0.5rem auto 1.8rem;">
-          Comparez chaque module inclus dans nos 5 offres. Les prix s'ajustent automatiquement selon votre mode de facturation :
+        <p class="section-lead" style="max-width:760px;margin:0.5rem auto 1.4rem;">
+          Comparez chaque module inclus dans nos 5 offres. La facturation par défaut est <b>mensuelle sans engagement</b>. Vous pouvez basculer en annuel pour bénéficier de <b>2 mois offerts (-20%)</b> :
         </p>
 
         <!-- Toggle réactif Mensuel / Annuel pour le tableau -->
@@ -128,6 +128,12 @@
             </button>
           </div>
         </div>
+
+        <div class="ab-table-swipe-hint" aria-hidden="true">
+          <span>👈</span>
+          <span><b>Faites glisser horizontalement</b> pour comparer l'ensemble des 5 formules</span>
+          <span>👉</span>
+        </div>
       </div>
 
       <div class="ab-table-wrapper" tabindex="0" role="region" aria-label="Grand tableau comparatif des 5 formules Lastchance">
@@ -136,32 +142,32 @@
             <tr>
               <th scope="col" class="th-feature">Fonctionnalités &amp; Modules</th>
               <th scope="col" class="th-plan" data-plan="core">
-                <span class="th-plan-badge">DÉPART</span>
-                <span class="th-plan-name">⚡ Coup d'envoi</span>
+                <span class="th-plan-badge">⚡ ESSENTIEL</span>
+                <span class="th-plan-name">Coup d'envoi</span>
                 <span class="th-plan-price" data-monthly="29" data-annual="23">29 €<small>/mois</small></span>
                 <span class="th-plan-sub">L'essentiel pour animer</span>
               </th>
               <th scope="col" class="th-plan highlight" data-plan="engagement">
                 <span class="th-plan-badge badge-fav">⭐ COUP DE CŒUR</span>
-                <span class="th-plan-name">🎟️ Le Club</span>
+                <span class="th-plan-name">Le Club</span>
                 <span class="th-plan-price" data-monthly="59" data-annual="47">59 €<small>/mois</small></span>
                 <span class="th-plan-sub">Jeux + Fidélité + Cagnotte</span>
               </th>
               <th scope="col" class="th-plan" data-plan="place">
-                <span class="th-plan-badge">RÉSERVATION</span>
-                <span class="th-plan-name">📅 Sur Place</span>
+                <span class="th-plan-badge">📅 RÉSERVATION</span>
+                <span class="th-plan-name">Sur Place</span>
                 <span class="th-plan-price" data-monthly="79" data-annual="63">79 €<small>/mois</small></span>
                 <span class="th-plan-sub">Vitrine, Tarifs &amp; RDV 0%</span>
               </th>
               <th scope="col" class="th-plan" data-plan="live">
-                <span class="th-plan-badge">ÉCRAN GÉANT</span>
-                <span class="th-plan-name">📺 Le Grand Jeu</span>
+                <span class="th-plan-badge">📺 ÉCRAN GÉANT</span>
+                <span class="th-plan-name">Le Grand Jeu</span>
                 <span class="th-plan-price" data-monthly="89" data-annual="71">89 €<small>/mois</small></span>
                 <span class="th-plan-sub">Écran TV &amp; Pronostics</span>
               </th>
               <th scope="col" class="th-plan" data-plan="full">
-                <span class="th-plan-badge badge-all">🚀 TOUT INCLUS</span>
-                <span class="th-plan-name">👑 La Totale</span>
+                <span class="th-plan-badge badge-all">👑 TOUT INCLUS</span>
+                <span class="th-plan-name">La Totale</span>
                 <span class="th-plan-price" data-monthly="129" data-annual="103">129 €<small>/mois</small></span>
                 <span class="th-plan-sub">Toutes les fonctionnalités</span>
               </th>
@@ -176,59 +182,59 @@
             </tr>
             <tr>
               <th scope="row"><b>15 mini-jeux instantanés</b> (roue, grattage, coffre mystère...)</th>
-              <td class="chk">✓</td>
-              <td class="chk highlight">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Jeux Duo &amp; défis à table</b> (Duo Miroir &amp; Portrait de la bande)</th>
-              <td class="chk">✓</td>
-              <td class="chk highlight">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Scans QR &amp; visiteurs illimités</b> (aucun plafond)</th>
-              <td class="chk">✓</td>
-              <td class="chk highlight">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="chk"><span class="tbl-check-badge">✓ Illimité</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Illimité</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Illimité</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Illimité</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Illimité</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Caisse universelle sécurisée</b> &amp; contrôle des gains</th>
-              <td class="chk">✓</td>
-              <td class="chk highlight">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Quiz en direct &amp; blind tests interactifs</b></th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Saisons de Pronostics sportifs</b> &amp; classements en direct</th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Chasse au trésor interactive &amp; Calendrier digital</b></th>
-              <td class="cross">—</td>
-              <td class="chk highlight">✓</td>
-              <td class="cross">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
 
             <!-- Catégorie 2 : Fidélité & Communauté -->
@@ -239,43 +245,43 @@
             </tr>
             <tr>
               <th scope="row"><b>Passeport fidélité mobile</b> (QR client individuel · 0 appli)</th>
-              <td class="cross">—</td>
-              <td class="chk highlight">✓</td>
-              <td class="cross">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Double validation de passage</b> (scan commerçant OU code comptoir du jour)</th>
-              <td class="cross">—</td>
-              <td class="chk highlight">✓</td>
-              <td class="cross">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Tampons virtuels &amp; Paliers de récompenses</b> sur-mesure</th>
-              <td class="cross">—</td>
-              <td class="chk highlight">✓</td>
-              <td class="cross">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Jackpot &amp; Cagnotte collective</b> à tirage en salle</th>
-              <td class="cross">—</td>
-              <td class="chk highlight">✓</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Programme Parrainage &amp; Ambassadeurs</b></th>
-              <td class="cross">—</td>
-              <td class="chk highlight">✓</td>
-              <td class="cross">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
 
             <!-- Catégorie 3 : Vitrine & Réservations directes -->
@@ -286,35 +292,35 @@
             </tr>
             <tr>
               <th scope="row"><b>Vitrine numérique &amp; Carte de tarifs</b> au QR code</th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="chk">✓</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Prise de Rendez-vous en ligne sans commission</b></th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="chk">✓</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Synchronisation agenda</b> (Google Calendar, Apple, Outlook)</th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="chk">✓</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Moments VIP &amp; Événements limités</b> (ateliers, dégustations)</th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="chk">✓</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
 
             <!-- Catégorie 4 : Écran géant & Soirées -->
@@ -325,27 +331,27 @@
             </tr>
             <tr>
               <th scope="row"><b>Affichage grand écran TV / Projecteur</b></th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Régie live &amp; Télécommande mobile commerçant</b></th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="cross">—</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Capacité simultanée en salle</b></th>
-              <td class="cross">—</td>
-              <td class="cross highlight">—</td>
-              <td class="cross">—</td>
-              <td class="chk">250 joueurs</td>
-              <td class="chk">250 joueurs</td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-text-badge">250 joueurs</span></td>
+              <td class="chk"><span class="tbl-text-badge">250 joueurs</span></td>
             </tr>
 
             <!-- Catégorie 5 : Engagements & Support -->
@@ -356,43 +362,43 @@
             </tr>
             <tr>
               <th scope="row"><b>Commission sur votre chiffre d'affaires</b></th>
-              <td class="chk">0 %</td>
-              <td class="chk highlight">0 %</td>
-              <td class="chk">0 %</td>
-              <td class="chk">0 %</td>
-              <td class="chk">0 %</td>
+              <td class="chk"><span class="tbl-text-badge">0 % commission</span></td>
+              <td class="chk highlight"><span class="tbl-text-badge">0 % commission</span></td>
+              <td class="chk"><span class="tbl-text-badge">0 % commission</span></td>
+              <td class="chk"><span class="tbl-text-badge">0 % commission</span></td>
+              <td class="chk"><span class="tbl-text-badge">0 % commission</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Engagement de durée</b></th>
-              <td class="chk">Aucun</td>
-              <td class="chk highlight">Aucun</td>
-              <td class="chk">Aucun</td>
-              <td class="chk">Aucun</td>
-              <td class="chk">Aucun</td>
+              <td class="chk"><span class="tbl-text-badge">Sans engagement</span></td>
+              <td class="chk highlight"><span class="tbl-text-badge">Sans engagement</span></td>
+              <td class="chk"><span class="tbl-text-badge">Sans engagement</span></td>
+              <td class="chk"><span class="tbl-text-badge">Sans engagement</span></td>
+              <td class="chk"><span class="tbl-text-badge">Sans engagement</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Essai gratuit offert</b></th>
-              <td class="chk">7 jours</td>
-              <td class="chk highlight">7 jours</td>
-              <td class="chk">7 jours</td>
-              <td class="chk">7 jours</td>
-              <td class="chk">7 jours</td>
+              <td class="chk"><span class="tbl-text-badge">7 jours offerts</span></td>
+              <td class="chk highlight"><span class="tbl-text-badge">7 jours offerts</span></td>
+              <td class="chk"><span class="tbl-text-badge">7 jours offerts</span></td>
+              <td class="chk"><span class="tbl-text-badge">7 jours offerts</span></td>
+              <td class="chk"><span class="tbl-text-badge">7 jours offerts</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Studio de création d'affiches QR</b></th>
-              <td class="chk">✓</td>
-              <td class="chk highlight">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
-              <td class="chk">✓</td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
               <th scope="row"><b>Support commerçant</b></th>
-              <td>Email 7j/7</td>
-              <td class="highlight">Email &amp; Chat</td>
-              <td>Email &amp; Chat</td>
-              <td>Prioritaire 7j/7</td>
-              <td>VIP Dédié 7j/7</td>
+              <td><span class="tbl-text-badge">Email 7j/7</span></td>
+              <td class="highlight"><span class="tbl-text-badge">Email &amp; Chat</span></td>
+              <td><span class="tbl-text-badge">Email &amp; Chat</span></td>
+              <td><span class="tbl-text-badge">Prioritaire 7j/7</span></td>
+              <td><span class="tbl-text-badge">VIP Dédié 7j/7</span></td>
             </tr>
           </tbody>
           <tfoot>
@@ -428,200 +434,360 @@
     </section>
 
     <!-- ==========================================================
-         3. PIÈCE MAÎTRESSE 2 : LES ADD-ONS & OPTIONS À LA CARTE STRIPE
+         3. PIÈCE MAÎTRESSE 2 : LE CALCULATEUR GÉANT & ADD-ONS SUR-MESURE
+         Fusion complète et directe des add-ons Stripe et du calculateur
          ========================================================== -->
-    <section class="section section-wide" id="addons-stripe">
+    <section class="section section-wide" id="simulateur-geant">
+      <div id="addons-stripe" style="position:relative;top:-70px;"></div>
       <div class="center">
-        <p class="section-script">flexibilité maximale à la demande</p>
-        <h2 class="section-title">LES ADD-ONS STRIPE <mark class="pop-mark pop-mark-yellow">À LA CARTE</mark></h2>
-        <p class="section-lead" style="max-width:760px;margin:0.5rem auto 2.4rem;">
-          Inutile de changer d'offre : complétez votre formule avec les options de votre choix. Activez-les ou désactivez-les en un clic depuis votre espace Stripe.
+        <p class="section-script">flexibilité absolue · composez votre formule à la carte</p>
+        <h2 class="section-title">LE CALCULATEUR GÉANT &amp; ADD-ONS <mark class="pop-mark pop-mark-yellow">SUR-MESURE</mark></h2>
+        <p class="section-lead" style="max-width:780px;margin:0.5rem auto 2.2rem;">
+          Inutile de vous enfermer dans un carcan rigide : sélectionnez une formule de base (ou partez de zéro) et <b>cochez directement les add-ons souhaités</b>. Les modules déjà inclus dans votre formule sont automatiquement reconnus sans aucun surcoût !
         </p>
       </div>
 
-      <!-- FAMILLE 1 : OPTIONS MENSUELLES RÉCURRENTES -->
-      <div class="ab-addon-family-block">
-        <div class="ab-family-header">
-          <div class="ab-family-pill-icon" style="background:#e8fdf5;color:#047857;">📅</div>
-          <div>
-            <h3 class="ab-family-title">1. LES OPTIONS MENSUELLES (SANS ENGAGEMENT)</h3>
-            <p class="ab-family-sub">S'ajoutent à votre abonnement et se résilient quand vous le souhaitez en 1 clic.</p>
+      <div class="ab-calc-wrapper">
+        <div class="ab-calc-controls-col">
+          <!-- ÉTAPE 1 : CHOIX DE LA FORMULE DE BASE -->
+          <div class="calc-step-box">
+            <span class="calc-step-badge">ÉTAPE 1</span>
+            <h3>1. Choisissez votre formule de départ</h3>
+            <div class="calc-plan-radio-group">
+              <label class="calc-plan-radio">
+                <input type="radio" name="calc-plan" value="none" />
+                <span class="calc-radio-card">
+                  <span class="calc-plan-label">🧩 100% À la carte</span>
+                  <span class="calc-plan-amount">0 € / mois</span>
+                  <small style="font-size:0.68rem;color:#6b5f79;margin-top:2px;">Uniquement vos add-ons</small>
+                </span>
+              </label>
+
+              <label class="calc-plan-radio">
+                <input type="radio" name="calc-plan" value="core" />
+                <span class="calc-radio-card">
+                  <span class="calc-plan-label">⚡ Coup d'envoi</span>
+                  <span class="calc-plan-amount" data-plan-price="core">29 € / mois</span>
+                  <small style="font-size:0.68rem;color:#6b5f79;margin-top:2px;">15 jeux instantanés</small>
+                </span>
+              </label>
+
+              <label class="calc-plan-radio">
+                <input type="radio" name="calc-plan" value="engagement" checked />
+                <span class="calc-radio-card is-fav">
+                  <span class="calc-plan-label">⭐ Le Club</span>
+                  <span class="calc-plan-amount" data-plan-price="engagement">59 € / mois</span>
+                  <small style="font-size:0.68rem;color:#451a03;font-weight:800;margin-top:2px;">Jeux + Fidélité + Cagnotte</small>
+                </span>
+              </label>
+
+              <label class="calc-plan-radio">
+                <input type="radio" name="calc-plan" value="place" />
+                <span class="calc-radio-card">
+                  <span class="calc-plan-label">📅 Sur Place</span>
+                  <span class="calc-plan-amount" data-plan-price="place">79 € / mois</span>
+                  <small style="font-size:0.68rem;color:#6b5f79;margin-top:2px;">Vitrine + Réservations 0%</small>
+                </span>
+              </label>
+
+              <label class="calc-plan-radio">
+                <input type="radio" name="calc-plan" value="live" />
+                <span class="calc-radio-card">
+                  <span class="calc-plan-label">📺 Le Grand Jeu</span>
+                  <span class="calc-plan-amount" data-plan-price="live">89 € / mois</span>
+                  <small style="font-size:0.68rem;color:#6b5f79;margin-top:2px;">Écran TV + Pronostics</small>
+                </span>
+              </label>
+
+              <label class="calc-plan-radio">
+                <input type="radio" name="calc-plan" value="full" />
+                <span class="calc-radio-card">
+                  <span class="calc-plan-label">👑 La Totale</span>
+                  <span class="calc-plan-amount" data-plan-price="full">129 € / mois</span>
+                  <small style="font-size:0.68rem;color:#6b5f79;margin-top:2px;">Toutes les briques incluses</small>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <!-- ÉTAPE 2 : OPTIONS MENSUELLES RÉCURRENTES -->
+          <div class="calc-step-box" style="margin-top:1.6rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+              <span class="calc-step-badge">ÉTAPE 2</span>
+              <span style="font-size:0.75rem;font-weight:800;color:#047857;">📅 SANS ENGAGEMENT · RÉSILIEZ EN 1 CLIC</span>
+            </div>
+            <h3>2. Cochez vos options mensuelles à la carte</h3>
+            <p style="font-size:0.82rem;color:#555;margin:0 0 1rem;">
+              Ajoutez des modules permanents à votre formule. Si un module est déjà inclus dans votre offre, il est automatiquement coché et offert !
+            </p>
+
+            <div class="calc-addons-grid">
+              <!-- Add-on Mensuel 1 : Vitrine -->
+              <label class="calc-interactive-addon-card" id="card-addon-vitrine">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">🌐</span>
+                    <h4 class="calc-card-title">Vitrine &amp; Tarifs QR</h4>
+                  </div>
+                  <div class="calc-card-price-pill">+20 €<small>/mois</small></div>
+                </div>
+                <p class="calc-card-desc">Carte numérique interactive, menus, tarifs et photos HD au scan du QR code sans réimpression.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Option mensuelle</span>
+                  <input type="checkbox" name="calc-addon" value="vitrine" data-type="recurring" data-price="20" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Add-on Mensuel 2 : RDV -->
+              <label class="calc-interactive-addon-card" id="card-addon-rdv">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">📅</span>
+                    <h4 class="calc-card-title">Réservation Directe 0%</h4>
+                  </div>
+                  <div class="calc-card-price-pill">+20 €<small>/mois</small></div>
+                </div>
+                <p class="calc-card-desc">Agenda en ligne 24h/24, créneaux personnalisables, synchro Google/Apple, zéro commission.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Option mensuelle</span>
+                  <input type="checkbox" name="calc-addon" value="rdv" data-type="recurring" data-price="20" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Add-on Mensuel 3 : Moments VIP -->
+              <label class="calc-interactive-addon-card" id="card-addon-moments">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">🍷</span>
+                    <h4 class="calc-card-title">Moments VIP &amp; Ateliers</h4>
+                  </div>
+                  <div class="calc-card-price-pill">+20 €<small>/mois</small></div>
+                </div>
+                <p class="calc-card-desc">Gestion de jauges limitées pour ateliers dégustation, soirées privatives ou cours en boutique.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Option mensuelle</span>
+                  <input type="checkbox" name="calc-addon" value="moments" data-type="recurring" data-price="20" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Add-on Mensuel 4 : Passeport Fidélité -->
+              <label class="calc-interactive-addon-card" id="card-addon-passport">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">🎟️</span>
+                    <h4 class="calc-card-title">Passeport Fidélité &amp; Lots</h4>
+                  </div>
+                  <div class="calc-card-price-pill">+19 €<small>/mois</small></div>
+                </div>
+                <p class="calc-card-desc">Tampons dématérialisés, boutique de récompenses, QR client individuel et validation au comptoir.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Option mensuelle</span>
+                  <input type="checkbox" name="calc-addon" value="passport" data-type="recurring" data-price="19" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Add-on Mensuel 5 : Parrainage -->
+              <label class="calc-interactive-addon-card" id="card-addon-referral">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">🤝</span>
+                    <h4 class="calc-card-title">Parrainage Ambassadeurs</h4>
+                  </div>
+                  <div class="calc-card-price-pill">+12 €<small>/mois</small></div>
+                </div>
+                <p class="calc-card-desc">Bouche-à-oreille récompensé : liens uniques partagés par vos habitués pour attirer leurs proches.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Option mensuelle</span>
+                  <input type="checkbox" name="calc-addon" value="referral" data-type="recurring" data-price="12" class="calc-card-checkbox" />
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- ÉTAPE 3 : PASS ÉVÉNEMENTIELS PONCTUELS -->
+          <div class="calc-step-box" style="margin-top:1.6rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+              <span class="calc-step-badge">ÉTAPE 3</span>
+              <span style="font-size:0.75rem;font-weight:800;color:#b45309;">⚡ PAIEMENT UNIQUE · SANS RENOUVELLEMENT</span>
+            </div>
+            <h3>3. Cochez vos Pass Événementiels &amp; Campagnes (Optionnel)</h3>
+            <p style="font-size:0.82rem;color:#555;margin:0 0 1rem;">
+              Des animations ponctuelles à déclencher pour un mois fort, une fête ou un tournoi. Facturées une seule fois sans modifier votre formule récurrente :
+            </p>
+
+            <div class="calc-addons-grid">
+              <!-- Pass 1 : Chasse au trésor -->
+              <label class="calc-interactive-addon-card" id="card-addon-pass_hunt">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">🗺️</span>
+                    <h4 class="calc-card-title">Pass Chasse au Trésor</h4>
+                  </div>
+                  <div class="calc-card-price-pill badge-orange">+29 €<small> · 30j</small></div>
+                </div>
+                <p class="calc-card-desc">Parcours interactif à énigmes pour faire circuler les clients entre vos rayons, tables ou commerces voisins.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Pass ponctuel</span>
+                  <input type="checkbox" name="calc-addon" value="pass_hunt" data-type="onetime" data-price="29" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Pass 2 : Calendrier Avent / Surprises -->
+              <label class="calc-interactive-addon-card" id="card-addon-pass_advent">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">🎄</span>
+                    <h4 class="calc-card-title">Pass Calendrier à Surprises</h4>
+                  </div>
+                  <div class="calc-card-price-pill badge-orange">+29 €<small> · 31j</small></div>
+                </div>
+                <p class="calc-card-desc">Une case digitale à ouvrir chaque jour (Avent, mois d'anniversaire) pour faire revenir vos clients chaque jour.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Pass ponctuel</span>
+                  <input type="checkbox" name="calc-addon" value="pass_advent" data-type="onetime" data-price="29" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Pass 3 : Soirée Quiz -->
+              <label class="calc-interactive-addon-card" id="card-addon-pass_quiz">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">❓</span>
+                    <h4 class="calc-card-title">Pass Soirée Quiz &amp; Blind Test</h4>
+                  </div>
+                  <div class="calc-card-price-pill badge-orange">+15 €<small> · 7j</small></div>
+                </div>
+                <p class="calc-card-desc">Animation interactive sur smartphones de comptoir pour vos soirées festives ou lancements.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Pass ponctuel</span>
+                  <input type="checkbox" name="calc-addon" value="pass_quiz" data-type="onetime" data-price="15" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Pass 4 : Cagnotte Festive -->
+              <label class="calc-interactive-addon-card" id="card-addon-pass_pot">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">💰</span>
+                    <h4 class="calc-card-title">Pass Cagnotte &amp; Jackpot</h4>
+                  </div>
+                  <div class="calc-card-price-pill badge-orange">+29 €<small> · 30j</small></div>
+                </div>
+                <p class="calc-card-desc">Jauge collective qui grimpe à chaque passage client avec grand tirage au sort communautaire en salle.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Pass ponctuel</span>
+                  <input type="checkbox" name="calc-addon" value="pass_pot" data-type="onetime" data-price="29" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Pass 5 : Pronostics -->
+              <label class="calc-interactive-addon-card" id="card-addon-pass_prono">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">⚽</span>
+                    <h4 class="calc-card-title">Pass Saison Pronostics</h4>
+                  </div>
+                  <div class="calc-card-price-pill badge-orange">+39 €<small> · Tournoi</small></div>
+                </div>
+                <p class="calc-card-desc">Compétition sportive complète (Ligue des Champions, Coupe du Monde) avec classement et lots habitués.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Pass ponctuel</span>
+                  <input type="checkbox" name="calc-addon" value="pass_prono" data-type="onetime" data-price="39" class="calc-card-checkbox" />
+                </div>
+              </label>
+
+              <!-- Pass 6 : Grand Écran Live -->
+              <label class="calc-interactive-addon-card" id="card-addon-pass_screen">
+                <div class="calc-card-top">
+                  <div class="calc-card-icon-title">
+                    <span class="calc-card-icon">📺</span>
+                    <h4 class="calc-card-title">Pass Grand Écran TV Live</h4>
+                  </div>
+                  <div class="calc-card-price-pill badge-orange">+9 €<small> · 24h</small></div>
+                </div>
+                <p class="calc-card-desc">Affichage direct sur la télévision de votre établissement avec régie animateur mobile commerçant.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;">
+                  <span class="calc-card-status-badge optional">Pass ponctuel</span>
+                  <input type="checkbox" name="calc-addon" value="pass_screen" data-type="onetime" data-price="9" class="calc-card-checkbox" />
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- ÉTAPE 4 : PÉRIODICITÉ DE FACTURATION -->
+          <div class="calc-step-box" style="margin-top:1.6rem;">
+            <span class="calc-step-badge">ÉTAPE 4</span>
+            <h3>4. Périodicité de facturation souhaitée</h3>
+            <div class="calc-period-toggle">
+              <button type="button" class="calc-period-btn active" id="calc-period-monthly">Facturation Mensuelle (Sans engagement)</button>
+              <button type="button" class="calc-period-btn" id="calc-period-annual">Facturation Annuelle (-20% · 2 mois offerts)</button>
+            </div>
           </div>
         </div>
 
-        <div class="ab-addon-cards-grid">
-          <!-- Add-on 1 : Vitrine -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">🌐</span>
-              <div class="ab-addon-card-price-pill">+20 €<small>/mois</small></div>
+        <!-- COLONNE RÉCAPITULATIF STRIPE EN DIRECT -->
+        <div class="ab-calc-summary-col">
+          <div class="ab-calc-summary-card">
+            <div class="calc-summary-head">
+              <span class="calc-summary-title">RÉCAPITULATIF STRIPE</span>
+              <span class="calc-live-pill">⚡ TEMPS RÉEL</span>
             </div>
-            <h4>Vitrine &amp; Carte QR Interactive</h4>
-            <p class="ab-addon-card-desc">
-              Votre menu, catalogue de prestations et tarifs en direct au scan du QR code. Photos haute qualité, descriptions et mises à jour en direct sans réimpression.
-            </p>
-            <div class="ab-addon-meta-row">
-              <span class="ab-addon-target-tag">🎯 Restaurants, Cafés, Salons, Boutiques</span>
-              <span class="ab-addon-included-tag">✓ Déjà inclus dans : <b>Sur Place</b> &amp; <b>La Totale</b></span>
-            </div>
-          </article>
 
-          <!-- Add-on 2 : Rendez-vous -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">📅</span>
-              <div class="ab-addon-card-price-pill">+20 €<small>/mois</small></div>
-            </div>
-            <h4>Prise de Rendez-vous en Ligne (0 %)</h4>
-            <p class="ab-addon-card-desc">
-              Agenda numérique 24h/24, créneaux paramétrables et synchronisation Google / Apple Calendar. Zéro commission prélevée sur vos prestations.
-            </p>
-            <div class="ab-addon-meta-row">
-              <span class="ab-addon-target-tag">🎯 Salons de coiffure, Instituts, Spas, Pros</span>
-              <span class="ab-addon-included-tag">✓ Déjà inclus dans : <b>Sur Place</b> &amp; <b>La Totale</b></span>
-            </div>
-          </article>
+            <div class="calc-summary-body">
+              <div class="calc-sum-line">
+                <span id="calc-summary-plan-name">Formule « Le Club »</span>
+                <span id="calc-summary-plan-price">59,00 €</span>
+              </div>
 
-          <!-- Add-on 3 : Moments VIP -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">🍷</span>
-              <div class="ab-addon-card-price-pill">+20 €<small>/mois</small></div>
-            </div>
-            <h4>Moments VIP &amp; Ateliers Privés</h4>
-            <p class="ab-addon-card-desc">
-              Gestion de réservations avec jauges limitées pour ateliers dégustation, soirées privatisées, lancements ou masterclasses.
-            </p>
-            <div class="ab-addon-meta-row">
-              <span class="ab-addon-target-tag">🎯 Cavistes, Ateliers, Tiers-lieux, Bars</span>
-              <span class="ab-addon-included-tag">✓ Déjà inclus dans : <b>Sur Place</b> &amp; <b>La Totale</b></span>
-            </div>
-          </article>
+              <div class="calc-sum-addons-list" id="calc-summary-addons-list">
+                <!-- Rempli en JS -->
+              </div>
 
-          <!-- Add-on 4 : Passeport Fidélité -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">🎟️</span>
-              <div class="ab-addon-card-price-pill">+19 €<small>/mois</small></div>
-            </div>
-            <h4>Passeport Fidélité Mobile &amp; Cagnotte</h4>
-            <p class="ab-addon-card-desc">
-              Tampons virtuels, boutique de récompenses personnalisée, QR personnel client et validation par code comptoir du jour ou scan.
-            </p>
-            <div class="ab-addon-meta-row">
-              <span class="ab-addon-target-tag">🎯 Tous commerces voulant fidéliser</span>
-              <span class="ab-addon-included-tag">✓ Déjà inclus dans : <b>Le Club</b> &amp; <b>La Totale</b></span>
-            </div>
-          </article>
+              <div class="calc-sum-discount-line" id="calc-discount-line" hidden>
+                <span>Remise annuelle (-20% · 2 mois offerts)</span>
+                <span id="calc-discount-amount">- 20 %</span>
+              </div>
 
-          <!-- Add-on 5 : Parrainage -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">🤝</span>
-              <div class="ab-addon-card-price-pill">+12 €<small>/mois</small></div>
-            </div>
-            <h4>Module Parrainage &amp; Ambassadeurs</h4>
-            <p class="ab-addon-card-desc">
-              Bouche-à-oreille récompensé : chaque habitué dispose de son lien de parrainage et cumule des privilèges quand ses proches viennent chez vous.
-            </p>
-            <div class="ab-addon-meta-row">
-              <span class="ab-addon-target-tag">🎯 Commerces à fort bouche-à-oreille</span>
-              <span class="ab-addon-included-tag">✓ Déjà inclus dans : <b>Le Club</b> &amp; <b>La Totale</b></span>
-            </div>
-          </article>
-        </div>
-      </div>
+              <div class="calc-sum-divider"></div>
 
-      <!-- FAMILLE 2 : PASS ÉVÉNEMENTIELS PONCTUELS -->
-      <div class="ab-addon-family-block" style="margin-top:3.5rem;">
-        <div class="ab-family-header">
-          <div class="ab-family-pill-icon" style="background:#fff3d4;color:#b45309;">⚡</div>
-          <div>
-            <h3 class="ab-family-title">2. LES PASS ÉVÉNEMENTIELS &amp; CAMPAGNES (PAIEMENT UNIQUE SANS ABONNEMENT)</h3>
-            <p class="ab-family-sub">Facturés une seule fois sur Stripe, parfaits pour animer un temps fort sans modifier votre abonnement mensuel.</p>
+              <div class="calc-sum-total-row">
+                <div>
+                  <strong>Total mensuel :</strong>
+                  <small id="calc-period-caption">par mois sans engagement</small>
+                </div>
+                <div class="calc-sum-big-total" id="calc-total-display">59 €</div>
+              </div>
+
+              <div id="calc-onetime-total-box" style="display:none;background:#fff8db;border:1.5px solid #d97706;border-radius:10px;padding:0.45rem 0.65rem;margin-bottom:0.85rem;font-size:0.78rem;color:#78350f;">
+                <strong>Pass ponctuels cochés :</strong> <span id="calc-onetime-amount">0 €</span> facturé une seule fois.
+              </div>
+            </div>
+
+            <div class="calc-guarantees-mini">
+              <span>✓ 7 jours complets d'essai gratuit</span>
+              <span>✓ 0 € débité aujourd'hui</span>
+              <span>✓ 0 % commission sur vos ventes</span>
+              <span>✓ Résiliation en 1 clic dans l'espace client</span>
+            </div>
+
+            <a class="ticket-btn ticket-btn-large pop-btn-yellow w-full" id="calc-checkout-btn" href="/signup?plan=engagement">
+              Démarrer mon essai gratuit de 7 jours →
+            </a>
           </div>
         </div>
-
-        <div class="ab-addon-cards-grid grid-3-cols">
-          <!-- Pass 1 : Chasse au trésor -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">🗺️</span>
-              <div class="ab-addon-card-price-pill badge-orange">29 €<small> · Pass 30 jours</small></div>
-            </div>
-            <h4>Pass Chasse au Trésor Interactive</h4>
-            <p class="ab-addon-card-desc">Parcours géolocalisé pour créer du passage entre vos rayons, tables ou avec les commerces voisins partenaires.</p>
-            <span class="ab-addon-included-tag">✓ Inclus dans : <b>Le Club</b> &amp; <b>La Totale</b></span>
-          </article>
-
-          <!-- Pass 2 : Calendrier Avent / Anniversaire -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">🎄</span>
-              <div class="ab-addon-card-price-pill badge-orange">29 €<small> · Pass 31 jours</small></div>
-            </div>
-            <h4>Pass Calendrier à Surprises Digital</h4>
-            <p class="ab-addon-card-desc">Une case à ouvrir chaque jour (Calendrier de l'Avent, mois anniversaire) pour faire revenir vos habitués quotidiennement.</p>
-            <span class="ab-addon-included-tag">✓ Inclus dans : <b>Le Club</b> &amp; <b>La Totale</b></span>
-          </article>
-
-          <!-- Pass 3 : Quiz Express -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">❓</span>
-              <div class="ab-addon-card-price-pill badge-orange">15 €<small> · Pass 7 jours</small></div>
-            </div>
-            <h4>Pass Soirée Quiz &amp; Blind Test</h4>
-            <p class="ab-addon-card-desc">Animez une soirée ou semaine spéciale avec un quiz interactif au comptoir ou sur les smartphones de vos clients.</p>
-            <span class="ab-addon-included-tag">✓ Inclus dans : <b>Le Grand Jeu</b> &amp; <b>La Totale</b></span>
-          </article>
-
-          <!-- Pass 4 : Cagnotte Festive -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">💰</span>
-              <div class="ab-addon-card-price-pill badge-orange">29 €<small> · Pass 30 jours</small></div>
-            </div>
-            <h4>Pass Cagnotte Collective &amp; Jackpot</h4>
-            <p class="ab-addon-card-desc">Jauge communautaire qui grimpe à chaque scan avec un grand tirage au sort automatique pour fêter un événement.</p>
-            <span class="ab-addon-included-tag">✓ Inclus dans : <b>Le Grand Jeu</b> &amp; <b>La Totale</b></span>
-          </article>
-
-          <!-- Pass 5 : Pronostics sportifs -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">⚽</span>
-              <div class="ab-addon-card-price-pill badge-orange">39 €<small> · Compétition</small></div>
-            </div>
-            <h4>Pass Saison Complète de Pronostics</h4>
-            <p class="ab-addon-card-desc">Animez un grand tournoi (Ligue des Champions, Coupe du Monde, Euro) avec classement des habitués et lots à gagner.</p>
-            <span class="ab-addon-included-tag">✓ Inclus dans : <b>Le Grand Jeu</b> &amp; <b>La Totale</b></span>
-          </article>
-
-          <!-- Pass 6 : Grand Écran Live -->
-          <article class="ab-addon-card-pop">
-            <div class="ab-addon-card-top">
-              <span class="ab-addon-badge-icon">📺</span>
-              <div class="ab-addon-card-price-pill badge-orange">dès 9 €<small> · 24h de live</small></div>
-            </div>
-            <h4>Pass Soirée Live sur Grand Écran</h4>
-            <p class="ab-addon-card-desc">Affichage direct sur la télévision de votre établissement, régie animateur sur smartphone (10 à 50 joueurs simultanés).</p>
-            <span class="ab-addon-included-tag">✓ Inclus dans : <b>Le Grand Jeu</b> &amp; <b>La Totale</b></span>
-          </article>
-        </div>
       </div>
 
-      <!-- FAMILLE 3 : PACKS DE SMS COMMERÇANT -->
-      <div class="ab-addon-family-block" style="margin-top:3.5rem;">
-        <div class="ab-family-header">
+      <!-- SECTION DÉDIÉE : PACKS SMS COMMERÇANT (SÉPARÉE EN DEHORS DU RÉCURRENT) -->
+      <div class="ab-sms-section-block" style="margin-top:3.5rem;">
+        <div class="ab-family-header" style="max-width:1200px;margin:0 auto 1.5rem;">
           <div class="ab-family-pill-icon" style="background:#f3e8ff;color:#7e22ce;">💬</div>
           <div>
-            <h3 class="ab-family-title">3. LES PACKS DE SMS COMMERÇANT (RECHARGE IMMÉDIATE STRIPE)</h3>
-            <p class="ab-family-sub">Envoyez des alertes instantanées à vos habitués pour vos soirées, promotions ou rappels automatiques de rendez-vous.</p>
+            <h3 class="ab-family-title">RECHARGE DE SMS COMMERÇANT (À LA DEMANDE)</h3>
+            <p class="ab-family-sub">Recharges prépayées sans abonnement pour envoyer des alertes instantanées, rappels de RDV ou invitations soirées.</p>
           </div>
         </div>
 
-        <div class="ab-sms-packs-grid">
+        <div class="ab-sms-packs-grid" style="max-width:1200px;margin:0 auto;">
           <div class="ab-sms-pack-card">
             <span class="sms-pack-tag">DÉCOUVERTE</span>
             <div class="sms-pack-count">100 SMS</div>
@@ -650,170 +816,7 @@
     </section>
 
     <!-- ==========================================================
-         4. CALCULATEUR INTERACTIF STRIPE : SIMULEZ VOTRE BUDGET
-         ========================================================== -->
-    <section class="section section-wide" id="simulateur-budget">
-      <div class="center">
-        <p class="section-script">votre devis en direct en 3 clics</p>
-        <h2 class="section-title">CALCULATEUR DE BUDGET <mark class="pop-mark pop-mark-yellow">SUR-MESURE</mark></h2>
-        <p class="section-lead" style="max-width:700px;margin:0.5rem auto 2rem;">
-          Sélectionnez votre formule et cochez les options souhaitées. Le total s'actualise en temps réel :
-        </p>
-      </div>
-
-      <div class="ab-calc-wrapper">
-        <div class="ab-calc-controls-col">
-          <!-- 1. Choix de la formule -->
-          <div class="calc-step-box">
-            <span class="calc-step-badge">ÉTAPE 1</span>
-            <h3>1. Choisissez votre formule de base</h3>
-            <div class="calc-plan-radio-group">
-              <label class="calc-plan-radio">
-                <input type="radio" name="calc-plan" value="none" />
-                <span class="calc-radio-card">
-                  <span class="calc-plan-label">Sans formule de base</span>
-                  <span class="calc-plan-amount">0 €</span>
-                </span>
-              </label>
-              <label class="calc-plan-radio">
-                <input type="radio" name="calc-plan" value="core" />
-                <span class="calc-radio-card">
-                  <span class="calc-plan-label">⚡ Coup d'envoi</span>
-                  <span class="calc-plan-amount" data-plan-price="core">29 €/m</span>
-                </span>
-              </label>
-              <label class="calc-plan-radio">
-                <input type="radio" name="calc-plan" value="engagement" checked />
-                <span class="calc-radio-card is-fav">
-                  <span class="calc-plan-label">⭐ Le Club</span>
-                  <span class="calc-plan-amount" data-plan-price="engagement">59 €/m</span>
-                </span>
-              </label>
-              <label class="calc-plan-radio">
-                <input type="radio" name="calc-plan" value="place" />
-                <span class="calc-radio-card">
-                  <span class="calc-plan-label">📅 Sur Place</span>
-                  <span class="calc-plan-amount" data-plan-price="place">79 €/m</span>
-                </span>
-              </label>
-              <label class="calc-plan-radio">
-                <input type="radio" name="calc-plan" value="live" />
-                <span class="calc-radio-card">
-                  <span class="calc-plan-label">📺 Le Grand Jeu</span>
-                  <span class="calc-plan-amount" data-plan-price="live">89 €/m</span>
-                </span>
-              </label>
-              <label class="calc-plan-radio">
-                <input type="radio" name="calc-plan" value="full" />
-                <span class="calc-radio-card">
-                  <span class="calc-plan-label">🚀 La Totale</span>
-                  <span class="calc-plan-amount" data-plan-price="full">129 €/m</span>
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <!-- 2. Choix des add-ons mensuels -->
-          <div class="calc-step-box" style="margin-top:1.5rem;">
-            <span class="calc-step-badge">ÉTAPE 2</span>
-            <h3>2. Cochez vos add-ons mensuels à la carte</h3>
-            <div class="calc-addons-checkbox-list">
-              <label class="calc-addon-check" id="calc-addon-row-vitrine">
-                <input type="checkbox" name="calc-addon" value="vitrine" data-price="20" />
-                <span class="calc-check-content">
-                  <span class="calc-check-title">🌐 Vitrine &amp; Carte Interactive (+20 €/m)</span>
-                  <small class="calc-check-note">Inclus d'office dans Sur Place &amp; La Totale</small>
-                </span>
-              </label>
-              <label class="calc-addon-check" id="calc-addon-row-rdv">
-                <input type="checkbox" name="calc-addon" value="rdv" data-price="20" />
-                <span class="calc-check-content">
-                  <span class="calc-check-title">📅 Prise de RDV en Ligne 0% (+20 €/m)</span>
-                  <small class="calc-check-note">Inclus d'office dans Sur Place &amp; La Totale</small>
-                </span>
-              </label>
-              <label class="calc-addon-check" id="calc-addon-row-moments">
-                <input type="checkbox" name="calc-addon" value="moments" data-price="20" />
-                <span class="calc-check-content">
-                  <span class="calc-check-title">🍷 Moments VIP &amp; Ateliers (+20 €/m)</span>
-                  <small class="calc-check-note">Inclus d'office dans Sur Place &amp; La Totale</small>
-                </span>
-              </label>
-              <label class="calc-addon-check" id="calc-addon-row-passport">
-                <input type="checkbox" name="calc-addon" value="passport" data-price="19" />
-                <span class="calc-check-content">
-                  <span class="calc-check-title">🎟️ Passeport Fidélité Mobile (+19 €/m)</span>
-                  <small class="calc-check-note">Inclus d'office dans Le Club &amp; La Totale</small>
-                </span>
-              </label>
-              <label class="calc-addon-check" id="calc-addon-row-referral">
-                <input type="checkbox" name="calc-addon" value="referral" data-price="12" />
-                <span class="calc-check-content">
-                  <span class="calc-check-title">🤝 Module Parrainage Ambassadeurs (+12 €/m)</span>
-                  <small class="calc-check-note">Inclus d'office dans Le Club &amp; La Totale</small>
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <!-- 3. Facturation -->
-          <div class="calc-step-box" style="margin-top:1.5rem;">
-            <span class="calc-step-badge">ÉTAPE 3</span>
-            <h3>3. Périodicité souhaitée</h3>
-            <div class="calc-period-toggle">
-              <button type="button" class="calc-period-btn active" id="calc-period-monthly">Facturation Mensuelle</button>
-              <button type="button" class="calc-period-btn" id="calc-period-annual">Facturation Annuelle (-20% · 2 mois offerts)</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Colonne Récapitulatif -->
-        <div class="ab-calc-summary-col">
-          <div class="ab-calc-summary-card">
-            <div class="calc-summary-head">
-              <span class="calc-summary-title">RÉCAPITULATIF STRIPE</span>
-              <span class="calc-live-pill">⚡ TEMPS RÉEL</span>
-            </div>
-
-            <div class="calc-summary-body">
-              <div class="calc-sum-line">
-                <span id="calc-summary-plan-name">Formule « Le Club »</span>
-                <span id="calc-summary-plan-price">59,00 €</span>
-              </div>
-              <div class="calc-sum-addons-list" id="calc-summary-addons-list">
-                <!-- Rempli en JS -->
-              </div>
-              <div class="calc-sum-discount-line" id="calc-discount-line" hidden>
-                <span>Remise facturation annuelle (2 mois offerts)</span>
-                <span id="calc-discount-amount">- 20 %</span>
-              </div>
-              <div class="calc-sum-divider"></div>
-              <div class="calc-sum-total-row">
-                <div>
-                  <strong>Total facturé :</strong>
-                  <small id="calc-period-caption">par mois sans engagement</small>
-                </div>
-                <div class="calc-sum-big-total" id="calc-total-display">59 €</div>
-              </div>
-            </div>
-
-            <div class="calc-guarantees-mini">
-              <span>✓ 7 jours complets d'essai gratuit</span>
-              <span>✓ 0 € débité aujourd'hui</span>
-              <span>✓ 0 % commission sur vos ventes</span>
-              <span>✓ Résiliation en 1 clic dans l'espace client</span>
-            </div>
-
-            <a class="ticket-btn ticket-btn-large pop-btn-yellow w-full" id="calc-checkout-btn" href="/signup?plan=engagement">
-              Démarrer mon essai gratuit de 7 jours →
-            </a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==========================================================
-         5. FAQ SPÉCIALE TARIFS, PAIEMENTS & STRIPE
+         4. FAQ SPÉCIALE TARIFS, PAIEMENTS & STRIPE
          ========================================================== -->
     <section class="section section-narrow" id="faq-tarifs">
       <div class="center">
@@ -867,7 +870,7 @@
         <details class="faq-item-pop">
           <summary>
             <span class="faq-summary-left">
-              <span class="faq-cat-tag faq-tag-tarifs">🧩 ADD-ONS STRIPE</span>
+              <span class="faq-cat-tag faq-tag-tarifs">🧩 CALCULATEUR &amp; ADD-ONS</span>
               <span>Comment fonctionnent les Add-ons mensuels et les Pass événementiels ?</span>
             </span>
             <span class="faq-chevron" aria-hidden="true">▼</span>
@@ -906,7 +909,7 @@
     </section>
 
     <!-- ==========================================================
-         6. GRAND FINALE CTA
+         5. GRAND FINALE CTA
          ========================================================== -->
     <section class="grand-finale">
       <h2>PRÊT À FAIRE VIBRER VOTRE COMMERCE ?<br />COMMENCEZ GRATUITEMENT EN 2 MINUTES.</h2>
