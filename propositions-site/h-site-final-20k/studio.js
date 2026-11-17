@@ -412,7 +412,7 @@
           <label class="k-label">Expériences affichées dans le bloc Jeux</label>
           <div class="k-choice-grid-3">
             ${[
-              ["loyalty", "🛂 Passeport de fidélité"],
+              ["loyalty", "🎟️ Passeport de fidélité"],
               ["pronostics", "🏆 Pronostics"],
               ["quiz", "🧠 Quiz express"],
               ["calendars", "📅 Calendrier"],
@@ -1252,7 +1252,7 @@
     `).join("");
 
     const activeJeux = Object.entries(v.jeux || {}).filter(([, val]) => val).map(([k]) => {
-      const map = { loyalty: "🛂 Passeport Fidélité", pronostics: "🏆 Pronostics", quiz: "🧠 Quiz", calendars: "📅 Calendrier", duo: "🪞 Duo Miroir", bande: "🎉 Portrait de la Bande" };
+      const map = { loyalty: "🎟️ Passeport Fidélité", pronostics: "🏆 Pronostics", quiz: "🧠 Quiz", calendars: "📅 Calendrier", duo: "🪞 Duo Miroir", bande: "🎉 Portrait de la Bande" };
       return `<span class="kp-v-game-pill">${map[k] || k}</span>`;
     }).join("");
 
@@ -1451,7 +1451,7 @@
       <div class="kp-play-surface" style="${bgStyle};color:#211d16;">
         <div class="k-stripe-bar" style="height:10px;"></div>
         <div class="kp-play-inner">
-          <span class="kp-play-mech-badge">🛂 Google Wallet &amp; Écran d'accueil</span>
+          <span class="kp-play-mech-badge">🎟️ Passeport &amp; Écran d'accueil</span>
           <h3 class="kp-play-title" style="color:#211d16">${escapeHtml(f.name)}</h3>
 
           <div class="kp-fid-box">
