@@ -63,6 +63,14 @@ describe("audit de CI — panne du service contre vulnérabilité", () => {
     ).toBe("propre");
   });
 
+  it("tolère une vulnérabilité dev explicitement documentée sans correctif amont", () => {
+    const sortiePicomatch =
+      "picomatch vulnerable to ReDoS - https://github.com/advisories/GHSA-fc5q-39xc-vjpf";
+    expect(verdict({ code: 1, sortie: sortiePicomatch, essai: 1 })).toBe(
+      "propre",
+    );
+  });
+
   it("une vulnérabilité échoue TOUT DE SUITE, sans reprise", () => {
     // Rejouer une commande qui a correctement répondu « il y a un problème »
     // ne ferait que retarder la mauvaise nouvelle.
