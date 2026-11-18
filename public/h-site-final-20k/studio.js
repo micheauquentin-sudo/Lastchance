@@ -1009,6 +1009,8 @@
         <div class="k-choice-grid-4">${fondsHtml}</div>
       </div>
       ${renderVerificationStepSummary("fidelite", "Votre écosystème Passeport Fidélité + Parrainage + Jackpot est prêt !")}
+    `;
+  }
 
   /* ==========================================================================
      5. ÉTAPES DU STUDIO CALENDRIER SURPRISE (Avent, Countdown, Mensuel)
@@ -1130,9 +1132,6 @@
       `;
     }
     return "";
-  }
-
-    `;
   }
 
   function renderVerificationStepSummary(modKey, heading) {
