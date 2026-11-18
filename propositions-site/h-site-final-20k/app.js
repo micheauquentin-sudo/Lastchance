@@ -2255,6 +2255,13 @@
 
       if (totalDisplay) totalDisplay.textContent = `${totalMonthly} €`;
 
+      const mobileTotalPill = $("#mobile-calc-total-pill");
+      if (mobileTotalPill) {
+        mobileTotalPill.textContent = onetimeAddonsCost > 0
+          ? `${totalMonthly} €/m (+ ${onetimeAddonsCost} €)`
+          : `${totalMonthly} €/mois`;
+      }
+
       // Affichage du sous-total ponctuel si des pass sont cochés
       if (onetimeBox && onetimeAmount) {
         if (onetimeAddonsCost > 0) {

@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <base href="/h-site-final-20k/" />
-  <title>Abonnements &amp; Add-ons Stripe — Lastchance</title>
-  <meta name="description" content="Découvrez nos 5 formules et notre calculateur d'add-ons Stripe à la carte pour commerces. Grand tableau comparatif, options transparentes, zéro commission et 7 jours d'essai gratuit." />
+  <title>Abonnements &amp; Formules Sur-Mesure — Lastchance</title>
+  <meta name="description" content="Découvrez nos 5 formules et notre calculateur d'options à la carte pour commerces. Grand tableau comparatif, options transparentes, zéro commission et 7 jours d'essai gratuit." />
   <link rel="icon" type="image/svg+xml" href="img/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -41,7 +41,7 @@
         <nav class="annex-breadcrumb" aria-label="Fil d'Ariane">
           <a href="index.html">Accueil</a>
           <span aria-hidden="true">›</span>
-          <span class="bc-current">💎 Formules &amp; Add-ons Stripe</span>
+          <span class="bc-current">💎 Formules &amp; Add-ons à la Carte</span>
         </nav>
       </div>
 
@@ -57,7 +57,7 @@
           </h1>
 
           <p class="hero-annex-sub">
-            De l'animation de comptoir à la solution tout-en-un avec réservations, écran géant et passeport fidélité : choisissez votre formule ou composez sur-mesure grâce à notre calculateur d'add-ons Stripe.
+            De l'animation de comptoir à la solution tout-en-un avec réservations, écran géant et passeport fidélité : choisissez votre formule ou composez sur-mesure grâce à notre calculateur d'options à la carte.
           </p>
 
           <div class="hero-cta-row">
@@ -91,7 +91,7 @@
               </div>
               <ul class="ab-hero-checklist">
                 <li><span class="chk-icon">✓</span> <b>0 % commission</b> sur toutes vos ventes &amp; réservations</li>
-                <li><span class="chk-icon">✓</span> <b>Sans engagement</b> · Résiliation libre en 1 clic sur Stripe</li>
+                <li><span class="chk-icon">✓</span> <b>Sans engagement</b> · Résiliation libre en 1 clic sans préavis</li>
                 <li><span class="chk-icon">✓</span> <b>Essai 7 jours 100% gratuit</b> sans prélèvement immédiat</li>
                 <li><span class="chk-icon">✓</span> <b>Scans illimités</b> &amp; affiches prêtes à imprimer</li>
               </ul>
@@ -357,7 +357,7 @@
             <!-- Catégorie 5 : Engagements & Support -->
             <tr class="ab-cat-header-row">
               <th colspan="6" scope="colgroup">
-                <span class="ab-cat-tag">🛡️ 5. GARANTIES, STRIPE &amp; SUPPORT COMMERÇANT</span>
+                <span class="ab-cat-tag">🛡️ 5. GARANTIES, FACTURATION &amp; SUPPORT COMMERÇANT</span>
               </th>
             </tr>
             <tr>
@@ -435,7 +435,7 @@
 
     <!-- ==========================================================
          3. PIÈCE MAÎTRESSE 2 : LE CALCULATEUR GÉANT & ADD-ONS SUR-MESURE
-         Fusion complète et directe des add-ons Stripe et du calculateur
+         Fusion complète et directe des options et du calculateur
          ========================================================== -->
     <section class="section section-wide" id="simulateur-geant">
       <div id="addons-stripe" style="position:relative;top:-70px;"></div>
@@ -725,11 +725,11 @@
           </div>
         </div>
 
-        <!-- COLONNE RÉCAPITULATIF STRIPE EN DIRECT -->
+        <!-- COLONNE RÉCAPITULATIF DU PANIER EN DIRECT -->
         <div class="ab-calc-summary-col">
-          <div class="ab-calc-summary-card">
+          <div class="ab-calc-summary-card" id="ab-calc-summary-box">
             <div class="calc-summary-head">
-              <span class="calc-summary-title">RÉCAPITULATIF STRIPE</span>
+              <span class="calc-summary-title">RÉCAPITULATIF DU PANIER</span>
               <span class="calc-live-pill">⚡ TEMPS RÉEL</span>
             </div>
 
@@ -813,15 +813,26 @@
           </div>
         </div>
       </div>
+
+      <!-- Barre mobile flottante de suivi du panier -->
+      <div class="mobile-calc-sticky-bar" id="mobile-calc-sticky-bar" aria-label="Suivi du panier en direct">
+        <div class="mobile-calc-inner">
+          <div class="mobile-calc-info">
+            <span class="mobile-calc-title">VOTRE PANIER</span>
+            <b class="mobile-calc-price" id="mobile-calc-total-pill">59 €/mois</b>
+          </div>
+          <a href="abonnements.html#ab-calc-summary-box" class="ticket-btn pop-btn-yellow mobile-calc-btn">Voir mon panier ↓</a>
+        </div>
+      </div>
     </section>
 
     <!-- ==========================================================
-         4. FAQ SPÉCIALE TARIFS, PAIEMENTS & STRIPE
+         4. FAQ SPÉCIALE TARIFS & PAIEMENTS SÉCURISÉS
          ========================================================== -->
     <section class="section section-narrow" id="faq-tarifs">
       <div class="center">
         <p class="section-script">transparence &amp; questions fréquentes</p>
-        <h2 class="section-title">TOUT SAVOIR SUR <mark class="pop-mark pop-mark-yellow">LES TARIFS ET STRIPE</mark></h2>
+        <h2 class="section-title">TOUT SAVOIR SUR <mark class="pop-mark pop-mark-yellow">LES TARIFS &amp; LA FACTURATION</mark></h2>
         <p class="section-lead" style="max-width:640px;margin:0.5rem auto 2rem;">
           Des réponses claires et sans jargon pour commerçants sereins :
         </p>
@@ -834,7 +845,6 @@
               <span class="faq-cat-tag faq-tag-tarifs">⚡ SANS ENGAGEMENT</span>
               <span>Puis-je changer d'offre ou résilier à tout moment ?</span>
             </span>
-            <span class="faq-chevron" aria-hidden="true">▼</span>
           </summary>
           <p>
             <b>Oui, en toute liberté !</b> Toutes nos offres mensuelles sont strictement sans engagement de durée. Vous pouvez basculer d'une formule à l'autre ou résilier en un clic directement depuis votre tableau de bord commerçant. Vous conservez l'accès complet jusqu'au terme de la période en cours, sans pénalité ni frais cachés.
@@ -847,7 +857,6 @@
               <span class="faq-cat-tag faq-tag-tarifs">🎁 7 JOURS D'ESSAI</span>
               <span>Comment se déroule l'essai gratuit de 7 jours ?</span>
             </span>
-            <span class="faq-chevron" aria-hidden="true">▼</span>
           </summary>
           <p>
             Dès votre inscription, vous disposez de <b>7 jours complets pour explorer toutes les fonctionnalités</b> de votre formule, générer vos QR codes dans le Studio et les faire tester à vos clients au comptoir. Si vous décidez de ne pas poursuivre avant la fin du 7e jour, aucun prélèvement n'est effectué.
@@ -860,7 +869,6 @@
               <span class="faq-cat-tag faq-tag-tarifs">⚡ 0 % COMMISSION</span>
               <span>Prenez-vous une commission sur mes ventes ou réservations ?</span>
             </span>
-            <span class="faq-chevron" aria-hidden="true">▼</span>
           </summary>
           <p>
             <b>Non, strictement 0 % !</b> Contrairement aux plateformes qui prélèvent entre 15 % et 30 % sur chaque réservation ou commande, Lastchance fonctionne exclusivement sur un abonnement fixe. 100 % des recettes générées par votre commerce restent dans votre poche.
@@ -873,7 +881,6 @@
               <span class="faq-cat-tag faq-tag-tarifs">🧩 CALCULATEUR &amp; ADD-ONS</span>
               <span>Comment fonctionnent les Add-ons mensuels et les Pass événementiels ?</span>
             </span>
-            <span class="faq-chevron" aria-hidden="true">▼</span>
           </summary>
           <p>
             Les <b>options mensuelles</b> (+20 € vitrine, +19 € passeport fidélité, etc.) s'ajoutent à votre abonnement mensuel et peuvent être résiliées à tout instant. Les <b>pass événementiels</b> (chasse au trésor, calendrier de l'Avent, quiz événementiel) sont payés une seule fois sans aucun renouvellement automatique : idéal pour animer une fête de fin d'année ou un tournoi sportif.
@@ -883,10 +890,9 @@
         <details class="faq-item-pop">
           <summary>
             <span class="faq-summary-left">
-              <span class="faq-cat-tag faq-tag-tarifs">🔒 SÉCURITÉ STRIPE</span>
+              <span class="faq-cat-tag faq-tag-tarifs">🔒 PAIEMENT SÉCURISÉ</span>
               <span>Mes coordonnées bancaires sont-elles sécurisées ?</span>
             </span>
-            <span class="faq-chevron" aria-hidden="true">▼</span>
           </summary>
           <p>
             <b>Oui, avec le standard bancaire le plus élevé.</b> Nous confions l'ensemble des transactions à Stripe, leader mondial du paiement sécurisé en ligne (certifié PCI-DSS niveau 1). Vos coordonnées bancaires ne sont jamais stockées sur nos serveurs. Vos factures avec mention de TVA vous sont adressées automatiquement chaque mois.
@@ -899,10 +905,9 @@
               <span class="faq-cat-tag faq-tag-tarifs">🧾 FACTURATION &amp; TVA</span>
               <span>Puis-je récupérer la TVA sur mes factures Lastchance ?</span>
             </span>
-            <span class="faq-chevron" aria-hidden="true">▼</span>
           </summary>
           <p>
-            <b>Oui, nos abonnements sont des charges d'exploitation déductibles.</b> Vos factures comportent toutes les mentions légales requises (numéro de TVA intracommunautaire, raison sociale, date et détails des modules) et sont téléchargeables en PDF à tout moment depuis votre compte Stripe.
+            <b>Oui, nos abonnements sont des charges d'exploitation déductibles.</b> Vos factures comportent toutes les mentions légales requises (numéro de TVA intracommunautaire, raison sociale, date et détails des modules) et sont téléchargeables en PDF à tout moment depuis votre compte client.
           </p>
         </details>
       </div>
