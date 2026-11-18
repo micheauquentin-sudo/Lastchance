@@ -702,7 +702,7 @@
       } else if (r.gameType === "scratch") {
         specificField = `
           <div class="k-field-group">
-            <label class="k-label">Finition du Ticket à Gratter</label>
+            <label class="k-label">Finition de la carte à gratter digitale</label>
             <div class="k-choice-grid-4">
               ${[
                 ["#fcca59", "Ticket Or"],
