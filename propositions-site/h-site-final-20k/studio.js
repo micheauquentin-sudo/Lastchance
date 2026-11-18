@@ -29,10 +29,10 @@
     });
   }
 
-  // Lecture des paramètres d'URL (?module=vitrine|roue|pronostics|fidelite&preset=...&mech=...&sector=...)
+  // Lecture des paramètres d'URL (?module=vitrine|roue|pronostics|fidelite|calendrier&preset=...&mech=...&sector=...)
   const params = new URLSearchParams(window.location.search);
   let currentModule = params.get("module") || drafts.lastModule || "vitrine";
-  if (!["vitrine", "roue", "pronostics", "fidelite"].includes(currentModule)) {
+  if (!["vitrine", "roue", "pronostics", "fidelite", "calendrier"].includes(currentModule)) {
     currentModule = "vitrine";
   }
 
@@ -100,6 +100,12 @@
       { cle: "cadeaux", titre: "Mes cadeaux en points", resume: "Paliers de récompenses (dès 200 pts = 2 visites min, stock fini obligatoire)." },
       { cle: "parrainage", titre: "Le parrainage", resume: "Proposez à vos habitués d'inviter leurs proches et choisissez la double récompense." },
       { cle: "allure", titre: "L'allure du passeport", resume: "Choisissez l'un des 10 fonds d'écran illustrés derrière la carte de fidélité." },
+    ],
+    calendrier: [
+      { cle: "format", titre: "Format & Période", resume: "Calendrier de l'Avent 24 jours, Compte à rebours 7 jours, Mois anniversaire ou Saison." },
+      { cle: "surprises", titre: "Surprises & Récompenses", resume: "Définissez ce que vos clients découvrent en ouvrant la case du jour." },
+      { cle: "allure", titre: "Habillage & Thème visuel", resume: "Choisissez l'ambiance graphique de votre calendrier sur smartphone." },
+      { cle: "diffusion", titre: "Aperçu & Diffusion QR", resume: "Générez votre affiche comptoir et vos QR codes pour sacs et emballages (Uber Eats, Deliveroo)." },
     ],
   };
 
@@ -226,6 +232,7 @@
     else if (currentModule === "roue") bodyHtml = renderRoueStep(step.cle);
     else if (currentModule === "pronostics") bodyHtml = renderPronosticsStep(step.cle);
     else if (currentModule === "fidelite") bodyHtml = renderFideliteStep(step.cle);
+    else if (currentModule === "calendrier") bodyHtml = renderCalendrierStep(step.cle);
 
     const prevDisabled = currentStepIndex === 0 ? "disabled" : "";
     const isLast = currentStepIndex === steps.length - 1;
@@ -1005,6 +1012,128 @@
     `;
   }
 
+  /* ==========================================================================
+     5. ÉTAPES DU STUDIO CALENDRIER SURPRISE (Avent, Countdown, Mensuel)
+     ========================================================================== */
+  function renderCalendrierStep(cle) {
+    const c = drafts.calendrier || (drafts.calendrier = { type: "avent", name: "Calendrier des Surprises", nbCases: 24, theme: "kermesse", surprises: [], qrDiffusion: "comptoir" });
+    if (cle === "format") {
+      return `
+        <div class="k-field-group">
+          <label class="k-label" for="cal-name">Nom de votre Calendrier des Surprises</label>
+          <input id="cal-name" type="text" class="k-input" value="${escapeAttr(c.name)}" data-bind="calendrier.name" placeholder="Ex: L'Avent Gourmand, Compte à Rebours Festif…" />
+          <small class="k-help">Affiché en en-tête sur le smartphone de vos clients et sur vos affiches comptoir.</small>
+        </div>
+
+        <div class="k-field-group">
+          <label class="k-label">Format de votre calendrier</label>
+          <div class="k-choice-grid-2">
+            <button type="button" class="k-choice-tile ${c.type === "avent" ? "active" : ""}" data-action="set-cal-type" data-val="avent" data-cases="24">
+              <strong>🎄 Calendrier de l'Avent (24 jours)</strong>
+              <small>Idéal pour fidéliser tout le mois de décembre jusqu'à Noël.</small>
+            </button>
+            <button type="button" class="k-choice-tile ${c.type === "countdown" ? "active" : ""}" data-action="set-cal-type" data-val="countdown" data-cases="7">
+              <strong>⏳ Compte à rebours 7 jours</strong>
+              <small>Parfait avant une soirée événement, une inauguration ou une semaine promo.</small>
+            </button>
+            <button type="button" class="k-choice-tile ${c.type === "mensuel" ? "active" : ""}" data-action="set-cal-type" data-val="mensuel" data-cases="30">
+              <strong>🗓️ Mois Anniversaire (30 jours)</strong>
+              <small>Célébrez l'anniversaire de votre établissement pendant un mois complet.</small>
+            </button>
+            <button type="button" class="k-choice-tile ${c.type === "flash" ? "active" : ""}" data-action="set-cal-type" data-val="flash" data-cases="12">
+              <strong>⚡ Sprint 12 Jours Magiques</strong>
+              <small>12 jours de surprises intenses pour booster la fréquentation creuse.</small>
+            </button>
+          </div>
+        </div>
+
+        <div class="k-field-group">
+          <label class="k-label">Nombre de cases actives : <b>${c.nbCases} cases</b></label>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="button" class="k-choice-pill ${c.nbCases === 7 ? "active" : ""}" data-action="set-field" data-path="calendrier.nbCases" data-val="7">7 jours</button>
+            <button type="button" class="k-choice-pill ${c.nbCases === 12 ? "active" : ""}" data-action="set-field" data-path="calendrier.nbCases" data-val="12">12 jours</button>
+            <button type="button" class="k-choice-pill ${c.nbCases === 24 ? "active" : ""}" data-action="set-field" data-path="calendrier.nbCases" data-val="24">24 jours</button>
+            <button type="button" class="k-choice-pill ${c.nbCases === 30 ? "active" : ""}" data-action="set-field" data-path="calendrier.nbCases" data-val="30">30 jours</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (cle === "surprises") {
+      const sList = (c.surprises || []).map((s, idx) => `
+        <div class="k-item-editor-row" style="align-items:center;">
+          <strong style="min-width:65px;">Jour ${s.jour} :</strong>
+          <input type="text" class="k-input" style="flex:1;" value="${escapeAttr(s.gain)}" data-bind-surprise="${idx}" />
+        </div>
+      `).join("");
+
+      return `
+        <div class="k-field-group">
+          <label class="k-label">Pépites &amp; Récompenses cachées dans les cases</label>
+          <p class="k-help" style="margin-bottom:0.75rem;">Vos clients débloquent une nouvelle case par jour. Vous pouvez varier cafés offerts, pourcentages de remise, points fidélité ou douceurs maison :</p>
+          <div class="k-items-stack" style="max-height:300px;overflow-y:auto;padding-right:0.35rem;">
+            ${sList}
+          </div>
+          <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button type="button" class="k-btn-secondary" data-action="reset-cal-surprises" style="font-size:0.78rem;">🔄 Réinitialiser les surprises par défaut</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (cle === "allure") {
+      const themes = [
+        { key: "kermesse", label: "🎪 Kermesse Dorée", desc: "Couleurs festives et dorées, parfait toute l'année" },
+        { key: "hiver", label: "❄️ Hiver & Neige", desc: "Bleu givré et blanc, esprit Noël et fêtes" },
+        { key: "nuit", label: "✨ Nuit VIP & Or", desc: "Noir premium et étoiles dorées scintillantes" },
+        { key: "bonbon", label: "🍬 Bonbon Pastel", desc: "Douceur rose et menthe gourmande" },
+      ];
+      const themesHtml = themes.map((t) => `
+        <button type="button" class="k-choice-tile ${(c.theme || "kermesse") === t.key ? "active" : ""}" data-action="set-field" data-path="calendrier.theme" data-val="${t.key}">
+          <strong>${t.label}</strong>
+          <small>${t.desc}</small>
+        </button>
+      `).join("");
+
+      const fondsHtml = ["aucun", ...CB.FOND_KEYS].map((fk) => `
+        <button type="button" class="k-choice-tile ${(c.fond || "aucun") === fk ? "active" : ""}" data-action="set-field" data-path="calendrier.fond" data-val="${fk}">
+          ${fk === "aucun" ? `<span style="font-size:1.3rem">🎨</span><strong>Fond Uni</strong>` : `<img src="fonds/${fk}-vignette.webp" alt="${CB.FOND_LABELS[fk]}" class="k-fond-thumb" loading="lazy" /><strong>${CB.FOND_LABELS[fk]}</strong>`}
+        </button>
+      `).join("");
+
+      return `
+        <div class="k-field-group">
+          <label class="k-label">Ambiance graphique des cases</label>
+          <div class="k-choice-grid-2">${themesHtml}</div>
+        </div>
+        <div class="k-field-group">
+          <label class="k-label">Fond d'écran thématique</label>
+          <div class="k-choice-grid-4">${fondsHtml}</div>
+        </div>
+      `;
+    }
+
+    if (cle === "diffusion") {
+      return `
+        <div class="k-field-group">
+          <label class="k-label">Points de contact recommandés pour votre QR Code Calendrier</label>
+          <div class="k-choice-grid-2">
+            <button type="button" class="k-choice-tile ${(c.qrDiffusion || "comptoir") === "comptoir" ? "active" : ""}" data-action="set-field" data-path="calendrier.qrDiffusion" data-val="comptoir">
+              <strong>🏪 Comptoir &amp; Tables</strong>
+              <small>Chevalet de table, ardoise d'accueil, comptoir de commande.</small>
+            </button>
+            <button type="button" class="k-choice-tile ${(c.qrDiffusion || "comptoir") === "emport_livraison" ? "active" : ""}" data-action="set-field" data-path="calendrier.qrDiffusion" data-val="emport_livraison">
+              <strong>🛵 Sacs VAE, Uber Eats &amp; Deliveroo</strong>
+              <small>Flyer ou sticker sur le sac pour convertir vos clients distants en habitués.</small>
+            </button>
+          </div>
+        </div>
+        ${renderVerificationStepSummary("calendrier", "Votre Calendrier de Surprises interactif est prêt à émerveiller vos clients !")}
+      `;
+    }
+    return "";
+  }
+
   function renderVerificationStepSummary(modKey, heading) {
     return `
       <div class="k-verif-card">
@@ -1019,7 +1148,18 @@
 
   /* ── LIAISON DES ÉVÉNEMENTS DU FORMULAIRE DE GAUCHE ── */
   function bindFormEvents(container) {
-    $$("[data-bind]", container).forEach((inp) => {
+        $$("[data-bind-surprise]", container).forEach((inp) => {
+      inp.addEventListener("input", () => {
+        const idx = Number(inp.dataset.bindSurprise);
+        if (drafts.calendrier && drafts.calendrier.surprises && drafts.calendrier.surprises[idx]) {
+          drafts.calendrier.surprises[idx].gain = inp.value;
+          triggerAutoSave();
+          renderPreviewColumn();
+        }
+      });
+    });
+
+$$("[data-bind]", container).forEach((inp) => {
       inp.addEventListener("input", () => {
         const [mod, key] = inp.dataset.bind.split(".");
         drafts[mod][key] = inp.type === "number" ? Number(inp.value) : inp.value;
@@ -1059,6 +1199,25 @@
               drafts.vitrine.customFiches = [];
             }
           }
+          triggerAutoSave();
+          renderFormColumn();
+          renderPreviewColumn();
+        } else if (act === "set-cal-type") {
+          drafts.calendrier.type = el.dataset.val;
+          drafts.calendrier.nbCases = Number(el.dataset.cases) || 24;
+          triggerAutoSave();
+          renderFormColumn();
+          renderPreviewColumn();
+        } else if (act === "reset-cal-surprises") {
+          drafts.calendrier.surprises = [
+            { jour: 1, gain: "☕ 1 Boisson ou café offert" },
+            { jour: 2, gain: "🎟️ +100 points fidélité bonus" },
+            { jour: 3, gain: "🍪 1 Douceur maison offerte" },
+            { jour: 4, gain: "🎁 -15% sur votre commande" },
+            { jour: 5, gain: "🥤 1 Boisson fraîche au choix" },
+            { jour: 6, gain: "🎲 1 Chance supplémentaire au jeu" },
+            { jour: 7, gain: "🏆 Surprise spéciale de la maison" },
+          ];
           triggerAutoSave();
           renderFormColumn();
           renderPreviewColumn();
@@ -1210,6 +1369,13 @@
       if (urlPill) urlPill.textContent = `lastchance.app/passeport/mon-programme`;
       if (tools) tools.innerHTML = `<span class="k-tool-pill">1 visite = 100 pts</span>`;
       phone.innerHTML = buildFidelitePreviewHTML();
+    } else if (currentModule === "calendrier") {
+      const cName = drafts.calendrier?.name || "mon-calendrier";
+      const slug = encodeURIComponent(cName.toLowerCase().replace(/[^a-z0-9]+/g, "-")).slice(0, 24);
+      if (urlPill) urlPill.textContent = `lastchance.app/cal/${slug}`;
+      if (tools) tools.innerHTML = `<span class="k-tool-pill">Cases : ${drafts.calendrier?.nbCases || 24}j · ${drafts.calendrier?.theme || "kermesse"}</span>`;
+      phone.innerHTML = buildCalendrierPreviewHTML();
+      bindCalendrierInteractive(phone);
     }
   }
 
@@ -1488,6 +1654,82 @@
     `;
   }
 
+  
+  function buildCalendrierPreviewHTML() {
+    const c = drafts.calendrier || { type: "avent", name: "Calendrier des Surprises", nbCases: 24, theme: "kermesse", surprises: [] };
+    const hasFond = c.fond && c.fond !== "aucun";
+    const bgStyle = hasFond
+      ? `background-image: linear-gradient(180deg, rgba(253,246,227,0.85), rgba(253,246,227,0.95)), url('fonds/${c.fond}-640.webp'); background-size: cover;`
+      : (c.theme === "hiver" ? "background: linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 100%);"
+        : c.theme === "nuit" ? "background: linear-gradient(180deg, #181824 0%, #2b2b3d 100%); color:#fff;"
+        : c.theme === "bonbon" ? "background: linear-gradient(180deg, #fdf2f8 0%, #fce7f3 100%);"
+        : "background: #fdf6e3;");
+
+    const textColor = c.theme === "nuit" ? "#ffffff" : "#211d16";
+    const boxBg = c.theme === "nuit" ? "background:#232136;border-color:#ffd93d;color:#fff;" : "background:#ffffff;";
+
+    const nb = c.nbCases || 24;
+    const defaultSurprises = [
+      "☕ Boisson offerte", "🎟️ +100 pts fidélité", "🍪 Douceur maison", "🎁 -15% commande",
+      "🥤 Boisson fraîche", "🎲 1 Chance au jeu", "🍰 Dessert offert", "🎉 Goodie surprise"
+    ];
+
+    let gridCards = "";
+    for (let day = 1; day <= nb; day++) {
+      const surpriseObj = (c.surprises || []).find((s) => s.jour === day);
+      const gainText = surpriseObj ? surpriseObj.gain : defaultSurprises[(day - 1) % defaultSurprises.length];
+      const isOpened = day < 3;
+      const isToday = day === 3;
+
+      let cardClass = "cs-mini-cal-card";
+      if (isOpened) cardClass += " is-opened";
+      else if (isToday) cardClass += " is-today";
+      else cardClass += " is-locked";
+
+      gridCards += `
+        <div class="${cardClass}" data-cal-day="${day}" style="${boxBg}">
+          <span class="cs-mini-day-badge">${day}</span>
+          ${isOpened ? `<div class="cs-mini-gain-text">✅ ${escapeHtml(gainText)}</div>` : isToday ? `<div class="cs-mini-gain-pulse">🎁 Ouvrir !</div>` : `<div class="cs-mini-locked-icon">🔒</div>`}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="kp-play-surface" style="${bgStyle};color:${textColor};padding:0.75rem 0.65rem 1.25rem;">
+        <div class="k-stripe-bar" style="height:10px;margin-bottom:0.75rem;"></div>
+        <div class="kp-play-inner" style="padding:0;">
+          <span class="kp-play-mech-badge">🗓️ Calendrier des Surprises · ${nb} jours</span>
+          <h3 class="kp-play-title" style="color:${textColor};margin-bottom:0.35rem;">${escapeHtml(c.name)}</h3>
+          <p style="font-size:0.75rem;margin:0 0 0.75rem;opacity:0.9;">
+            ${c.qrDiffusion === "emport_livraison" ? "🛵 Disponible au comptoir &amp; dans vos sacs Uber Eats / Deliveroo" : "🏪 Scannez chaque jour au comptoir pour révéler votre cadeau !"}
+          </p>
+
+          <div class="cs-mini-cal-grid" style="display:grid;grid-template-columns:repeat(3, 1fr);gap:0.45rem;margin-bottom:0.85rem;">
+            ${gridCards}
+          </div>
+
+          <div id="cs-today-reveal-banner" style="background:#e6f9ef;color:#161317;border:2px solid #161317;border-radius:12px;padding:0.5rem 0.7rem;text-align:center;font-size:0.78rem;font-weight:800;box-shadow:3px 3px 0 #161317;">
+            🎁 Case du jour n°3 débloquée : <b>🍪 Douceur maison offerte</b>
+            <div style="font-size:0.7rem;font-weight:600;margin-top:0.2rem;">Code retrait : <code style="background:#ffd93d;padding:0.1rem 0.35rem;border-radius:4px;border:1px solid #161317;">CAL-3819</code></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindCalendrierInteractive(root) {
+    const todayCard = $(".cs-mini-cal-card.is-today", root);
+    const banner = $("#cs-today-reveal-banner", root);
+    if (!todayCard || !banner) return;
+    todayCard.style.cursor = "pointer";
+    todayCard.addEventListener("click", () => {
+      todayCard.classList.remove("is-today");
+      todayCard.classList.add("is-opened");
+      todayCard.innerHTML = `<span class="cs-mini-day-badge">3</span><div class="cs-mini-gain-text">🍪 Douceur</div>`;
+      banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+
   /* ==========================================================================
      MODALE DE PUBLICATION & TUNNEL DE CONVERSION (Guest -> Free Account -> Subscribed)
      ========================================================================== */
@@ -1514,6 +1756,7 @@
       roue: `Jeu Instantané « ${drafts.roue.name} »`,
       pronostics: `Championnat de Pronostics « ${drafts.pronostics.title} »`,
       fidelite: `Passeport de Fidélité « ${drafts.fidelite.name} »`,
+      calendrier: `Calendrier Surprise « ${drafts.calendrier?.name || "Calendrier des Surprises"} »`,
     };
     const currentModTitle = modNames[currentModule];
 
@@ -1598,6 +1841,7 @@
     if (!modal || !phoneLarge) return;
     phoneLarge.innerHTML = $("#k-preview-phone")?.innerHTML || "";
     if (currentModule === "roue") bindInteractivePlayInside(phoneLarge);
+    if (currentModule === "calendrier") bindCalendrierInteractive(phoneLarge);
     modal.hidden = false;
   });
 
