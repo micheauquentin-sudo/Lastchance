@@ -305,6 +305,14 @@ const nextConfig: NextConfig = {
         destination: "/h-site-final-20k/studio.html",
       },
       {
+        source: "/modules",
+        destination: "/h-site-final-20k/modules.html",
+      },
+      {
+        source: "/modules.html",
+        destination: "/h-site-final-20k/modules.html",
+      },
+      {
         source: "/jeu-roue",
         destination: "/h-site-final-20k/jeu-roue.html",
       },

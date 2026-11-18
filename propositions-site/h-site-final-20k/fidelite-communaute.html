@@ -23,6 +23,31 @@
         <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
         <nav aria-label="Navigation principale">
           <a href="index.html">Accueil</a>
+          <div class="nav-dropdown-wrap">
+            <button type="button" class="nav-dropdown-btn" aria-expanded="false" aria-haspopup="true" aria-controls="nav-modules-panel">
+              🧩 Modules <span class="nav-dropdown-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="nav-dropdown-panel" id="nav-modules-panel" hidden>
+              <div class="nav-dropdown-head">
+                <span class="nav-dropdown-title">Les 12 modules Lastchance</span>
+                <a href="modules.html" class="nav-dropdown-all-link">Tout découvrir →</a>
+              </div>
+              <div class="nav-dropdown-grid">
+                <a href="modules.html?m=jeux-instantanes" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎡</span><span class="nav-dropdown-label">Jeux instantanés</span></a>
+                <a href="modules.html?m=passeport-fidelite" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">📔</span><span class="nav-dropdown-label">Passeport fidélité</span></a>
+                <a href="modules.html?m=calendrier" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗓️</span><span class="nav-dropdown-label">Calendrier</span></a>
+                <a href="modules.html?m=evenements-live" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎤</span><span class="nav-dropdown-label">Événements live</span></a>
+                <a href="modules.html?m=pronostics" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🏆</span><span class="nav-dropdown-label">Pronostics</span></a>
+                <a href="modules.html?m=jackpot-collectif" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎰</span><span class="nav-dropdown-label">Jackpot collectif</span></a>
+                <a href="modules.html?m=quiz" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">❓</span><span class="nav-dropdown-label">Quiz</span></a>
+                <a href="modules.html?m=chasse-au-qr" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗺️</span><span class="nav-dropdown-label">Chasse au QR</span></a>
+                <a href="modules.html?m=duo-miroir" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🪞</span><span class="nav-dropdown-label">Duo Miroir</span></a>
+                <a href="modules.html?m=portrait-de-la-bande" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">👥</span><span class="nav-dropdown-label">Portrait de la Bande</span></a>
+                <a href="modules.html?m=ticket-dor" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎟️</span><span class="nav-dropdown-label">Ticket d’Or</span></a>
+                <a href="modules.html?m=missions-coffres" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗝️</span><span class="nav-dropdown-label">Missions &amp; coffres</span></a>
+              </div>
+            </div>
+          </div>
           <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
           <a href="fidelite-communaute.html" class="nav-active">Fidélité &amp; Jackpot</a>
           <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
@@ -73,24 +98,27 @@
               <span class="device-live-dot" aria-hidden="true"></span>
             </div>
 
-            <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-target="#simulateur-trio" title="Scannez avec votre téléphone ou cliquez pour tester en direct">
+            <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-emulate="passeport" data-target="#simulateur-trio" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie carte client">
               <img src="img/qr-passeport.svg" alt="QR Code Passeport Fidélité — Scannez pour tester" width="168" height="168" class="qr-bleed-img" id="page-hero-qr-img" />
               <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">🎟️</div>
             </button>
 
-            <p class="device-callout" id="qr-bubble-text">📱 Scannez pour tester le Passeport ou cliquez</p>
+            <p class="device-callout" id="qr-bubble-text">📱 Scannez pour ouvrir votre carte client ou cliquez</p>
 
             <div class="qr-mode-switch" role="group" aria-label="Choisir l'expérience à tester">
-              <button type="button" class="qr-mode-btn active" data-qr-src="img/qr-passeport.svg" data-qr-badge="🎟️" data-qr-bubble="📱 Scannez pour tester le Passeport !" data-target="#simulateur-trio">
+              <button type="button" class="qr-mode-btn active" data-emulate="passeport" data-qr-src="img/qr-passeport.svg" data-qr-badge="🎟️" data-qr-bubble="📱 Scannez pour tester le Passeport !" data-target="#simulateur-trio">
                 🎟️ Passeport
               </button>
-              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-jackpot.svg" data-qr-badge="🎰" data-qr-bubble="📱 Scannez pour tester le Jackpot !" data-target="#simulateur-trio">
+              <button type="button" class="qr-mode-btn" data-emulate="jackpot" data-qr-src="img/qr-jackpot.svg" data-qr-badge="🎰" data-qr-bubble="📱 Scannez pour tester le Jackpot !" data-target="#simulateur-trio">
                 🎰 Jackpot
               </button>
-              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-parrainage.svg" data-qr-badge="🤝" data-qr-bubble="📱 Scannez pour tester le Parrainage !" data-target="#simulateur-trio">
+              <button type="button" class="qr-mode-btn" data-emulate="parrainage" data-qr-src="img/qr-parrainage.svg" data-qr-badge="🤝" data-qr-bubble="📱 Scannez pour tester le Parrainage !" data-target="#simulateur-trio">
                 🤝 Parrainage
               </button>
             </div>
+            <button type="button" class="annex-emulate-cta" id="page-hero-emulate-cta">
+              📱 Ouvrir l’émulation client en direct →
+            </button>
           </div>
         </div>
       </div>
