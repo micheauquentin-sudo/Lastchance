@@ -626,8 +626,13 @@
       }
     };
 
-    const club = O.FORMULES.find((f) => f.id === "engagement");
-    const live = O.FORMULES.find((f) => f.id === "live");
+    const ROLE_META = {
+      core: { pill: "🎯 L'essentiel comptoir", base: "", cap: "♾️ Scans QR illimités · Libre-service" },
+      engagement: { pill: "⭐ Le plus choisi · Fidélité", base: "✓ Socle Coup d'envoi (15 jeux) inclus +", cap: "♾️ Scans &amp; membres 100% illimités" },
+      place: { pill: "📅 Vitrine &amp; Réservations", base: "✓ Socle Coup d'envoi (15 jeux) inclus +", cap: "♾️ 0 % commission sur vos réservations" },
+      live: { pill: "📺 Soirées &amp; Salle live", base: "✓ Socle Coup d'envoi (15 jeux) inclus +", cap: "📺 Écran géant live 250 joueurs inclus" },
+      full: { pill: "👑 L'intégrale (-19 €)", base: "✓ Le Club + Sur Place + Le Grand Jeu", cap: "🚀 Toute la plateforme · Salle 250 pers." },
+    };
     O.FORMULES.forEach((f, i) => {
       const pill = el("button", {
         type: "button",
@@ -651,28 +656,36 @@
       switcher.appendChild(pill);
       switcherBtns.push(pill);
 
-      let topBadge = "";
-      if (f.id === "full" && f.prix < club.prix + live.prix) {
-        topBadge = `<span class="plan-tag-top">★ Formule Intégrale (-19 €)</span>`;
-      }
-      const chips = [...new Set(f.droits)].map((d) => `<span>${O.label(d)}</span>`).join("");
-      const card = el("article", { class: "plan-ticket", style: `background:${PASS_COLORS[i]}` }, `
-        ${topBadge}
-        <span class="plan-purpose">${f.promesse}</span>
-        <h3>${f.nom}</h3>
-        <div class="plan-amount">${f.prix}<small> €/mois</small></div>
+      const meta = ROLE_META[f.id] || ROLE_META.core;
+      const visiblePoints = meta.base
+        ? f.points.filter((p) => !p.startsWith("Tout Coup d'envoi") && !p.startsWith("Le Club + Sur Place"))
+        : f.points;
+      const card = el("article", {
+        class: `plan-ticket${f.id === "engagement" ? " is-popular-plan" : ""}`,
+        style: `background:${PASS_COLORS[i]}`,
+      }, `
+        <span class="plan-role-pill${f.id === "full" ? " is-top-deal" : ""}">${meta.pill}</span>
+        <div>
+          <span class="plan-purpose">${f.promesse}</span>
+          <h3>${f.nom}</h3>
+        </div>
+        <div class="plan-amount">
+          <span class="plan-price-main">${f.prix}&nbsp;€</span>
+          <small>/mois · sans engagement</small>
+        </div>
         <p class="plan-summary-text">${f.tagline.split(":").slice(1).join(":").trim()}</p>
-        <ul>${f.points.map((p) => `<li>${p}</li>`).join("")}</ul>
-        <div style="margin-top:auto;display:grid;gap:0.65rem">
-          <div style="font-size:0.78rem;line-height:1.35;font-weight:700;color:var(--ink);background:rgba(255,255,255,0.7);padding:0.4rem 0.6rem;border-radius:8px;border:1.5px solid var(--ink);">
-            ${getPlanJaugeDetails(f).badge}
-          </div>
-          <div class="plan-chips">${chips}</div>
+        <div class="plan-composition-box">
+          <span class="plan-comp-kicker">Composition de la formule</span>
+          ${meta.base ? `<div class="plan-included-banner">${meta.base}</div>` : ""}
+          <ul>${visiblePoints.map((p) => `<li><span class="plan-chk-badge" aria-hidden="true">✓</span><span>${p}</span></li>`).join("")}</ul>
+        </div>
+        <div style="margin-top:auto;display:grid;gap:0.55rem">
+          <div class="plan-capacity-pill">${meta.cap}</div>
           <button type="button" class="ticket-btn pop-btn-ink choose-plan-signup-btn" style="text-align:center;width:100%;cursor:pointer;">
-            Choisir ${f.nom} (Essai 7j) →
+            Choisir ${f.nom} (7j offerts) →
           </button>
-          <a class="plan-custom-link" style="text-align:center;font-size:0.8rem;font-weight:700;color:var(--ink);text-decoration:underline;cursor:pointer;" href="#configurateur">
-            Personnaliser dans le simulateur ↓
+          <a class="plan-custom-link" style="text-align:center;font-size:0.78rem;font-weight:700;color:var(--ink);text-decoration:underline;cursor:pointer;" href="#configurateur">
+            Personnaliser avec des options ↓
           </a>
         </div>
       `);
@@ -1654,6 +1667,16 @@
   let currentFcFond = "restaurant";
 
   if (fcFondSwitcher && C) {
+    const applyFcBackground = () => {
+      if (!fcTrioPhone) return;
+      fcTrioPhone.style.backgroundImage = `url('fonds/${currentFcFond}-640.webp')`;
+      const veil = $("#fc-phone-lavis-veil");
+      const lavis = C.LAVIS_SAISON[currentFcFond] || "#FAF6EC";
+      if (veil) {
+        veil.style.background = `linear-gradient(180deg, rgba(250, 246, 236, 0.92) 0%, ${lavis}dd 55%, rgba(250, 246, 236, 0.95) 100%)`;
+      }
+    };
+
     const renderFcFonds = () => {
       fcFondSwitcher.innerHTML = C.FOND_KEYS.map(
         (fk) => `
@@ -1667,18 +1690,12 @@
         btn.addEventListener("click", () => {
           currentFcFond = btn.dataset.fcFond;
           renderFcFonds();
-          if (fcTrioPhone) {
-            const lavis = C.LAVIS_SAISON[currentFcFond] || "#f5e1d0";
-            fcTrioPhone.style.backgroundImage = `linear-gradient(180deg, ${lavis}cc, rgba(25,20,34,0.6)), url('fonds/${currentFcFond}-640.webp')`;
-          }
+          applyFcBackground();
         });
       });
     };
     renderFcFonds();
-    if (fcTrioPhone) {
-      const lavis = C.LAVIS_SAISON[currentFcFond] || "#f5e1d0";
-      fcTrioPhone.style.backgroundImage = `linear-gradient(180deg, ${lavis}cc, rgba(25,20,34,0.6)), url('fonds/${currentFcFond}-640.webp')`;
-    }
+    applyFcBackground();
 
     if (fcOpenStudioBtn) {
       fcOpenStudioBtn.addEventListener("click", () => {
@@ -1691,41 +1708,288 @@
     }
   }
 
-  if (fcBtnVisit && fcBtnRefer) {
-    let fcStamps = 3;
-    let fcRefs = 1;
-    let fcJackpot = 88;
+  const fcPhoneStage = $("#fc-motion-phone-stage");
+  if (fcPhoneStage || (fcBtnVisit && fcBtnRefer)) {
+    let fcPoints = 300;
+    let fcEarnedTotal = 500;
+    let fcVisits = 3;
+    let fcRefs = 2;
+    let fcJackpotCount = 44; // sur 50 (88 %)
+    let fcRedeemedCafe = false;
 
-    /* Navigation interactive interne au smartphone (3 onglets) */
+    const FC_STEPS = [
+      { key: "passeport", caption: "1/4 · Le client valide son passage (+100 pts)" },
+      { key: "cadeaux", caption: "2/4 · Il choisit et débloque ses cadeaux" },
+      { key: "parrainage", caption: "3/4 · Parrainage validé à la 1re visite" },
+      { key: "jackpot", caption: "4/4 · Jackpot collectif, Wallet & Commerce" },
+    ];
+    let fcStepIdx = 0;
+    let fcMotionPlaying = true;
+    let fcMotionTimer = null;
+    let fcStepActionTimer = null;
+
     const fcTabs = $$(".fc-tab-btn");
     const fcPanels = {
       passeport: $("#fc-panel-passeport"),
+      cadeaux: $("#fc-panel-cadeaux"),
       parrainage: $("#fc-panel-parrainage"),
       jackpot: $("#fc-panel-jackpot"),
     };
-    const switchFcTab = (tabName) => {
-      fcTabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.fcTab === tabName));
-      Object.entries(fcPanels).forEach(([name, panel]) => {
-        if (panel) panel.classList.toggle("active", name === tabName);
-      });
+    const fcSegs = $$(".fc-motion-seg");
+    const fcCaptionEl = $("#fc-motion-caption");
+    const fcPauseBtn = $("#fc-motion-play-pause");
+    const fcBtnRedeem = $("#fc-btn-redeem");
+    const fcBtnReplay = $("#fc-btn-replay");
+
+    const updateFcTrioUI = (logHtml, animatePoints = false) => {
+      const pointsValEl = $("#fc-points-val");
+      const visitesCountEl = $("#fc-visites-count");
+      const pointsBarEl = $("#fc-points-bar");
+      const pointsMissingEl = $("#fc-points-missing");
+      const loyaltyMsgEl = $("#fc-loyalty-msg");
+      const headerTierPillEl = $("#fc-header-tier-pill");
+      const tierBadgeEl = $("#fc-tier-badge");
+      const cumulValEl = $("#fc-cumul-val");
+      const tierProgressTextEl = $("#fc-tier-progress-text");
+      const tierBarEl = $("#fc-tier-bar");
+      const friezeOrEl = $("#fc-frieze-or");
+      const boutiqueSoldeEl = $("#fc-boutique-solde");
+      const rewardTicketEl = $("#fc-reward-ticket");
+      const palierCafeBtnEl = $("#fc-btn-exchange-cafe");
+      const palierDessertBadgeEl = $("#fc-palier-dessert-badge");
+      const dessertStatusEl = $("#fc-dessert-status");
+      const costDessertEl = $("#fc-cost-dessert");
+      const refCountEl = $("#fc-ref-count");
+      const jackpotCounterEl = $("#fc-jackpot-counter");
+      const jackpotPctPillEl = $("#fc-jackpot-pct-pill");
+      const jackpotBarEl = $("#fc-jackpot-bar");
+      const jackpotMsgEl = $("#fc-jackpot-msg");
+
+      if (pointsValEl) {
+        pointsValEl.textContent = `${fcPoints}`;
+        if (animatePoints) {
+          pointsValEl.classList.remove("is-popping");
+          void pointsValEl.offsetWidth;
+          pointsValEl.classList.add("is-popping");
+        }
+      }
+      if (visitesCountEl) {
+        visitesCountEl.textContent = `${fcVisits} visite${fcVisits > 1 ? "s" : ""} validée${fcVisits > 1 ? "s" : ""}`;
+      }
+
+      const nextGoal = fcPoints >= 500 ? 1000 : 500;
+      const missingPts = Math.max(0, nextGoal - fcPoints);
+      const pctGoal = Math.min(100, Math.round((fcPoints / nextGoal) * 100));
+      if (pointsBarEl) pointsBarEl.style.width = `${pctGoal}%`;
+      if (pointsMissingEl) {
+        pointsMissingEl.textContent = missingPts === 0 ? "Palier atteint !" : `Encore ${missingPts} points`;
+      }
+      if (loyaltyMsgEl) {
+        if (fcPoints >= 500) {
+          loyaltyMsgEl.innerHTML = `🎉 <b>Cadeau déblocable !</b> Vous pouvez échanger vos points dans l'onglet Cadeaux.`;
+        } else {
+          loyaltyMsgEl.innerHTML = `Plus que <b>${500 - fcPoints} pts</b> avant votre <b>Dessert du Chef offert !</b>`;
+        }
+      }
+
+      // Niveau sur le CUMUL total gagné (jamais réduit quand on dépense !)
+      const isGold = fcEarnedTotal >= 800;
+      const tierLabel = isGold ? "🥇 Or" : "🥈 Argent";
+      if (headerTierPillEl) headerTierPillEl.textContent = tierLabel;
+      if (tierBadgeEl) {
+        tierBadgeEl.textContent = tierLabel;
+        tierBadgeEl.classList.toggle("is-gold", isGold);
+      }
+      if (cumulValEl) cumulValEl.textContent = `${fcEarnedTotal}`;
+      if (friezeOrEl) {
+        friezeOrEl.className = isGold ? "is-current" : "";
+      }
+      if (tierProgressTextEl) {
+        tierProgressTextEl.textContent = isGold
+          ? "Niveau maximum atteint · Merci !"
+          : `Encore ${800 - fcEarnedTotal} points`;
+      }
+      if (tierBarEl) {
+        tierBarEl.style.width = `${Math.min(100, Math.round((fcEarnedTotal / 800) * 100))}%`;
+      }
+
+      if (boutiqueSoldeEl) boutiqueSoldeEl.textContent = `Solde : ${fcPoints} pts`;
+      if (rewardTicketEl) rewardTicketEl.hidden = !fcRedeemedCafe;
+      if (palierCafeBtnEl) {
+        if (fcRedeemedCafe) {
+          palierCafeBtnEl.textContent = "✓ Échangé";
+          palierCafeBtnEl.disabled = true;
+        } else if (fcPoints >= 200) {
+          palierCafeBtnEl.textContent = "Échanger";
+          palierCafeBtnEl.disabled = false;
+        } else {
+          palierCafeBtnEl.textContent = `200 pts`;
+          palierCafeBtnEl.disabled = true;
+        }
+      }
+
+      if (palierDessertBadgeEl && dessertStatusEl && costDessertEl) {
+        if (fcPoints >= 500) {
+          costDessertEl.classList.add("is-ready");
+          palierDessertBadgeEl.className = "fc-palier-badge unlocked";
+          palierDessertBadgeEl.textContent = "✓ À portée";
+          dessertStatusEl.textContent = "🎁 Disponible dès maintenant (500 pts)";
+        } else {
+          costDessertEl.classList.remove("is-ready");
+          palierDessertBadgeEl.className = "fc-palier-badge progress";
+          palierDessertBadgeEl.textContent = `${fcPoints}/500`;
+          dessertStatusEl.textContent = `Encore ${500 - fcPoints} points pour ce cadeau`;
+        }
+      }
+
+      if (refCountEl) {
+        const restants = Math.max(0, 5 - fcRefs);
+        refCountEl.innerHTML = `${fcRefs} sur 5 <small>(${restants > 0 ? `Encore ${restants}` : "Complet"})</small>`;
+      }
+
+      const jackpotPct = Math.min(100, Math.round((fcJackpotCount / 50) * 100));
+      if (jackpotCounterEl) jackpotCounterEl.textContent = `${fcJackpotCount} / 50 visites`;
+      if (jackpotPctPillEl) jackpotPctPillEl.textContent = `${jackpotPct} % atteint`;
+      if (jackpotBarEl) jackpotBarEl.style.width = `${jackpotPct}%`;
+      if (jackpotMsgEl) {
+        jackpotMsgEl.innerHTML =
+          fcJackpotCount >= 50
+            ? `🎆 <b>100 % ATTEINT !</b> Le grand tirage collectif est déclenché pour tous les participants !`
+            : `Votre dernière visite a rejoint la cagnotte : plus que <b>${50 - fcJackpotCount} visites</b> avant le tirage !`;
+      }
+
+      if (fcLiveLog && logHtml) {
+        fcLiveLog.innerHTML = logHtml;
+      }
     };
+
+    const renderMotionStep = (idx, runMicroDemo = false) => {
+      fcStepIdx = ((idx % FC_STEPS.length) + FC_STEPS.length) % FC_STEPS.length;
+      const step = FC_STEPS[fcStepIdx];
+
+      fcTabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.fcTab === step.key));
+      Object.entries(fcPanels).forEach(([name, panel]) => {
+        if (panel) panel.classList.toggle("active", name === step.key);
+      });
+
+      fcSegs.forEach((seg, sIdx) => {
+        seg.classList.remove("is-done", "is-active");
+        if (sIdx < fcStepIdx) seg.classList.add("is-done");
+        else if (sIdx === fcStepIdx) {
+          void seg.offsetWidth; // reset animation
+          seg.classList.add("is-active");
+        }
+      });
+
+      if (fcCaptionEl) fcCaptionEl.textContent = step.caption;
+
+      clearTimeout(fcStepActionTimer);
+      if (runMicroDemo && fcMotionPlaying) {
+        if (step.key === "passeport") {
+          fcStepActionTimer = setTimeout(() => {
+            if (!fcMotionPlaying) return;
+            const qrView = $("#fc-view-qr");
+            const codeView = $("#fc-view-code");
+            const qrTab = $("#fc-val-tab-qr");
+            const codeTab = $("#fc-val-tab-code");
+            if (qrView && codeView && qrTab && codeTab) {
+              qrTab.classList.remove("active");
+              codeTab.classList.add("active");
+              qrView.classList.remove("active");
+              codeView.classList.add("active");
+              setTimeout(() => {
+                if (fcMotionPlaying) {
+                  qrTab.classList.add("active");
+                  codeTab.classList.remove("active");
+                  qrView.classList.add("active");
+                  codeView.classList.remove("active");
+                }
+              }, 1700);
+            }
+          }, 1500);
+        } else if (step.key === "cadeaux" && !fcRedeemedCafe && fcPoints >= 200) {
+          fcStepActionTimer = setTimeout(() => {
+            if (!fcMotionPlaying || fcRedeemedCafe) return;
+            fcRedeemedCafe = true;
+            fcPoints = Math.max(0, fcPoints - 200);
+            updateFcTrioUI(null, true);
+          }, 1400);
+        }
+      }
+    };
+
+    const stopFcMotion = () => {
+      fcMotionPlaying = false;
+      clearInterval(fcMotionTimer);
+      clearTimeout(fcStepActionTimer);
+      fcMotionTimer = null;
+      if (fcPhoneStage) fcPhoneStage.classList.add("fc-motion-paused");
+      if (fcPauseBtn) fcPauseBtn.textContent = "▶️ Lire";
+    };
+
+    const startFcMotion = (fromStart = false) => {
+      clearInterval(fcMotionTimer);
+      fcMotionPlaying = true;
+      if (fcPhoneStage) fcPhoneStage.classList.remove("fc-motion-paused");
+      if (fcPauseBtn) fcPauseBtn.textContent = "⏸️ Pause";
+      if (fromStart) {
+        fcPoints = 300;
+        fcEarnedTotal = 500;
+        fcVisits = 3;
+        fcRefs = 2;
+        fcJackpotCount = 44;
+        fcRedeemedCafe = false;
+        updateFcTrioUI();
+        renderMotionStep(0, true);
+      } else {
+        renderMotionStep(fcStepIdx, true);
+      }
+      fcMotionTimer = setInterval(() => {
+        if (fcMotionPlaying) {
+          renderMotionStep((fcStepIdx + 1) % FC_STEPS.length, true);
+        }
+      }, 4600);
+    };
+
     fcTabs.forEach((btn) => {
-      btn.addEventListener("click", () => switchFcTab(btn.dataset.fcTab));
+      btn.addEventListener("click", () => {
+        stopFcMotion();
+        const targetIdx = FC_STEPS.findIndex((s) => s.key === btn.dataset.fcTab);
+        renderMotionStep(targetIdx >= 0 ? targetIdx : 0, false);
+      });
     });
 
-    /* Bascule mode validation : QR Code client vs Code du comptoir */
+    if (fcPauseBtn) {
+      fcPauseBtn.addEventListener("click", () => {
+        if (fcMotionPlaying) stopFcMotion();
+        else startFcMotion(false);
+      });
+    }
+
+    if (fcBtnReplay) {
+      fcBtnReplay.addEventListener("click", () => {
+        startFcMotion(true);
+        if (fcLiveLog) {
+          fcLiveLog.innerHTML = `<strong>▶ Motion Design relancé :</strong> Suivez les 4 étapes du Passeport côté client sur le téléphone !`;
+        }
+      });
+    }
+
+    /* Bascule mode validation : Carte à présenter (QR) vs Code du comptoir */
     const fcValTabQr = $("#fc-val-tab-qr");
     const fcValTabCode = $("#fc-val-tab-code");
     const fcViewQr = $("#fc-view-qr");
     const fcViewCode = $("#fc-view-code");
     if (fcValTabQr && fcValTabCode && fcViewQr && fcViewCode) {
       fcValTabQr.addEventListener("click", () => {
+        stopFcMotion();
         fcValTabQr.classList.add("active");
         fcValTabCode.classList.remove("active");
         fcViewQr.classList.add("active");
         fcViewCode.classList.remove("active");
       });
       fcValTabCode.addEventListener("click", () => {
+        stopFcMotion();
         fcValTabCode.classList.add("active");
         fcValTabQr.classList.remove("active");
         fcViewCode.classList.add("active");
@@ -1733,19 +1997,29 @@
       });
     }
 
-    /* Décompte vivant du jeton QR Code client */
+    /* Décompte vivant du jeton QR Code + Horloge Commerce en direct */
     let qrSeconds = 252;
     const qrTimerEl = $("#fc-qr-timer");
-    if (qrTimerEl) {
-      setInterval(() => {
+    const clockEl = $("#fc-commerce-clock");
+    const timeFormatter = new Intl.DateTimeFormat("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const refreshLiveClocks = () => {
+      if (qrTimerEl) {
         qrSeconds = qrSeconds > 1 ? qrSeconds - 1 : 300;
         const m = Math.floor(qrSeconds / 60);
         const s = qrSeconds % 60;
         qrTimerEl.textContent = `${m}:${s < 10 ? "0" : ""}${s}`;
-      }, 1000);
-    }
+      }
+      if (clockEl) {
+        clockEl.textContent = `🕒 Il est ${timeFormatter.format(new Date())} chez Bistrot L'Étoile`;
+      }
+    };
+    refreshLiveClocks();
+    setInterval(refreshLiveClocks, 1000);
 
-    /* Animation pop de tampon validé */
     const triggerStampPop = () => {
       const feedback = $("#fc-stamp-feedback");
       if (!feedback) return;
@@ -1756,140 +2030,96 @@
       }
       setTimeout(() => {
         feedback.classList.remove("is-visible");
-      }, 1400);
+      }, 1350);
     };
 
-    /* Bouton copier le code parrain */
     const fcCopyCodeBtn = $("#fc-copy-code-btn");
     if (fcCopyCodeBtn) {
       fcCopyCodeBtn.addEventListener("click", () => {
+        stopFcMotion();
         try {
-          navigator.clipboard.writeText("LISA-774");
+          navigator.clipboard.writeText("https://lastchance.app/passeport/bistrot?parrain=PASS-LISA");
         } catch {}
-        fcCopyCodeBtn.textContent = "✓ Copié !";
+        fcCopyCodeBtn.textContent = "✓ Lien copié !";
         setTimeout(() => {
-          fcCopyCodeBtn.textContent = "Copier";
+          fcCopyCodeBtn.textContent = "Copier le lien";
         }, 1800);
       });
     }
 
-    const updateFcTrioUI = (logHtml) => {
-      const pointsValEl = $("#fc-points-val");
-      const visitesCountEl = $("#fc-visites-count");
-      const pointsBarEl = $("#fc-points-bar");
-      const loyaltyMsgEl = $("#fc-loyalty-msg");
-      const tierBadgeEl = $("#fc-tier-badge");
-      const tierProgressTextEl = $("#fc-tier-progress-text");
-      const tierBarEl = $("#fc-tier-bar");
-      const palierDessertEl = $("#fc-palier-dessert");
-      const palierDessertBadgeEl = $("#fc-palier-dessert-badge");
-      const refCountEl = $("#fc-ref-count");
-      const tier2El = $("#fc-tier-2");
-      const tier3El = $("#fc-tier-3");
-      const jackpotPctEl = $("#fc-jackpot-pct");
-      const jackpotPctPillEl = $("#fc-jackpot-pct-pill");
-      const jackpotBarEl = $("#fc-jackpot-bar");
-      const jackpotMsgEl = $("#fc-jackpot-msg");
-
-      const pts = fcStamps * 100;
-
-      if (pointsValEl) pointsValEl.textContent = `${pts}`;
-      if (visitesCountEl) visitesCountEl.textContent = `${fcStamps} passages validés`;
-      if (pointsBarEl) pointsBarEl.style.width = `${Math.min(100, (fcStamps / 5) * 100)}%`;
-
-      if (loyaltyMsgEl) {
-        loyaltyMsgEl.innerHTML =
-          fcStamps >= 5
-            ? `🎉 <b>500 points atteints !</b> Récompense Dessert du Chef débloquée en caisse !`
-            : `Plus que <strong>${(5 - fcStamps) * 100} pts</strong> (${5 - fcStamps} visite(s)) avant votre <strong>Dessert offert !</strong>`;
-      }
-
-      if (tierBadgeEl) {
-        tierBadgeEl.textContent = fcStamps >= 5 ? "🏆 OR" : "🥈 ARGENT";
-      }
-      if (tierProgressTextEl) {
-        tierProgressTextEl.textContent =
-          fcStamps >= 5
-            ? "800 pts cumulés · Statut VIP Or débloqué !"
-            : `${pts + 100} pts cumulés · Objectif Or (800)`;
-      }
-      if (tierBarEl) {
-        tierBarEl.style.width = `${Math.min(100, ((pts + 100) / 800) * 100)}%`;
-      }
-
-      if (palierDessertEl && palierDessertBadgeEl) {
-        if (fcStamps >= 5) {
-          palierDessertEl.classList.add("is-unlocked");
-          palierDessertBadgeEl.className = "fc-palier-badge unlocked";
-          palierDessertBadgeEl.textContent = "✓ Débloqué";
-        } else {
-          palierDessertEl.classList.remove("is-unlocked");
-          palierDessertBadgeEl.className = "fc-palier-badge progress";
-          palierDessertBadgeEl.textContent = `${pts} / 500`;
-        }
-      }
-
-      if (refCountEl) refCountEl.textContent = `${fcRefs} ami${fcRefs > 1 ? "s" : ""} parrainé${fcRefs > 1 ? "s" : ""}`;
-      if (tier2El) {
-        tier2El.classList.toggle("is-reached", fcRefs >= 2);
-        tier2El.textContent = fcRefs >= 2 ? "✓ Gagné" : "En attente";
-      }
-      if (tier3El) {
-        tier3El.classList.toggle("is-reached", fcRefs >= 3);
-        tier3El.textContent = fcRefs >= 3 ? "✓ Gagné (Or)" : "🔒 3 amis";
-      }
-
-      if (jackpotPctEl) jackpotPctEl.textContent = `${fcJackpot} %`;
-      if (jackpotPctPillEl) jackpotPctPillEl.textContent = `Jauge à ${fcJackpot}%`;
-      if (jackpotBarEl) jackpotBarEl.style.width = `${fcJackpot}%`;
-      if (jackpotMsgEl) {
-        jackpotMsgEl.innerHTML =
-          fcJackpot >= 100
-            ? `🎆 <b>100 % ATTEINT !</b> Le grand tirage du Jackpot Collectif est déclenché pour toute la communauté !`
-            : `Plus que <strong>${100 - fcJackpot} %</strong> de visites collectives pour déclencher le grand tirage !`;
-      }
-
-      if (fcLiveLog && logHtml) {
-        fcLiveLog.innerHTML = logHtml;
-      }
-    };
-
     const handleVisitAction = () => {
-      fcStamps = Math.min(5, fcStamps + 1);
-      fcJackpot = Math.min(100, fcJackpot + 4);
-      switchFcTab("passeport");
+      stopFcMotion();
+      fcVisits += 1;
+      fcPoints += 100;
+      fcEarnedTotal += 100;
+      fcJackpotCount = Math.min(50, fcJackpotCount + 2);
+      renderMotionStep(0, false);
       triggerStampPop();
       updateFcTrioUI(
-        `🎟️ <b>Passage client validé (+100 pts) :</b> Le solde de Lisa passe à <b>${fcStamps * 100} pts</b> (${fcStamps} visites) et la Cagnotte Collective grimpe à <b>${fcJackpot} %</b> !`
+        `🎟️ <b>Passage validé (+100 pts) :</b> Solde de Lisa à <b>${fcPoints} pts</b> (${fcEarnedTotal} pts cumulés) et Cagnotte à <b>${fcJackpotCount}/50 visites</b> !`,
+        true
+      );
+    };
+
+    const handleRedeemAction = () => {
+      stopFcMotion();
+      renderMotionStep(1, false);
+      if (fcPoints < 200) {
+        fcPoints += 200;
+        fcEarnedTotal += 200;
+      }
+      fcRedeemedCafe = true;
+      fcPoints = Math.max(0, fcPoints - 200);
+      updateFcTrioUI(
+        `🎁 <b>Cadeau débloqué (FIDELITE-8K4P) :</b> 200 pts utilisés, mais le cumul total reste à <b>${fcEarnedTotal} pts</b> — le niveau ne baisse jamais !`,
+        true
       );
     };
 
     const handleReferAction = () => {
-      fcRefs = Math.min(3, fcRefs + 1);
-      fcJackpot = Math.min(100, fcJackpot + 6);
-      switchFcTab("parrainage");
+      stopFcMotion();
+      fcRefs = Math.min(5, fcRefs + 1);
+      fcPoints += 150;
+      fcEarnedTotal += 150;
+      fcJackpotCount = Math.min(50, fcJackpotCount + 3);
+      renderMotionStep(2, false);
       updateFcTrioUI(
-        `🤝 <b>Nouvel ami parrainé validé :</b> Le parrain passe à ${fcRefs} ami(s) invité(s) et fait bondir le Jackpot Collectif de +6 % (${fcJackpot} %) !`
+        `🤝 <b>1re visite d'un ami validée (+150 pts) :</b> Filleul validé en caisse → +150 pts pour le parrain et cagnotte à <b>${fcJackpotCount}/50 visites</b> !`,
+        true
       );
     };
 
-    fcBtnVisit.addEventListener("click", handleVisitAction);
-    fcBtnRefer.addEventListener("click", handleReferAction);
+    if (fcBtnVisit) fcBtnVisit.addEventListener("click", handleVisitAction);
+    if (fcBtnRedeem) fcBtnRedeem.addEventListener("click", handleRedeemAction);
+    if (fcBtnRefer) fcBtnRefer.addEventListener("click", handleReferAction);
 
-    /* Boutons de déclenchement directs sur l'écran du smartphone */
     const fcBtnTriggerScan = $("#fc-btn-trigger-scan");
     const fcBtnTriggerCode = $("#fc-btn-trigger-code");
+    const fcBtnExchangeCafe = $("#fc-btn-exchange-cafe");
     const fcScreenBtnRefer = $("#fc-screen-btn-refer");
     const fcScreenBtnJackpot = $("#fc-screen-btn-jackpot");
+    const fcBtnSimInstall = $("#fc-btn-sim-install");
 
     if (fcBtnTriggerScan) fcBtnTriggerScan.addEventListener("click", handleVisitAction);
     if (fcBtnTriggerCode) fcBtnTriggerCode.addEventListener("click", handleVisitAction);
+    if (fcBtnExchangeCafe) fcBtnExchangeCafe.addEventListener("click", handleRedeemAction);
     if (fcScreenBtnRefer) fcScreenBtnRefer.addEventListener("click", handleReferAction);
+    if (fcBtnSimInstall) {
+      fcBtnSimInstall.addEventListener("click", () => {
+        stopFcMotion();
+        fcBtnSimInstall.textContent = "✓ Ajoutée sur l'écran d'accueil !";
+        if (fcLiveLog) {
+          fcLiveLog.innerHTML = `📲 <b>Carte installée :</b> L'icône du passeport apparaît sur l'écran d'accueil du téléphone comme une vraie application.`;
+        }
+      });
+    }
     if (fcScreenBtnJackpot) {
       fcScreenBtnJackpot.addEventListener("click", () => {
-        fcJackpot = 100;
+        stopFcMotion();
+        fcJackpotCount = 50;
+        renderMotionStep(3, false);
         updateFcTrioUI(
-          `🎉 <b>GRAND TIRAGE DU JACKPOT EN COURS !</b> Félicitations à toute la communauté pour avoir franchi les 100 % !`
+          `🎉 <b>50/50 VISITES ATTEINTES (100 %) !</b> Le tirage au sort du Menu Dégustation Duo est déclenché pour tous les habitués !`
         );
         const GE = window.LC_GAMES_ENGINE;
         if (GE && typeof GE.burstConfetti === "function") {
@@ -1900,15 +2130,16 @@
 
     if (fcBtnReset) {
       fcBtnReset.addEventListener("click", () => {
-        fcStamps = 3;
-        fcRefs = 1;
-        fcJackpot = 88;
-        switchFcTab("passeport");
-        updateFcTrioUI(
-          `↺ <b>Démonstration réinitialisée :</b> Testez la validation par QR Code client ou code du comptoir pour voir le Passeport s'actualiser en direct.`
-        );
+        startFcMotion(true);
+        if (fcBtnSimInstall) fcBtnSimInstall.textContent = "📲 Écran d'accueil";
+        if (fcLiveLog) {
+          fcLiveLog.innerHTML = `↺ <b>Démonstration réinitialisée :</b> Suivez les 4 étapes automatiques ou cliquez sur les boutons pour tester chaque action.`;
+        }
       });
     }
+
+    updateFcTrioUI();
+    startFcMotion(false);
   }
 
   /* ── 8. BARRE FLOTTANTE DE REPRISE DE CRÉATION EN COURS ── */

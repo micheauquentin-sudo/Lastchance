@@ -163,36 +163,44 @@
     </section>
 
     <!-- ==========================================================
-         3. SIMULATEUR INTERACTIF DU TRIO CONNECTÉ + LES 10 FONDS DU CODE SOURCE
+         3. MOTION DESIGN & SIMULATEUR RÉALISTE DU PASSEPORT DE FIDÉLITÉ
          ========================================================== -->
     <section class="clog-lavender-split" id="simulateur-trio">
-      <div class="lavender-split-wrap">
+      <div class="lavender-split-wrap fc-motion-split-wrap">
         <div class="lavender-copy">
-          <p class="section-script">personnalisez l'ambiance &amp; simulez les passages en direct →</p>
-          <h2>TESTEZ L'EFFET CUMULÉ<br />&amp; LES HABILLAGES DU PASSEPORT.</h2>
+          <p class="section-script">immersion dans le vrai passeport client →</p>
+          <h2>REGARDEZ COMMENT VOS CLIENTS<br />UTILISENT LEUR PASSEPORT.</h2>
           <p>
-            Personnalisez l'ambiance de votre Passeport : conservez le <b>Style Maison neutre</b> ou habillez-le avec l'un des <b>10 fonds illustrés thématiques</b>. Simulez ensuite un passage client (<code>+100 pts</code>) ou un parrainage :
+            Votre passeport est une vraie carte digitale (sans application à télécharger) : le client cumule <b>100 points par visite</b>, débloque ses cadeaux, parraine ses amis et fait monter le <b>Jackpot Collectif</b>.
           </p>
 
           <div>
-            <label class="vr-sector-switcher-label">1. Choisissez l'habillage de votre Passeport :</label>
+            <label class="vr-sector-switcher-label">1. Testez les 10 fonds d'écran illustrés du Studio :</label>
             <div class="jp-pill-choices" id="fc-fond-switcher" style="margin-bottom:0.85rem;"></div>
           </div>
 
           <div class="fc-sim-actions-box">
             <button type="button" class="ticket-btn pop-btn-yellow fc-action-btn" id="fc-btn-visit">
-              🎟️ +1 Simuler un passage client (+100 pts Fidélité &amp; +4 % au Jackpot)
+              🎟️ +1 Simuler un passage client (+100 pts &amp; +4 % Cagnotte)
+            </button>
+            <button type="button" class="ticket-btn pop-btn-white fc-action-btn" id="fc-btn-redeem">
+              🎁 Tester l'échange d'un cadeau (200 pts → Code FIDELITE)
             </button>
             <button type="button" class="ticket-btn pop-btn-white fc-action-btn" id="fc-btn-refer">
-              🤝 +1 Simuler un ami parrainé (Palier Ambassadeur &amp; +6 % au Jackpot)
+              🤝 +1 Simuler un ami parrainé (+150 pts &amp; +6 % Cagnotte)
             </button>
-            <button type="button" class="ticket-btn pop-btn-ink fc-action-btn" id="fc-btn-reset" style="font-size:0.82rem;padding:0.55em 1.1em;">
-              ↺ Réinitialiser la démonstration
-            </button>
+            <div class="fc-action-mini-row">
+              <button type="button" class="ticket-btn pop-btn-ink fc-action-btn" id="fc-btn-replay" style="font-size:0.82rem;padding:0.55em 1.05em;">
+                ▶ Relancer le Motion Design
+              </button>
+              <button type="button" class="ticket-btn pop-btn-white fc-action-btn" id="fc-btn-reset" style="font-size:0.82rem;padding:0.55em 1.05em;">
+                ↺ Réinitialiser
+              </button>
+            </div>
           </div>
 
           <div class="fc-live-log" id="fc-live-log">
-            <strong>💡 Action en direct :</strong> Naviguez dans le téléphone ci-contre ou testez la validation de visite par QR Code / Code du comptoir.
+            <strong>💡 Visite guidée en direct :</strong> Regardez les 4 étapes s'animer sur le téléphone, ou cliquez librement sur les boutons du passeport comme un vrai client !
           </div>
 
           <div style="margin-top:0.95rem;">
@@ -202,347 +210,361 @@
           </div>
         </div>
 
-        <!-- Téléphone interactif avec navigation directe (Passeport, Parrainage & Jackpot) -->
-        <div class="lavender-photo-frame">
-          <div class="fc-phone-case">
+        <!-- Téléphone réaliste 9:18.5 avec Motion Design Fidélité intégré -->
+        <div class="lavender-photo-frame fc-phone-stage-col">
+          <div class="fc-phone-case" id="fc-motion-phone-stage" role="region" aria-label="Motion design interactif : aperçu réel du Passeport de Fidélité">
             <span class="fc-phone-btn-vol-up" aria-hidden="true"></span>
             <span class="fc-phone-btn-vol-down" aria-hidden="true"></span>
             <span class="fc-phone-btn-power" aria-hidden="true"></span>
-            <div class="fc-phone-screen fc-trio-phone" id="fc-trio-phone" style="background-size:cover;background-position:center;">
-              <!-- Barre de statut Smartphone (Heure, Dynamic Island, Batterie) -->
-              <div class="fc-phone-status-bar">
-                <span>09:41</span>
-                <div class="fc-dynamic-island" aria-hidden="true">
-                  <span class="fc-camera-lens"></span>
+
+            <div class="fc-phone-screen fc-trio-phone" id="fc-trio-phone">
+              <!-- Voile lavis identique à PlayerPageShell du code source -->
+              <div class="fc-phone-lavis-veil" id="fc-phone-lavis-veil" aria-hidden="true"></div>
+
+              <!-- ZONE HAUTE FIXE : Barre d'état + Barre de progression Motion Design -->
+              <div class="fc-phone-chrome-top">
+                <div class="fc-phone-status-bar">
+                  <span class="fc-status-time">09:41</span>
+                  <div class="fc-dynamic-island" aria-hidden="true">
+                    <span class="fc-camera-lens"></span>
+                  </div>
+                  <span class="fc-status-icons" aria-hidden="true">
+                    <span>5G</span>
+                    <svg width="16" height="10" viewBox="0 0 18 11" fill="none"><rect x="1" y="1" width="14" height="9" rx="2.5" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="3" width="10" height="5" rx="1" fill="#16a34a"/><path d="M16.5 4V7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                  </span>
                 </div>
-                <span>5G 📶 100% 🔋</span>
+
+                <!-- Piste animée Motion Design (4 segments) -->
+                <div class="fc-motion-progress-bar">
+                  <div class="fc-motion-segments" aria-hidden="true">
+                    <div class="fc-motion-seg is-active" data-seg="0"><span></span></div>
+                    <div class="fc-motion-seg" data-seg="1"><span></span></div>
+                    <div class="fc-motion-seg" data-seg="2"><span></span></div>
+                    <div class="fc-motion-seg" data-seg="3"><span></span></div>
+                  </div>
+                  <div class="fc-motion-controls-row">
+                    <span class="fc-motion-caption" id="fc-motion-caption">1/4 · Le client valide sa visite</span>
+                    <button type="button" class="fc-motion-pause-btn" id="fc-motion-play-pause" aria-label="Mettre en pause ou reprendre l'animation">
+                      ⏸️ Pause
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <!-- Barre d'onglets de navigation intégrée dans le téléphone -->
-              <div class="fc-iphone-nav" role="group" aria-label="Navigation dans le Passeport">
-                <button type="button" class="fc-tab-btn active" data-fc-tab="passeport">🎟️ 1. Passeport</button>
-                <button type="button" class="fc-tab-btn" data-fc-tab="parrainage">🤝 2. Parrainage</button>
-                <button type="button" class="fc-tab-btn" data-fc-tab="jackpot">🎰 3. Jackpot</button>
-              </div>
+              <!-- ZONE CENTRALE : Scène active du Passeport (100% fidèle au code source) -->
+              <div class="fc-phone-stage" id="fc-phone-scroll-body">
 
-              <!-- Corps Défilant Vertical du Smartphone (Visu Client Réelle) -->
-              <div class="fc-phone-scroll-body" id="fc-phone-scroll-body">
-                <!-- Panneau 1 : Passeport Fidélité (Vue Client Réelle) -->
-                <div class="fc-tab-panel active" id="fc-panel-passeport">
-
-                  <!-- 1. En-tête Client du Passeport (EntetePasseport) -->
-                  <div class="fc-passport-header">
-                    <div class="fc-passport-header-top">
-                      <div class="fc-passport-logo-disc" aria-hidden="true">🎟️</div>
-                      <div class="fc-passport-header-titles">
-                        <p class="fc-passport-merchant-name">BISTROT L'ÉTOILE</p>
-                        <h3 class="fc-passport-title">Passeport Fidélité Gourmand</h3>
-                      </div>
-                    </div>
-                    <div class="fc-passport-user-pill">
-                      <span>👤 Lisa M.</span>
-                      <span class="fc-pill-sep">·</span>
-                      <span class="fc-user-status-tag" id="fc-member-badge">Habituée · Niveau Argent</span>
+                <!-- ════ SCÈNE 1 : ENTÊTE + IDENTITÉ + SOLDE + VALIDATION VISITE ════ -->
+                <div class="fc-tab-panel active" id="fc-panel-passeport" data-fc-panel="passeport">
+                  <!-- EntetePasseport + IdentitePasseport -->
+                  <div class="fc-src-header-row">
+                    <div class="fc-passport-logo-disc" aria-hidden="true">🎟️</div>
+                    <div class="fc-src-header-text">
+                      <p class="fc-passport-merchant-name">BISTROT L'ÉTOILE</p>
+                      <h3 class="fc-passport-title">Passeport Fidélité Gourmand</h3>
                     </div>
                   </div>
 
-                  <!-- 2. Solde & Niveau unifié (SoldePanel & TierPanel) -->
-                  <div class="fc-phone-card fc-card-points">
-                    <div class="fc-card-head">
-                      <span class="fc-head-kicker">MES POINTS FIDÉLITÉ</span>
-                      <span class="fc-points-badge" id="fc-visites-count">3 passages validés</span>
+                  <div class="fc-src-identity-bar">
+                    <span class="fc-src-avatar" aria-hidden="true">🦊</span>
+                    <div class="fc-src-identity-info">
+                      <span class="fc-src-identity-kicker">MA CARTE</span>
+                      <strong class="fc-src-identity-name">Lisa M.</strong>
                     </div>
-                    <div class="fc-points-hero">
-                      <span class="fc-points-number" id="fc-points-val">300</span>
-                      <span class="fc-points-unit">pts</span>
-                    </div>
-                    <div class="fc-progress-track">
-                      <div class="fc-progress-bar" id="fc-points-bar" style="width: 60%;"></div>
-                    </div>
-                    <div class="fc-points-footer">
-                      <p class="fc-progress-msg" id="fc-loyalty-msg">
-                        Plus que <strong>200 pts</strong> (2 visites) avant votre <strong>Dessert offert !</strong>
-                      </p>
-                      <span class="fc-tier-badge" id="fc-tier-badge">🥈 ARGENT</span>
-                    </div>
+                    <span class="fc-tier-pill-mini" id="fc-header-tier-pill">🥈 Argent</span>
                   </div>
 
-                  <!-- 3. Validation de visite (QR Code Client / Code du Jour) -->
-                  <div class="fc-phone-card fc-card-validation">
+                  <!-- SoldePanel (#fde9ba, ombre 4px 4px 0 #211d16) -->
+                  <div class="fc-src-solde-card">
+                    <div class="fc-src-solde-top">
+                      <span class="fc-src-kicker">MES POINTS</span>
+                      <span class="fc-src-visites-chip" id="fc-visites-count">3 visites validées</span>
+                    </div>
+                    <div class="fc-src-points-row">
+                      <span class="fc-src-points-num" id="fc-points-val">300</span>
+                      <span class="fc-src-points-unit">points</span>
+                    </div>
+                    <div class="fc-src-bar-meta">
+                      <span>Vers le cadeau suivant</span>
+                      <strong id="fc-points-missing">Encore 200 points</strong>
+                    </div>
+                    <div class="fc-src-progress-track" role="progressbar" aria-label="Progression des points" aria-valuemin="0" aria-valuemax="100" aria-valuenow="60">
+                      <div class="fc-src-progress-fill" id="fc-points-bar" style="width: 60%;"></div>
+                    </div>
+                    <p class="fc-src-solde-reassure" id="fc-loyalty-msg">
+                      Plus que <b>200 pts</b> avant votre <b>Dessert offert !</b>
+                    </p>
+                  </div>
+
+                  <!-- Zone d'action : RotatingStampForm / StaffPassportCard -->
+                  <div class="fc-src-white-card fc-src-validation-card">
                     <div class="fc-validation-switch" role="group" aria-label="Mode de validation de visite">
                       <button type="button" class="fc-val-mode-btn active" id="fc-val-tab-qr" data-val-mode="qr">
-                        🎟️ Mon QR Code client
+                        🎟️ Carte à présenter
                       </button>
                       <button type="button" class="fc-val-mode-btn" id="fc-val-tab-code" data-val-mode="code">
                         🔢 Code du comptoir
                       </button>
                     </div>
 
-                    <!-- Option A : QR Code personnel à présenter au commerçant -->
+                    <!-- Mode QR Personnel (StaffPassportCard) -->
                     <div class="fc-val-mode-view active" id="fc-view-qr">
-                      <p class="fc-val-sub">
-                        Faites scanner ce QR code unique en caisse pour créditer <b>+100 points</b> :
-                      </p>
-                      <div class="fc-qr-display-box" id="fc-qr-display-box">
+                      <div class="fc-src-qr-stage">
                         <div class="fc-qr-inner-frame">
-                          <img src="img/qr-passeport.svg" alt="Mon QR code personnel de fidélité" width="138" height="138" class="fc-client-qr-img" />
+                          <img src="img/qr-passeport.svg" alt="QR de votre passeport de fidélité" width="96" height="96" class="fc-client-qr-img" />
+                          <div class="fc-qr-laser-scan" aria-hidden="true"></div>
                           <div class="fc-client-qr-badge" aria-hidden="true">🎟️</div>
                         </div>
-                        <div class="fc-qr-token-pill">
-                          <span class="fc-token-dot">●</span>
-                          <code id="fc-token-label">LC-8842-LISA</code>
-                          <span class="fc-token-timer" id="fc-qr-timer">4:12</span>
+                        <div class="fc-src-qr-meta">
+                          <strong>Montrez ce code en caisse</strong>
+                          <small>Code rotatif : <code id="fc-token-label">LC-8842</code> · <span id="fc-qr-timer">4:12</span></small>
+                          <button type="button" class="fc-src-yellow-btn" id="fc-btn-trigger-scan">
+                            📲 Simuler le scan (+100 pts)
+                          </button>
                         </div>
                       </div>
-                      <button type="button" class="fc-client-action-btn pop-btn-yellow" id="fc-btn-trigger-scan">
-                        📲 Simuler le scan en caisse (+100 pts)
-                      </button>
                     </div>
 
-                    <!-- Option B : Saisie du Code du Jour affiché au comptoir -->
+                    <!-- Mode Code Comptoir 6 chiffres (RotatingStampForm) -->
                     <div class="fc-val-mode-view" id="fc-view-code">
-                      <p class="fc-val-sub">
-                        Saisissez le code à 6 chiffres affiché à l'écran du comptoir :
-                      </p>
-                      <div class="fc-daily-code-box">
-                        <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="fc-daily-code-input" id="fc-code-input" value="482910" placeholder="000000" aria-label="Code à 6 chiffres affiché au comptoir" />
-                        <small class="fc-code-help">Code rotatif quotidien sécurisé · Change chaque jour.</small>
+                      <div class="fc-src-code-row">
+                        <input type="text" inputmode="numeric" maxlength="6" class="fc-daily-code-input" id="fc-code-input" value="482910" aria-label="Code à 6 chiffres affiché au comptoir" />
+                        <button type="button" class="fc-src-yellow-btn" id="fc-btn-trigger-code">
+                          Tamponner (+100)
+                        </button>
                       </div>
-                      <button type="button" class="fc-client-action-btn pop-btn-yellow" id="fc-btn-trigger-code">
-                        ⚡ Tamponner ma carte (+100 pts)
-                      </button>
+                      <small class="fc-src-micro-help">Saisissez le code rotatif à 6 chiffres affiché au comptoir.</small>
                     </div>
 
-                    <!-- Animation pop de tampon validé -->
-                    <div class="fc-stamp-feedback" id="fc-stamp-feedback" hidden>
+                    <!-- Toast animé Tampon validé -->
+                    <div class="fc-stamp-feedback" id="fc-stamp-feedback" aria-live="polite">
                       <span class="fc-stamp-pop-icon">💥</span>
-                      <span class="fc-stamp-pop-text">TAMPON VALIDÉ ! +100 PTS</span>
+                      <span class="fc-stamp-pop-text">TAMPON VALIDÉ ! +100 POINTS</span>
                     </div>
                   </div>
-
-                  <!-- 4. Boutique des Paliers (BoutiquePaliers) -->
-                  <div class="fc-phone-card fc-card-boutique">
-                    <div class="fc-card-head">
-                      <strong>🎁 Paliers &amp; Récompenses</strong>
-                      <small style="font-weight:700;color:#6b5a3e;">Débloquez vos cadeaux</small>
-                    </div>
-                    <div class="fc-palier-list">
-                      <div class="fc-palier-item is-unlocked">
-                        <div class="fc-palier-icon">☕</div>
-                        <div class="fc-palier-info">
-                          <strong>Boisson ou Café offert</strong>
-                          <small>Palier 200 points</small>
-                        </div>
-                        <span class="fc-palier-badge unlocked">✓ Débloqué</span>
-                      </div>
-                      <div class="fc-palier-item" id="fc-palier-dessert">
-                        <div class="fc-palier-icon">🍰</div>
-                        <div class="fc-palier-info">
-                          <strong>Dessert du Chef offert</strong>
-                          <small>Palier 500 points</small>
-                        </div>
-                        <span class="fc-palier-badge progress" id="fc-palier-dessert-badge">300 / 500</span>
-                      </div>
-                      <div class="fc-palier-item" id="fc-palier-roue">
-                        <div class="fc-palier-icon">🎰</div>
-                        <div class="fc-palier-info">
-                          <strong>Tour de Roue Jackpot</strong>
-                          <small>Palier 1000 points</small>
-                        </div>
-                        <span class="fc-palier-badge locked" id="fc-palier-roue-badge">🔒 1000 pts</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 5. Mention & Intégration Apple / Google Wallet stylisée -->
-                  <div class="fc-wallet-mention-box">
-                    <div class="fc-wallet-pill-icon">📲</div>
-                    <div class="fc-wallet-text">
-                      <strong>Disponible dans Apple Wallet &amp; Google Wallet</strong>
-                      <small>S'ajoute en 1 clic sur l'écran d'accueil sans aucune application</small>
-                    </div>
-                  </div>
-
                 </div>
 
-                <!-- Panneau 2 : Parrainage Club (Vue Complète & Structurée) -->
-                <div class="fc-tab-panel" id="fc-panel-parrainage">
-                  <!-- En-tête Parrainage -->
-                  <div class="fc-passport-header">
-                    <div class="fc-passport-header-top">
-                      <div class="fc-passport-logo-disc" aria-hidden="true">🤝</div>
-                      <div class="fc-passport-header-titles">
-                        <p class="fc-passport-merchant-name">PROGRAMME AMBASSADEUR</p>
-                        <h3 class="fc-passport-title">Parrainez vos proches</h3>
+                <!-- ════ SCÈNE 2 : TIERPANEL + BOUTIQUE PALIERS + RÉCOMPENSE DÉBLOQUÉE ════ -->
+                <div class="fc-tab-panel" id="fc-panel-cadeaux" data-fc-panel="cadeaux">
+                  <!-- TierPanel (Niveaux Bronze / Argent / Or) -->
+                  <div class="fc-src-white-card">
+                    <div class="fc-src-tier-head">
+                      <div>
+                        <span class="fc-src-kicker">VOTRE NIVEAU</span>
+                        <div class="fc-src-tier-badge-lg" id="fc-tier-badge">🥈 Argent</div>
+                      </div>
+                      <div class="fc-src-cumul-box">
+                        <strong id="fc-cumul-val">500</strong>
+                        <small>pts cumulés</small>
                       </div>
                     </div>
-                    <div class="fc-passport-user-pill">
-                      <span>👤 Lisa M.</span>
-                      <span class="fc-pill-sep">·</span>
-                      <span class="fc-user-status-tag" id="fc-ref-count">1 ami parrainé</span>
-                    </div>
-                  </div>
 
-                  <div class="fc-phone-card fc-card-referral">
-                    <div class="fc-card-head">
-                      <strong>🎁 Votre lien d'invitation</strong>
-                      <span class="fc-ref-gain-badge">+10% chacun</span>
+                    <ol class="fc-src-tiers-frieze" aria-label="Niveaux de fidélité">
+                      <li class="is-reached">🥉 Bronze</li>
+                      <li class="is-current" id="fc-frieze-argent">🥈 Argent</li>
+                      <li id="fc-frieze-or">🥇 Or</li>
+                    </ol>
+
+                    <div class="fc-src-bar-meta">
+                      <span>Vers Or</span>
+                      <span id="fc-tier-progress-text">Encore 300 points</span>
                     </div>
-                    <p class="fc-card-desc">
-                      Offrez <b>-10%</b> à vos amis sur leur premier passage. Dès qu'ils viennent, vous gagnez aussi votre cadeau !
+                    <div class="fc-src-progress-track">
+                      <div class="fc-src-progress-fill is-amber" id="fc-tier-bar" style="width: 62%;"></div>
+                    </div>
+                    <p class="fc-src-micro-rule">
+                      Dépenser vos points en cadeaux ne fait jamais redescendre votre niveau.
                     </p>
+                  </div>
+
+                  <!-- BoutiquePaliers + Carte Mes Récompenses -->
+                  <div class="fc-src-boutique-wrap">
+                    <div class="fc-src-section-title">
+                      <span>ÉCHANGER MES POINTS</span>
+                      <strong id="fc-boutique-solde">Solde : 300 pts</strong>
+                    </div>
+
+                    <!-- Récompense fraîchement débloquée (animée par le Motion Design) -->
+                    <div class="fc-src-reward-ticket" id="fc-reward-ticket" hidden>
+                      <div class="fc-src-reward-top">
+                        <span class="fc-src-new-tag">NOUVEAU</span>
+                        <span>🎁 Boisson ou Café offert</span>
+                      </div>
+                      <div class="fc-src-reward-code-row">
+                        <span>Code caisse :</span>
+                        <code>FIDELITE-8K4P</code>
+                      </div>
+                    </div>
+
+                    <!-- Palier 1 : 200 pts -->
+                    <div class="fc-src-milestone is-affordable" id="fc-palier-cafe">
+                      <span class="fc-src-cost-pill is-ready">200</span>
+                      <div class="fc-src-milestone-info">
+                        <strong>☕ Boisson ou Café offert</strong>
+                        <small>🎁 Lot · 200 points</small>
+                      </div>
+                      <button type="button" class="fc-src-exchange-btn" id="fc-btn-exchange-cafe">
+                        Échanger
+                      </button>
+                    </div>
+
+                    <!-- Palier 2 : 500 pts -->
+                    <div class="fc-src-milestone" id="fc-palier-dessert">
+                      <span class="fc-src-cost-pill" id="fc-cost-dessert">500</span>
+                      <div class="fc-src-milestone-info">
+                        <strong>🍰 Dessert du Chef offert</strong>
+                        <small id="fc-dessert-status">Encore 200 points pour ce cadeau</small>
+                      </div>
+                      <span class="fc-palier-badge progress" id="fc-palier-dessert-badge">300/500</span>
+                    </div>
+
+                    <!-- Palier 3 : 1000 pts -->
+                    <div class="fc-src-milestone">
+                      <span class="fc-src-cost-pill">1000</span>
+                      <div class="fc-src-milestone-info">
+                        <strong>🎡 Tour de roue offert</strong>
+                        <small>Encore 700 points · Bonus caisse</small>
+                      </div>
+                      <span class="fc-palier-badge locked">🔒</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ════ SCÈNE 3 : BLOCPARRAINAGE DU CODE SOURCE ════ -->
+                <div class="fc-tab-panel" id="fc-panel-parrainage" data-fc-panel="parrainage">
+                  <div class="fc-src-white-card">
+                    <div class="fc-src-tier-head">
+                      <div>
+                        <span class="fc-src-kicker">BOUCHE-À-OREILLE</span>
+                        <h4 class="fc-src-card-h">🤝 Parrainer un ami</h4>
+                      </div>
+                      <span class="fc-ref-gain-badge">+150 pts / ami</span>
+                    </div>
+
+                    <p class="fc-src-rule-copy">
+                      Votre ami ouvre sa carte avec votre lien, puis valide sa <b>1re visite chez Bistrot L'Étoile</b>. <strong>C'est à cette visite que vos 150 points arrivent !</strong>
+                    </p>
+
                     <div class="fc-promo-box">
-                      <small style="font-weight:700;">Votre code de parrain :</small>
-                      <strong class="fc-promo-code">LISA-774</strong>
-                      <button type="button" class="fc-copy-code-btn" id="fc-copy-code-btn">Copier</button>
+                      <div>
+                        <span class="fc-src-kicker">MON CODE PARRAIN</span>
+                        <strong class="fc-promo-code">PASS-LISA</strong>
+                      </div>
+                      <button type="button" class="fc-copy-code-btn" id="fc-copy-code-btn">Copier le lien</button>
                     </div>
+
+                    <dl class="fc-src-dl-grid">
+                      <div class="fc-src-dl-cell">
+                        <dt>Mon cadeau parrain</dt>
+                        <dd>+150 points</dd>
+                      </div>
+                      <div class="fc-src-dl-cell">
+                        <dt>Filleuls validés</dt>
+                        <dd id="fc-ref-count">2 sur 5 <small>(Encore 3)</small></dd>
+                      </div>
+                    </dl>
                   </div>
 
-                  <!-- Paliers de parrainage complets -->
-                  <div class="fc-phone-card">
-                    <div class="fc-card-head">
-                      <strong>🏆 Vos récompenses parrain</strong>
-                      <small style="font-weight:700;color:#6b5a3e;">3 paliers exclusifs</small>
+                  <!-- Activité temps réel des filleuls -->
+                  <div class="fc-src-white-card">
+                    <div class="fc-src-section-title" style="margin-bottom:0.35rem;">
+                      <span>ACTIVITÉ DES FILLEULS</span>
+                      <small style="color:#065f46;font-weight:800;">● Temps réel</small>
                     </div>
-                    <div class="fc-palier-list" id="fc-ref-tiers">
-                      <div class="fc-palier-item is-unlocked">
-                        <div class="fc-palier-icon">🎟️</div>
-                        <div class="fc-palier-info">
-                          <strong>1er ami parrainé</strong>
-                          <small>-10% sur votre prochaine addition</small>
-                        </div>
-                        <span class="fc-palier-badge unlocked">✓ Gagné</span>
-                      </div>
-                      <div class="fc-palier-item" id="fc-ref-palier-2">
-                        <div class="fc-palier-icon">🍰</div>
-                        <div class="fc-palier-info">
-                          <strong>2e ami parrainé</strong>
-                          <small>1 Dessert du Chef offert</small>
-                        </div>
-                        <span class="fc-palier-badge progress" id="fc-tier-2">En attente</span>
-                      </div>
-                      <div class="fc-palier-item" id="fc-ref-palier-3">
-                        <div class="fc-palier-icon">👑</div>
-                        <div class="fc-palier-info">
-                          <strong>3e ami parrainé</strong>
-                          <small>Statut VIP Or &amp; Invitations dégustation</small>
-                        </div>
-                        <span class="fc-palier-badge locked" id="fc-tier-3">🔒 3 amis</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Filleuls récents -->
-                  <div class="fc-phone-card fc-card-filleuls">
-                    <div class="fc-card-head">
-                      <strong>👥 Activité de vos amis</strong>
-                      <small style="color:#5f5647;">Temps réel</small>
-                    </div>
-                    <div class="fc-filleul-item">
+                    <div class="fc-filleul-item is-animated" id="fc-filleul-marc">
                       <span class="fc-filleul-avatar">🧑</span>
                       <div class="fc-filleul-info">
-                        <strong>Marc D.</strong>
-                        <small>Visite validée · -10% débloqué pour vous</small>
+                        <strong>Marc D. · 1re visite validée</strong>
+                        <small>+150 pts crédités sur votre passeport</small>
                       </div>
-                      <span class="fc-filleul-date">Hier</span>
+                      <span class="fc-palier-badge unlocked">+150 pts</span>
                     </div>
                     <div class="fc-filleul-item">
                       <span class="fc-filleul-avatar">👩</span>
                       <div class="fc-filleul-info">
-                        <strong>Thomas B.</strong>
-                        <small>Invitation reçue · En attente de visite</small>
+                        <strong>Julie B. · Lien envoyé</strong>
+                        <small>En attente de son 1er passage</small>
                       </div>
-                      <span class="fc-filleul-date">En cours</span>
+                      <span class="fc-palier-badge progress">Invitée</span>
                     </div>
-                  </div>
 
-                  <button type="button" class="fc-client-action-btn pop-btn-violet" id="fc-screen-btn-refer">
-                    🤝 Simuler un ami parrainé (+1 ami &amp; +6% Cagnotte)
-                  </button>
+                    <button type="button" class="fc-src-yellow-btn" id="fc-screen-btn-refer" style="margin-top:0.35rem;">
+                      🤝 Simuler la 1re visite d'un ami (+150 pts)
+                    </button>
+                  </div>
                 </div>
 
-                <!-- Panneau 3 : Jackpot Collectif (Vue Complète & Structurée) -->
-                <div class="fc-tab-panel" id="fc-panel-jackpot">
-                  <!-- En-tête Jackpot -->
-                  <div class="fc-passport-header">
-                    <div class="fc-passport-header-top">
-                      <div class="fc-passport-logo-disc" aria-hidden="true">🎰</div>
-                      <div class="fc-passport-header-titles">
-                        <p class="fc-passport-merchant-name">CAGNOTTE DU MOIS</p>
-                        <h3 class="fc-passport-title">Le Grand Tirage Collectif</h3>
-                      </div>
+                <!-- ════ SCÈNE 4 : LINKEDJACKPOTCARD + INSTALLERPASSEPORT + PIED COMMERCE ════ -->
+                <div class="fc-tab-panel" id="fc-panel-jackpot" data-fc-panel="jackpot">
+                  <!-- LinkedJackpotCard (#fde9ba) -->
+                  <div class="fc-src-solde-card fc-src-jackpot-card">
+                    <div class="fc-src-solde-top">
+                      <span class="fc-src-kicker">MON JACKPOT COLLECTIF</span>
+                      <span class="fc-src-visites-chip" id="fc-jackpot-pct-pill">88 % atteint</span>
                     </div>
-                    <div class="fc-passport-user-pill">
-                      <span>👥 84 habitués participent</span>
-                      <span class="fc-pill-sep">·</span>
-                      <span class="fc-user-status-tag" id="fc-jackpot-pct-pill">Jauge à 88%</span>
+                    <h4 class="fc-src-card-h" style="margin:0.1rem 0;">🎰 Menu Dégustation Duo</h4>
+                    <div class="fc-src-jackpot-nums">
+                      <span class="fc-src-jackpot-euro">120,00 €</span>
+                      <strong id="fc-jackpot-counter">44 / 50 visites</strong>
                     </div>
-                  </div>
-
-                  <div class="fc-phone-card fc-card-jackpot">
-                    <div class="fc-card-head">
-                      <strong>🔥 Jauge Collective en Direct</strong>
-                      <span class="fc-jackpot-big-pct" id="fc-jackpot-pct">88 %</span>
+                    <div class="fc-src-progress-track">
+                      <div class="fc-src-progress-fill" id="fc-jackpot-bar" style="width: 88%;"></div>
                     </div>
-                    <div class="fc-jackpot-bar-outer">
-                      <div class="fc-jackpot-bar-inner" id="fc-jackpot-bar" style="width: 88%;"></div>
-                    </div>
-                    <p class="fc-jackpot-msg" id="fc-jackpot-msg">
-                      Plus que <strong>12 %</strong> de visites collectives pour déclencher le grand tirage !
+                    <p class="fc-src-solde-reassure" id="fc-jackpot-msg">
+                      Votre dernière visite a rejoint la cagnotte : plus que <b>6 visites</b> avant le tirage !
                     </p>
                   </div>
 
-                  <!-- Le Grand Lot en Jeu -->
-                  <div class="fc-phone-card fc-card-lot">
-                    <div class="fc-card-head">
-                      <strong>🎁 Lot exceptionnel en jeu</strong>
-                      <span class="fc-lot-badge">Tirage ce mois-ci</span>
-                    </div>
-                    <div class="fc-lot-content">
-                      <span class="fc-lot-icon">🍾</span>
-                      <div class="fc-lot-text">
-                        <strong>Menu Dégustation Gourmand pour 2</strong>
-                        <small>Entrées + Plats + Desserts &amp; Vins de vignerons inclus</small>
-                      </div>
+                  <!-- InstallerPasseport (Écran d'accueil + Google Wallet officiel noir) -->
+                  <div class="fc-src-install-box">
+                    <strong>Gardez votre carte à portée de main</strong>
+                    <small>En 1 clic sur votre écran d'accueil ou dans Google Wallet.</small>
+                    <div class="fc-src-install-actions">
+                      <button type="button" class="fc-src-install-btn" id="fc-btn-sim-install">📲 Écran d'accueil</button>
+                      <span class="fc-src-gwallet-pill">Ajouter à Google Wallet</span>
                     </div>
                   </div>
 
-                  <!-- Comment ça marche -->
-                  <div class="fc-phone-card fc-card-how">
-                    <div class="fc-card-head">
-                      <strong>⚡ Comment fonctionne la cagnotte ?</strong>
-                    </div>
-                    <ul class="fc-jackpot-rules">
-                      <li><b>1.</b> Chaque tampon fidélité ou parrainage ajoute <b>+4 %</b> à la jauge.</li>
-                      <li><b>2.</b> Plus les habitués viennent, plus vite la jauge atteint 100 %.</li>
-                      <li><b>3.</b> À 100 %, un tirage au sort désigne le gagnant parmi tous les participants !</li>
-                    </ul>
-                  </div>
-
-                  <!-- Derniers gagnants -->
-                  <div class="fc-phone-card fc-card-winners">
-                    <div class="fc-card-head">
-                      <strong>🎉 Derniers gagnants</strong>
-                      <small style="color:#5f5647;">Félicitations !</small>
-                    </div>
-                    <div class="fc-winner-row">
-                      <span>🏆 <b>Julien R.</b> a remporté le Panier Terroir</span>
-                      <small>Le 12/11</small>
-                    </div>
-                    <div class="fc-winner-row">
-                      <span>🏆 <b>Camille S.</b> a remporté 1 Repas Duo</span>
-                      <small>Le 28/10</small>
+                  <!-- PasseportPiedCommerce (Horloge + Liens) -->
+                  <div class="fc-src-footer-commerce">
+                    <p class="fc-src-clock" id="fc-commerce-clock">🕒 Il est 12:45:10 chez Bistrot L'Étoile</p>
+                    <div class="fc-src-commerce-links">
+                      <span>📖 La carte</span>
+                      <span>⭐ Avis Google</span>
+                      <span>📸 Instagram</span>
                     </div>
                   </div>
 
-                  <button type="button" class="fc-client-action-btn pop-btn-orange" id="fc-screen-btn-jackpot">
-                    🎰 Simuler le tirage au sort (à 100%)
+                  <button type="button" class="fc-src-yellow-btn" id="fc-screen-btn-jackpot" style="width:100%;">
+                    🎰 Pousser la cagnotte à 100 % (Tirage au sort)
                   </button>
                 </div>
+
               </div>
 
-              <!-- Barre tactile Home en bas du smartphone -->
-              <div class="fc-home-indicator" aria-hidden="true"></div>
+              <!-- ZONE BASSE FIXE : Dock de navigation 4 étapes + Home Indicator intégré -->
+              <div class="fc-phone-dock">
+                <div class="fc-dock-tabs" role="group" aria-label="Étapes du Passeport">
+                  <button type="button" class="fc-tab-btn active" data-fc-tab="passeport">
+                    <span aria-hidden="true">🎟️</span>
+                    <b>1. Tampon</b>
+                  </button>
+                  <button type="button" class="fc-tab-btn" data-fc-tab="cadeaux">
+                    <span aria-hidden="true">🎁</span>
+                    <b>2. Cadeaux</b>
+                  </button>
+                  <button type="button" class="fc-tab-btn" data-fc-tab="parrainage">
+                    <span aria-hidden="true">🤝</span>
+                    <b>3. Parrain</b>
+                  </button>
+                  <button type="button" class="fc-tab-btn" data-fc-tab="jackpot">
+                    <span aria-hidden="true">🎰</span>
+                    <b>4. Jackpot</b>
+                  </button>
+                </div>
+                <div class="fc-home-indicator" aria-hidden="true"></div>
+              </div>
+
             </div>
           </div>
         </div>
