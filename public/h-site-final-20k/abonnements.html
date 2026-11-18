@@ -15,131 +15,69 @@
 <body class="page-abonnements">
   <div class="floating-bubbles" aria-hidden="true" id="bubbles"></div>
 
+  <div class="k-stripe-bar" aria-hidden="true"></div>
+
+  <!-- Barre de Navigation Supérieure Officielle (sans héro encombrant) -->
+  <header class="header-nav header-nav-annex" style="margin-top:0.75rem;margin-bottom:0.75rem;">
+    <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
+      <nav aria-label="Navigation principale">
+        <a href="index.html">Accueil</a>
+        <div class="nav-dropdown-wrap">
+          <button type="button" class="nav-dropdown-btn" aria-expanded="false" aria-haspopup="true" aria-controls="nav-modules-panel">
+            🧩 Modules <span class="nav-dropdown-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="nav-dropdown-panel" id="nav-modules-panel" hidden>
+            <div class="nav-dropdown-head">
+              <span class="nav-dropdown-title">Les 12 modules Lastchance</span>
+              <a href="modules.html" class="nav-dropdown-all-link">Tout découvrir →</a>
+            </div>
+            <div class="nav-dropdown-grid">
+              <a href="modules.html?m=jeux-instantanes" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎡</span><span class="nav-dropdown-label">Jeux instantanés</span></a>
+              <a href="modules.html?m=passeport-fidelite" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">📔</span><span class="nav-dropdown-label">Passeport fidélité</span></a>
+              <a href="modules.html?m=calendrier" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗓️</span><span class="nav-dropdown-label">Calendrier</span></a>
+              <a href="modules.html?m=evenements-live" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎤</span><span class="nav-dropdown-label">Événements live</span></a>
+              <a href="modules.html?m=pronostics" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🏆</span><span class="nav-dropdown-label">Pronostics</span></a>
+              <a href="modules.html?m=jackpot-collectif" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎰</span><span class="nav-dropdown-label">Jackpot collectif</span></a>
+              <a href="modules.html?m=quiz" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">❓</span><span class="nav-dropdown-label">Quiz</span></a>
+              <a href="modules.html?m=chasse-au-qr" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗺️</span><span class="nav-dropdown-label">Chasse au QR</span></a>
+              <a href="modules.html?m=duo-miroir" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🪞</span><span class="nav-dropdown-label">Duo Miroir</span></a>
+              <a href="modules.html?m=portrait-de-la-bande" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">👥</span><span class="nav-dropdown-label">Portrait de la Bande</span></a>
+              <a href="modules.html?m=ticket-dor" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎟️</span><span class="nav-dropdown-label">Ticket d’Or</span></a>
+              <a href="modules.html?m=missions-coffres" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗝️</span><span class="nav-dropdown-label">Missions &amp; coffres</span></a>
+            </div>
+          </div>
+        </div>
+        <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
+        <a href="fidelite-communaute.html">Fidélité &amp; Jackpot</a>
+        <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+        <a href="abonnements.html" class="nav-active">💎 Abonnements</a>
+        <a href="studio.html?module=vitrine" class="nav-highlight-link">🛠️ Studio</a>
+      </nav>
+      <div class="nav-right-actions">
+        <a class="ticket-btn pop-btn-ink" href="/login">Connexion</a>
+        <a class="ticket-btn pop-btn-yellow" href="/signup">Essai 7j offert →</a>
+      </div>
+    </header>
+
+  <!-- Fil d'Ariane épuré -->
+  <div class="annex-breadcrumb-wrap" style="max-width:1200px;margin:1rem auto 0;padding:0 1.25rem;">
+    <nav class="annex-breadcrumb" aria-label="Fil d'Ariane">
+      <a href="index.html">Accueil</a>
+      <span aria-hidden="true">›</span>
+      <span class="bc-current">💎 Le Grand Comparatif des 5 Formules</span>
+    </nav>
+  </div>
+
   <main id="main-content">
     <!-- ==========================================================
-         1. HERO ANNEXE OFFICIEL : PORTAIL ABONNEMENTS & FORMULES
+         LE GRAND TABLEAU COMPARATIF COMPLET (Épuré & avec nos modules)
          ========================================================== -->
-    <section class="hero-annex-portal hero-portal-abonnements" id="top">
-      <header class="header-nav header-nav-annex">
-        <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
-        <nav aria-label="Navigation principale">
-          <a href="index.html">Accueil</a>
-          <div class="nav-dropdown-wrap">
-            <button type="button" class="nav-dropdown-btn" aria-expanded="false" aria-haspopup="true" aria-controls="nav-modules-panel">
-              🧩 Modules <span class="nav-dropdown-caret" aria-hidden="true">▾</span>
-            </button>
-            <div class="nav-dropdown-panel" id="nav-modules-panel" hidden>
-              <div class="nav-dropdown-head">
-                <span class="nav-dropdown-title">Les 12 modules Lastchance</span>
-                <a href="modules.html" class="nav-dropdown-all-link">Tout découvrir →</a>
-              </div>
-              <div class="nav-dropdown-grid">
-                <a href="modules.html?m=jeux-instantanes" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎡</span><span class="nav-dropdown-label">Jeux instantanés</span></a>
-                <a href="modules.html?m=passeport-fidelite" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">📔</span><span class="nav-dropdown-label">Passeport fidélité</span></a>
-                <a href="modules.html?m=calendrier" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗓️</span><span class="nav-dropdown-label">Calendrier</span></a>
-                <a href="modules.html?m=evenements-live" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎤</span><span class="nav-dropdown-label">Événements live</span></a>
-                <a href="modules.html?m=pronostics" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🏆</span><span class="nav-dropdown-label">Pronostics</span></a>
-                <a href="modules.html?m=jackpot-collectif" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎰</span><span class="nav-dropdown-label">Jackpot collectif</span></a>
-                <a href="modules.html?m=quiz" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">❓</span><span class="nav-dropdown-label">Quiz</span></a>
-                <a href="modules.html?m=chasse-au-qr" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗺️</span><span class="nav-dropdown-label">Chasse au QR</span></a>
-                <a href="modules.html?m=duo-miroir" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🪞</span><span class="nav-dropdown-label">Duo Miroir</span></a>
-                <a href="modules.html?m=portrait-de-la-bande" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">👥</span><span class="nav-dropdown-label">Portrait de la Bande</span></a>
-                <a href="modules.html?m=ticket-dor" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎟️</span><span class="nav-dropdown-label">Ticket d’Or</span></a>
-                <a href="modules.html?m=missions-coffres" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗝️</span><span class="nav-dropdown-label">Missions &amp; coffres</span></a>
-              </div>
-            </div>
-          </div>
-          <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
-          <a href="fidelite-communaute.html">Fidélité &amp; Jackpot</a>
-          <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
-          <a href="abonnements.html" class="nav-active">💎 Abonnements</a>
-          <a href="studio.html?module=vitrine" class="nav-highlight-link">🛠️ Studio</a>
-        </nav>
-        <div class="nav-right-actions">
-          <a class="ticket-btn pop-btn-ink" href="/login">Connexion</a>
-          <a class="ticket-btn pop-btn-yellow" href="/signup">Essai 7j offert →</a>
-        </div>
-      </header>
-
-      <!-- Fil d'Ariane -->
-      <div class="annex-breadcrumb-wrap">
-        <nav class="annex-breadcrumb" aria-label="Fil d'Ariane">
-          <a href="index.html">Accueil</a>
-          <span aria-hidden="true">›</span>
-          <span class="bc-current">💎 Formules &amp; Add-ons à la Carte</span>
-        </nav>
-      </div>
-
-      <!-- Grille Héro Abonnements -->
-      <div class="hero-annex-grid">
-        <div class="hero-annex-left">
-          <span class="hero-fun-badge">💎 0 % COMMISSION · SANS ENGAGEMENT · 7J OFFERTS</span>
-
-          <h1 class="hero-fun-title annex-white-title">
-            Des formules claires,<br />
-            zéro commission &amp;<br />
-            <span class="hero-fun-sticker">sans engagement !</span>
-          </h1>
-
-          <p class="hero-annex-sub">
-            De l'animation de comptoir à la solution tout-en-un avec réservations, écran géant et passeport fidélité : choisissez votre formule ou composez sur-mesure grâce à notre calculateur d'options à la carte.
-          </p>
-
-          <div class="hero-cta-row">
-            <a class="ticket-btn ticket-btn-large pop-btn-yellow hero-anchor-btn" href="abonnements.html#grand-comparatif">📊 Voir le Grand Comparatif ↓</a>
-            <a class="ticket-btn ticket-btn-large pop-btn-white hero-anchor-btn" href="abonnements.html#simulateur-geant">🧮 Calculateur &amp; Add-ons ↓</a>
-          </div>
-        </div>
-
-        <!-- Colonne Droite : Carte Objet 3D Simulateur Synthèse -->
-        <div class="hero-annex-right">
-          <div class="annex-device-card ab-hero-card">
-            <div class="device-card-header">
-              <span class="device-tag">⚡ CHOIX DE FACTURATION</span>
-              <span class="device-live-dot" aria-hidden="true"></span>
-            </div>
-
-            <!-- Toggle Mensuel / Annuel -->
-            <div class="billing-toggle-container hero-billing-switch" role="group" aria-label="Périodicité de facturation">
-              <button type="button" class="billing-toggle-btn active" id="btn-billing-monthly" aria-pressed="true">
-                Mensuel (Sans engagement)
-              </button>
-              <button type="button" class="billing-toggle-btn" id="btn-billing-annual" aria-pressed="false">
-                Annuel <span class="annual-saving-pill">🎁 2 mois offerts</span>
-              </button>
-            </div>
-
-            <div class="ab-hero-summary-box">
-              <div class="ab-hero-summary-stat">
-                <span class="ab-hero-summary-num" id="hero-saving-indicator">Dès 29 €<small>/mois</small></span>
-                <span class="ab-hero-summary-text" id="hero-saving-text">Paiement mensuel sans engagement</span>
-              </div>
-              <ul class="ab-hero-checklist">
-                <li><span class="chk-icon">✓</span> <b>0 % commission</b> sur toutes vos ventes &amp; réservations</li>
-                <li><span class="chk-icon">✓</span> <b>Sans engagement</b> · Résiliation libre en 1 clic sans préavis</li>
-                <li><span class="chk-icon">✓</span> <b>Essai 7 jours 100% gratuit</b> sans prélèvement immédiat</li>
-                <li><span class="chk-icon">✓</span> <b>Scans illimités</b> &amp; affiches prêtes à imprimer</li>
-              </ul>
-            </div>
-
-            <a class="ticket-btn pop-btn-yellow w-full hero-anchor-btn" href="abonnements.html#simulateur-geant">🧮 Simuler mon budget sur-mesure →</a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Damier officiel de transition -->
-    <div class="checker-strip" aria-hidden="true"></div>
-
-    <!-- ==========================================================
-         2. PIÈCE MAÎTRESSE 1 : LE GRAND TABLEAU COMPARATIF COMPLET
-         ========================================================== -->
-    <section class="section section-wide" id="grand-comparatif">
+    <section class="section section-wide" id="grand-comparatif" style="padding-top:1.25rem;">
       <div class="center">
-        <p class="section-script">transparence absolue · comparez chaque brique</p>
-        <h2 class="section-title">LE GRAND COMPARATIF DES <mark class="pop-mark pop-mark-yellow">5 FORMULES</mark></h2>
+        <span class="hero-fun-badge" style="background:#ffd93d;color:#211d16;border:2px solid #211d16;display:inline-block;padding:0.35rem 0.95rem;border-radius:999px;font:800 0.8rem var(--fun-font);margin-bottom:0.75rem;box-shadow:2px 2px 0 #211d16;">💎 0 % COMMISSION · SANS ENGAGEMENT · 7 JOURS D'ESSAI OFFERTS</span>
+        <h1 class="section-title">LE GRAND COMPARATIF DES <mark class="pop-mark pop-mark-yellow">5 FORMULES</mark></h1>
         <p class="section-lead" style="max-width:760px;margin:0.5rem auto 1.4rem;">
-          Comparez chaque module inclus dans nos 5 offres. La facturation par défaut est <b>mensuelle sans engagement</b>. Vous pouvez basculer en annuel pour bénéficier de <b>2 mois offerts (-20%)</b> :
+          Comparez les modules inclus dans chaque formule. La facturation par défaut est <b>mensuelle sans engagement</b>. Basculez en annuel pour bénéficier de <b>2 mois offerts (-20%)</b> :
         </p>
 
         <!-- Toggle réactif Mensuel / Annuel pour le tableau -->
@@ -154,6 +92,11 @@
           </div>
         </div>
 
+        <div style="display:flex;justify-content:center;gap:0.75rem;margin:1.1rem auto 1.6rem;flex-wrap:wrap;">
+          <a href="#simulateur-geant" class="ticket-btn pop-btn-white" style="font-size:0.85rem;padding:0.45rem 1rem;">🧮 Aller au calculateur &amp; options sur-mesure ↓</a>
+          <a href="#faq-tarifs" class="ticket-btn pop-btn-white" style="font-size:0.85rem;padding:0.45rem 1rem;">❓ Questions fréquentes sur la facturation ↓</a>
+        </div>
+
         <div class="ab-table-swipe-hint" aria-hidden="true">
           <span>👈</span>
           <span><b>Faites glisser horizontalement</b> pour comparer l'ensemble des 5 formules</span>
@@ -165,7 +108,7 @@
         <table class="ab-compare-table ab-table-full">
           <thead>
             <tr>
-              <th scope="col" class="th-feature">Fonctionnalités &amp; Modules</th>
+              <th scope="col" class="th-feature">Modules &amp; Expériences</th>
               <th scope="col" class="th-plan" data-plan="core">
                 <span class="th-plan-badge">⚡ ESSENTIEL</span>
                 <span class="th-plan-name">Coup d'envoi</span>
@@ -199,14 +142,14 @@
             </tr>
           </thead>
           <tbody>
-            <!-- Catégorie 1 : Jeux & Animations instantanées -->
+            <!-- Catégorie 1 : Les 12 modules d'animation & expériences -->
             <tr class="ab-cat-header-row">
               <th colspan="6" scope="colgroup">
-                <span class="ab-cat-tag">🎮 1. JEUX D'ANIMATION &amp; SCANS DE COMPTOIR</span>
+                <span class="ab-cat-tag">🎮 1. NOS MODULES D'EXPÉRIENCE &amp; DE JEU</span>
               </th>
             </tr>
             <tr>
-              <th scope="row"><b>15 mini-jeux instantanés</b> (roue, grattage, coffre mystère...)</th>
+              <th scope="row"><span aria-hidden="true">🎡</span> <b>Jeux instantanés</b> (15 mini-jeux : roue, grattage, coffres...)</th>
               <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
               <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
               <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
@@ -214,7 +157,7 @@
               <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
-              <th scope="row"><b>Jeux Duo &amp; défis à table</b> (Duo Miroir &amp; Portrait de la bande)</th>
+              <th scope="row"><span aria-hidden="true">🪞</span> <b>Duo Miroir</b> (défis synchronisés à deux à table)</th>
               <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
               <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
               <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
@@ -222,7 +165,125 @@
               <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
             </tr>
             <tr>
-              <th scope="row"><b>Scans QR &amp; visiteurs illimités</b> (aucun plafond)</th>
+              <th scope="row"><span aria-hidden="true">👥</span> <b>Portrait de la Bande</b> (jeu d'équipe &amp; photo souvenir à table)</th>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">🎟️</span> <b>Ticket d’Or</b> (tirage surprise &amp; instant gagnant exclusif)</th>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">🗝️</span> <b>Missions &amp; coffres</b> (quêtes ludiques &amp; coffres secrets)</th>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">📔</span> <b>Passeport fidélité</b> (QR client individuel · 0 appli · tampons)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">🗓️</span> <b>Calendrier</b> (cadeaux &amp; rendez-vous quotidien d'assiduité)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">❓</span> <b>Quiz</b> (quiz interactifs en direct &amp; blind tests)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">🗺️</span> <b>Chasse au QR</b> (parcours d'énigmes &amp; balises à scanner)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">🎤</span> <b>Événements live</b> (écran géant TV &amp; régie direct 250 joueurs)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">🏆</span> <b>Pronostics</b> (saisons sportives &amp; classements de match)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">🎰</span> <b>Jackpot collectif</b> (cagnotte partagée &amp; tirage en salle)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+
+            <!-- Catégorie 2 : Vitrine & Réservations directes -->
+            <tr class="ab-cat-header-row">
+              <th colspan="6" scope="colgroup">
+                <span class="ab-cat-tag">📖 2. VITRINE EN LIGNE &amp; RÉSERVATIONS DIRECTES (0 % COMMISSION)</span>
+              </th>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">📖</span> <b>Vitrine &amp; Tarifs au QR</b> (cartes, menus &amp; 7 univers métiers)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">📅</span> <b>Prise de rendez-vous en direct</b> (agenda connecté, 0 % com)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">⚡</span> <b>Moments VIP &amp; Ateliers</b> (places limitées, invitations &amp; ventes privées)</th>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <td class="cross"><span class="tbl-dash-badge">—</span></td>
+              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+            </tr>
+
+            <!-- Catégorie 3 : Conditions & Services essentiels -->
+            <tr class="ab-cat-header-row">
+              <th colspan="6" scope="colgroup">
+                <span class="ab-cat-tag">🛡️ 3. SERVICES, SMS &amp; GARANTIES INCLUSES</span>
+              </th>
+            </tr>
+            <tr>
+              <th scope="row"><span aria-hidden="true">📱</span> <b>Scans QR &amp; Visiteurs</b> (aucun plafond de scans)</th>
               <td class="chk"><span class="tbl-check-badge">✓ Illimité</span></td>
               <td class="chk highlight"><span class="tbl-check-badge">✓ Illimité</span></td>
               <td class="chk"><span class="tbl-check-badge">✓ Illimité</span></td>
@@ -230,163 +291,15 @@
               <td class="chk"><span class="tbl-check-badge">✓ Illimité</span></td>
             </tr>
             <tr>
-              <th scope="row"><b>Caisse universelle sécurisée</b> &amp; contrôle des gains</th>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
+              <th scope="row"><span aria-hidden="true">💬</span> <b>SMS automatiques inclus / mois</b></th>
+              <td><span class="tbl-text-badge">50 SMS / mois</span></td>
+              <td class="highlight"><span class="tbl-text-badge">150 SMS / mois</span></td>
+              <td><span class="tbl-text-badge">150 SMS / mois</span></td>
+              <td><span class="tbl-text-badge">250 SMS / mois</span></td>
+              <td><span class="tbl-text-badge">500 SMS / mois</span></td>
             </tr>
             <tr>
-              <th scope="row"><b>Quiz en direct &amp; blind tests interactifs</b></th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Saisons de Pronostics sportifs</b> &amp; classements en direct</th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Chasse au trésor interactive &amp; Calendrier digital</b></th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-
-            <!-- Catégorie 2 : Fidélité & Communauté -->
-            <tr class="ab-cat-header-row">
-              <th colspan="6" scope="colgroup">
-                <span class="ab-cat-tag">🎟️ 2. FIDÉLITÉ, CAGNOTTE &amp; PARRAINAGE CLIENT</span>
-              </th>
-            </tr>
-            <tr>
-              <th scope="row"><b>Passeport fidélité mobile</b> (QR client individuel · 0 appli)</th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Double validation de passage</b> (scan commerçant OU code comptoir du jour)</th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Tampons virtuels &amp; Paliers de récompenses</b> sur-mesure</th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Jackpot &amp; Cagnotte collective</b> à tirage en salle</th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Programme Parrainage &amp; Ambassadeurs</b></th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-
-            <!-- Catégorie 3 : Vitrine & Réservations directes -->
-            <tr class="ab-cat-header-row">
-              <th colspan="6" scope="colgroup">
-                <span class="ab-cat-tag">📖 3. VITRINE EN LIGNE &amp; RÉSERVATIONS DIRECTES (0 % COMMISSION)</span>
-              </th>
-            </tr>
-            <tr>
-              <th scope="row"><b>Vitrine numérique &amp; Carte de tarifs</b> au QR code</th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Prise de Rendez-vous en ligne sans commission</b></th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Synchronisation agenda</b> (Google Calendar, Apple, Outlook)</th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Moments VIP &amp; Événements limités</b> (ateliers, dégustations)</th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-
-            <!-- Catégorie 4 : Écran géant & Soirées -->
-            <tr class="ab-cat-header-row">
-              <th colspan="6" scope="colgroup">
-                <span class="ab-cat-tag">📺 4. ÉCRAN GÉANT TV &amp; SOIRÉES ANIMÉES</span>
-              </th>
-            </tr>
-            <tr>
-              <th scope="row"><b>Affichage grand écran TV / Projecteur</b></th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Régie live &amp; Télécommande mobile commerçant</b></th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Capacité simultanée en salle</b></th>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross highlight"><span class="tbl-dash-badge">—</span></td>
-              <td class="cross"><span class="tbl-dash-badge">—</span></td>
-              <td class="chk"><span class="tbl-text-badge">250 joueurs</span></td>
-              <td class="chk"><span class="tbl-text-badge">250 joueurs</span></td>
-            </tr>
-
-            <!-- Catégorie 5 : Engagements & Support -->
-            <tr class="ab-cat-header-row">
-              <th colspan="6" scope="colgroup">
-                <span class="ab-cat-tag">🛡️ 5. GARANTIES, FACTURATION &amp; SUPPORT COMMERÇANT</span>
-              </th>
-            </tr>
-            <tr>
-              <th scope="row"><b>Commission sur votre chiffre d'affaires</b></th>
+              <th scope="row"><span aria-hidden="true">🛡️</span> <b>Commission sur votre chiffre d'affaires</b></th>
               <td class="chk"><span class="tbl-text-badge">0 % commission</span></td>
               <td class="chk highlight"><span class="tbl-text-badge">0 % commission</span></td>
               <td class="chk"><span class="tbl-text-badge">0 % commission</span></td>
@@ -394,7 +307,7 @@
               <td class="chk"><span class="tbl-text-badge">0 % commission</span></td>
             </tr>
             <tr>
-              <th scope="row"><b>Engagement de durée</b></th>
+              <th scope="row"><span aria-hidden="true">🔓</span> <b>Engagement de durée</b></th>
               <td class="chk"><span class="tbl-text-badge">Sans engagement</span></td>
               <td class="chk highlight"><span class="tbl-text-badge">Sans engagement</span></td>
               <td class="chk"><span class="tbl-text-badge">Sans engagement</span></td>
@@ -402,28 +315,12 @@
               <td class="chk"><span class="tbl-text-badge">Sans engagement</span></td>
             </tr>
             <tr>
-              <th scope="row"><b>Essai gratuit offert</b></th>
+              <th scope="row"><span aria-hidden="true">🎁</span> <b>Essai 100 % gratuit offert</b></th>
               <td class="chk"><span class="tbl-text-badge">7 jours offerts</span></td>
               <td class="chk highlight"><span class="tbl-text-badge">7 jours offerts</span></td>
               <td class="chk"><span class="tbl-text-badge">7 jours offerts</span></td>
               <td class="chk"><span class="tbl-text-badge">7 jours offerts</span></td>
               <td class="chk"><span class="tbl-text-badge">7 jours offerts</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Studio de création d'affiches QR</b></th>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk highlight"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-              <td class="chk"><span class="tbl-check-badge">✓ Inclus</span></td>
-            </tr>
-            <tr>
-              <th scope="row"><b>Support commerçant</b></th>
-              <td><span class="tbl-text-badge">Email 7j/7</span></td>
-              <td class="highlight"><span class="tbl-text-badge">Email &amp; Chat</span></td>
-              <td><span class="tbl-text-badge">Email &amp; Chat</span></td>
-              <td><span class="tbl-text-badge">Prioritaire 7j/7</span></td>
-              <td><span class="tbl-text-badge">VIP Dédié 7j/7</span></td>
             </tr>
           </tbody>
           <tfoot>
