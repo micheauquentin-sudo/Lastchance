@@ -41,7 +41,7 @@
     }
   }
 
-  /* ── 2. MOTION DESIGN DU PARCOURS (« 1. ILS SCANNENT · 2. ILS JOUENT · 3. ILS GAGNENT ») ── */
+  /* ── 2. DÉMONSTRATION DU PARCOURS (« 1. ILS SCANNENT · 2. ILS JOUENT · 3. ILS GAGNENT ») ── */
   const motionStage = $("#motion-stage");
   const storyTrigger = $("#demo-story-trigger");
 
@@ -731,10 +731,7 @@
           <button type="button" class="ticket-btn pop-btn-ink choose-plan-signup-btn" style="text-align:center;width:100%;cursor:pointer;">
             Choisir ${f.nom} (7j offerts) →
           </button>
-          <a class="plan-custom-link" style="text-align:center;font-size:0.78rem;font-weight:700;color:var(--ink);text-decoration:underline;cursor:pointer;" href="#configurateur">
-            Personnaliser avec des options ↓
-          </a>
-          <a href="abonnements.html#grand-comparatif" style="text-align:center;font-size:0.76rem;font-weight:800;color:#161317;text-decoration:underline;margin-top:-0.15rem;">
+          <a href="abonnements.html#grand-comparatif" style="text-align:center;font-size:0.78rem;font-weight:800;color:#161317;text-decoration:underline;">
             📊 Voir sur la page Abonnements →
           </a>
         </div>
@@ -743,18 +740,6 @@
       if (signupBtn) {
         signupBtn.addEventListener("click", () => {
           saveCheckoutDraftAndRedirect(f, [], f.prix);
-        });
-      }
-      const customLink = $(".plan-custom-link", card);
-      if (customLink) {
-        customLink.addEventListener("click", (e) => {
-          e.preventDefault();
-          selectedPlanIdx = i;
-          updateConfigurator();
-          const target = document.getElementById("configurateur");
-          if (target) {
-            target.scrollIntoView({ behavior: "smooth", block: "start" });
-          }
         });
       }
       deck.appendChild(card);
@@ -2107,7 +2092,7 @@
       fcBtnReplay.addEventListener("click", () => {
         startFcMotion(true);
         if (fcLiveLog) {
-          fcLiveLog.innerHTML = `<strong>▶ Motion Design relancé :</strong> Suivez les 4 étapes du Passeport côté client sur le téléphone !`;
+          fcLiveLog.innerHTML = `<strong>▶ Démonstration animée relancée :</strong> Suivez les 4 étapes du Passeport côté client sur le téléphone !`;
         }
       });
     }
@@ -2967,7 +2952,7 @@
         </div>
         <strong style="font:800 0.82rem var(--display);margin-top:0.25rem;">2. Mécanique (${mechs.length || 15} disponibles) :</strong>
         <div class="lc-emu-theme-grid">
-          ${mechs.map((mc) => `<button type="button" class="lc-emu-chip ${emuState.gameMechKey === mc.key ? "active" : ""}" data-emu-mech="${mc.key}">${mc.icon} ${mc.label}</button>`).join("")}
+          ${mechs.map((mc) => `<button type="button" class="lc-emu-chip ${emuState.gameMechKey === mc.key ? "active" : ""}" data-emu-mech="${mc.key}">${mc.emoji || mc.icon || "🎮"} ${mc.label}</button>`).join("")}
         </div>
       `;
       $$("[data-emu-preset]", ctxEl).forEach((b) => {
@@ -3768,13 +3753,13 @@
             <span class="lc-emu-code-pill">Usage unique</span>
           </div>
           <div class="lc-emu-solde-panel" style="text-align:center;">
-            <span style="font:800 0.72rem var(--body);text-transform:uppercase;">Une visite d’hier, une bonne raison de revenir</span>
+            <span style="font:800 0.72rem var(--body);text-transform:uppercase;">Remis en caisse ou livraison Uber Eats / Deliveroo</span>
             <h3 style="margin:0.3rem 0;font:900 1.1rem var(--display);">Votre Privilège Prochaine Visite</h3>
           </div>
           ${
             emuState.ticketScratched
-              ? `<div class="lc-emu-feedback" style="text-align:center;">✨ <b>Ticket révélé !</b><br/>☕ <b>2e Boisson Offerte dès demain</b><br/>Code caisse unique : <span class="lc-emu-code-pill">TICKET-842</span></div>`
-              : `<button type="button" class="lc-emu-primary-btn" id="emu-ticket-open">✨ Gratter / Révéler mon Ticket d’Or →</button>`
+              ? `<div class="lc-emu-feedback" style="text-align:center;">📱 <b>Ticket scanné avec succès !</b><br/>☕ <b>2e Boisson ou Dessert Offert dès votre prochain passage</b><br/>Code caisse ou commande en ligne : <span class="lc-emu-code-pill">TICKET-842</span></div>`
+              : `<button type="button" class="lc-emu-primary-btn" id="emu-ticket-open">📱 Scanner / Ouvrir mon Ticket d’Or →</button>`
           }
         </div>
       `;
@@ -4191,31 +4176,31 @@
         emoji: "🎟️",
         title: "Ticket d’Or",
         surtitre: "MODULE 11 · GARANTIR LA PROCHAINE VISITE",
-        subtitle: "« Une visite d’hier, une bonne raison de revenir » : le ticket doré à gratter remis après encaissement, valable uniquement dès la visite suivante.",
+        subtitle: "« Une commande aujourd’hui, une bonne raison de revenir demain » : le QR code doré remis en caisse ou glissé dans vos emballages à emporter et livraisons (Uber Eats, Deliveroo), à scanner pour débloquer un privilège sur le prochain passage.",
         offerBadge: "✓ Inclus dans les 5 formules (socle commercial)",
-        pitchLead: "Beaucoup de commerces donnent une remise sur place… sans revoir le client ensuite. Le Ticket d’Or se remet quand le client règle son addition pour verrouiller son passage suivant avec un privilège à usage unique.",
+        pitchLead: "Ne laissez plus filer vos clients après leur encaissement ou leur commande en ligne : le Ticket d’Or s'imprime en 1 clic sous forme de tickets QR ou stickers. Glissé dans un sac à emporter (Uber Eats, Deliveroo) ou remis avec l'addition, le client le scanne chez lui avec son smartphone pour révéler un privilège exclusif (code TICKET unique) utilisable lors de son prochain passage.",
         kpis: [
-          { val: "Prochaine visite", lbl: "Conçu pour déclencher le 2e passage" },
-          { val: "1 usage strict", lbl: "Code serveur unique impossible à copier" },
-          { val: "Gros lots malins", lbl: "Recommandé pour cadeaux > 20 €" },
+          { val: "100 % au scan", lbl: "Le client scanne son QR personnel sans appli" },
+          { val: "Uber & Deliveroo", lbl: "Parfait pour commandes en ligne & à emporter" },
+          { val: "Retour garanti", lbl: "Valable uniquement dès la commande suivante" },
         ],
         emulateMode: "ticket-dor",
         studioHref: "/signup",
         detailHref: "",
         detailLabel: "",
         steps: [
-          { t: "1 · Remettez le lien / QR", d: "Imprimez le QR au comptoir ou remettez le ticket numérique au départ du client." },
-          { t: "2 · Il gratte chez lui ou demain", d: "Suspense excitant qui révèle son cadeau réservé à sa prochaine venue." },
-          { t: "3 · Il revient l’utiliser", d: "Il présente son code TICKET unique lors d’une nouvelle commande payante." },
+          { t: "1 · Glissez ou tendez le QR code", d: "Générez vos tickets en 1 clic : collez-les sur vos sacs Uber Eats / Deliveroo ou remettez-les au comptoir." },
+          { t: "2 · Le client scanne sur son mobile", d: "En scannant le QR code, il découvre son cadeau réservé à son prochain passage (code TICKET unique)." },
+          { t: "3 · Il revient l’utiliser", d: "Il présente son code sécurisé en caisse ou le renseigne lors de sa prochaine commande en ligne !" },
         ],
         synergies: [
           { target: "jeux-instantanes", emoji: "🎡", name: "Avec Jeux instantanés", why: "Après une première partie en salle, donnez-lui un Ticket d’Or pour activer son prochain retour." },
-          { target: "missions-coffres", emoji: "🗝️", name: "Avec Missions & coffres", why: "Utiliser son Ticket d’Or complète une mission fidélité ! " },
+          { target: "missions-coffres", emoji: "🗝️", name: "Avec Missions & coffres", why: "Scanner son Ticket d’Or valide automatiquement une mission fidélité !" },
         ],
         motionScenes: [
-          { tag: "Scène 1 · Départ Caisse", icon: "🎟️", title: "Remis avec le sourire à l’addition", text: "Un petit geste VIP qui distingue tout de suite votre établissement.", chips: ["Lien unique", "Prêt en 2 clics"] },
-          { tag: "Scène 2 · La Découverte", icon: "✨", title: "Le film doré se révèle sur mobile", text: "Boisson, entrée ou -20 % : le cadeau attend déjà la prochaine visite.", chips: ["TICKET-842", "Usage unique"] },
-          { tag: "Scène 3 · Le Retour", icon: "🔁", title: "Le client revient consommer", text: "Il ne perd pas son cadeau et ramène souvent quelqu’un avec lui.", chips: ["Visite #2 assurée", "Panier rentabilisé"] },
+          { tag: "Scène 1 · En caisse ou livraison", icon: "📦", title: "Glissé dans le sac ou sur l’addition", text: "Idéal pour transformer une commande Uber Eats ou un passage comptoir en client fidèle.", chips: ["QR unique", "Livraison & VAE"] },
+          { tag: "Scène 2 · Le scan mobile", icon: "📱", title: "Le client scanne son QR à la maison", text: "Dessert offert, -20 % ou boisson : le privilège s'affiche immédiatement sur son écran.", chips: ["TICKET-842", "Usage unique garanti"] },
+          { tag: "Scène 3 · Le retour rentable", icon: "🔁", title: "Il repasse commande pour en profiter", text: "Le code est validé au comptoir ou en commande en ligne. Visite suivante sécurisée !", chips: ["Retour garanti", "Panier augmenté"] },
         ],
       },
       {

@@ -951,6 +951,19 @@
         { costPoints: 1000, label: "Cadeau Signature VIP (10 visites)", stock: 50 },
       ],
     },
+    calendrier: {
+      type: "avent",
+      name: "Calendrier des Surprises",
+      nbCases: 24,
+      theme: "kermesse",
+      surprises: [
+        { jour: 1, gain: "☕ 1 Boisson ou café offert" },
+        { jour: 2, gain: "🎟️ +100 points fidélité bonus" },
+        { jour: 3, gain: "🍪 1 Douceur maison offerte" },
+        { jour: 4, gain: "🎁 -15% sur l'addition ou la commande" },
+      ],
+      qrDiffusion: "comptoir",
+    },
   };
 
   const DEFAULT_AUTH = {
@@ -973,6 +986,7 @@
         roue: { ...DEFAULT_DRAFTS.roue, ...(parsed.roue || {}) },
         pronostics: { ...DEFAULT_DRAFTS.pronostics, ...(parsed.pronostics || {}) },
         fidelite: { ...DEFAULT_DRAFTS.fidelite, ...(parsed.fidelite || {}) },
+        calendrier: { ...DEFAULT_DRAFTS.calendrier, ...(parsed.calendrier || {}) },
       };
       if (Array.isArray(res.vitrine?.customFiches)) {
         res.vitrine.customFiches = res.vitrine.customFiches.filter((f) => {

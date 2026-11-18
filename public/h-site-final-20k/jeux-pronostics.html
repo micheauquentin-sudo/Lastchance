@@ -55,7 +55,7 @@
           <a href="studio.html?module=roue" class="nav-highlight-link">🛠️ Studio</a>
         </nav>
         <div class="nav-right-actions">
-          <a class="ticket-btn pop-btn-ink" href="/login">Connexion</a>
+          <a class="ticket-btn pop-btn-orange" href="/login">Connexion</a>
           <a class="ticket-btn pop-btn-yellow" href="studio.html?module=roue">Créer gratuitement →</a>
         </div>
       </header>
@@ -99,11 +99,17 @@
             </div>
 
             <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-emulate="jeux" data-target="#catalogue-15-jeux" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie émulation client">
-              <img src="img/qr-jeux.svg" alt="QR Code 15 Jeux — Scannez pour jouer" width="168" height="168" class="qr-bleed-img" id="page-hero-qr-img" />
-              <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">🎮</div>
+              <img src="img/qr-jeux.svg" alt="QR Code 15 Jeux — Scannez pour jouer" width="200" height="200" class="qr-bleed-img" id="page-hero-qr-img" />
             </button>
 
-            <p class="device-callout" id="qr-bubble-text">📱 Scannez pour ouvrir sur mobile ou cliquez</p>
+            <div class="qr-call-footer">
+              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 64 52" aria-hidden="true">
+                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
+                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
+                <polygon points="12,28 4,14 20,8" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              </svg>
+              <span class="qr-call-bubble" id="qr-bubble-text">📱 Clique ou scanne pour jouer !</span>
+            </div>
 
             <div class="qr-mode-switch" role="group" aria-label="Choisir l'expérience à tester">
               <button type="button" class="qr-mode-btn active" data-emulate="jeux" data-qr-src="img/qr-jeux.svg" data-qr-badge="🎮" data-qr-bubble="📱 Scannez pour tester les 15 jeux !" data-target="#catalogue-15-jeux">

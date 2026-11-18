@@ -55,7 +55,7 @@
           <a href="studio.html?module=vitrine" class="nav-highlight-link">🛠️ Studio</a>
         </nav>
         <div class="nav-right-actions">
-          <a class="ticket-btn pop-btn-ink" href="/login">Connexion</a>
+          <a class="ticket-btn pop-btn-orange" href="/login">Connexion</a>
           <a class="ticket-btn pop-btn-yellow" href="studio.html?module=vitrine">Créer gratuitement →</a>
         </div>
       </header>
@@ -99,11 +99,17 @@
             </div>
 
             <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-emulate="vitrine" data-target="#simulateur-live" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie vitrine client">
-              <img src="img/qr-vitrine.svg" alt="QR Code Vitrine & Réservation — Scannez pour tester" width="168" height="168" class="qr-bleed-img" id="page-hero-qr-img" />
-              <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">📖</div>
+              <img src="img/qr-vitrine.svg" alt="QR Code Vitrine & Réservation — Scannez pour tester" width="200" height="200" class="qr-bleed-img" id="page-hero-qr-img" />
             </button>
 
-            <p class="device-callout" id="qr-bubble-text">📱 Scannez pour ouvrir la Vitrine client ou cliquez</p>
+            <div class="qr-call-footer">
+              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 64 52" aria-hidden="true">
+                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
+                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
+                <polygon points="12,28 4,14 20,8" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              </svg>
+              <span class="qr-call-bubble" id="qr-bubble-text">📱 Clique ou scanne pour jouer !</span>
+            </div>
 
             <div class="qr-mode-switch" role="group" aria-label="Choisir l'expérience à tester">
               <button type="button" class="qr-mode-btn active" data-emulate="vitrine" data-qr-src="img/qr-vitrine.svg" data-qr-badge="📖" data-qr-bubble="📱 Scannez pour tester la Vitrine !" data-target="#simulateur-live">
@@ -457,7 +463,7 @@
       <p>Configurez vos 6 étapes officielles (Identité, Offres &amp; Tarifs, Réservation, Infos pratiques, Style, Aperçu final). Votre création reste sauvegardée en mémoire : vous ne prenez un abonnement que lorsque vous souhaitez publier votre QR code.</p>
       <div class="finale-cta-row">
         <a class="ticket-btn ticket-btn-large pop-btn-ink" href="studio.html?module=vitrine">🛠️ Créer ma Vitrine dans le Studio →</a>
-        <a class="ticket-btn ticket-btn-large pop-btn-white" href="index.html#configurateur">Composer ma formule</a>
+        <a class="ticket-btn ticket-btn-large pop-btn-white" href="abonnements.html#grand-comparatif">Voir les formules &amp; tarifs</a>
         <a class="ticket-btn ticket-btn-large pop-btn-white" href="index.html">← Retourner à l'accueil</a>
       </div>
     </section>

@@ -55,7 +55,7 @@
           <a href="studio.html?module=fidelite" class="nav-highlight-link">🛠️ Studio</a>
         </nav>
         <div class="nav-right-actions">
-          <a class="ticket-btn pop-btn-ink" href="/login">Connexion</a>
+          <a class="ticket-btn pop-btn-orange" href="/login">Connexion</a>
           <a class="ticket-btn pop-btn-yellow" href="studio.html?module=fidelite">Créer gratuitement →</a>
         </div>
       </header>
@@ -99,11 +99,17 @@
             </div>
 
             <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-emulate="passeport" data-target="#simulateur-trio" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie carte client">
-              <img src="img/qr-passeport.svg" alt="QR Code Passeport Fidélité — Scannez pour tester" width="168" height="168" class="qr-bleed-img" id="page-hero-qr-img" />
-              <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">🎟️</div>
+              <img src="img/qr-passeport.svg" alt="QR Code Passeport Fidélité — Scannez pour tester" width="200" height="200" class="qr-bleed-img" id="page-hero-qr-img" />
             </button>
 
-            <p class="device-callout" id="qr-bubble-text">📱 Scannez pour ouvrir votre carte client ou cliquez</p>
+            <div class="qr-call-footer">
+              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 64 52" aria-hidden="true">
+                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
+                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
+                <polygon points="12,28 4,14 20,8" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              </svg>
+              <span class="qr-call-bubble" id="qr-bubble-text">📱 Clique ou scanne pour jouer !</span>
+            </div>
 
             <div class="qr-mode-switch" role="group" aria-label="Choisir l'expérience à tester">
               <button type="button" class="qr-mode-btn active" data-emulate="passeport" data-qr-src="img/qr-passeport.svg" data-qr-badge="🎟️" data-qr-bubble="📱 Scannez pour tester le Passeport !" data-target="#simulateur-trio">
@@ -132,66 +138,78 @@
         <p class="section-script">comment ça se passe concrètement au quotidien ?</p>
         <h2 class="section-title">UN FONCTIONNEMENT <mark class="pop-mark pop-mark-yellow">SIMPLE &amp; SANS FRICTION</mark></h2>
         <p class="section-lead">
-          Plutôt que d'utiliser trois outils isolés, chaque passage client alimente naturellement la fidélité, le parrainage et la cagnotte collective :
+          Plutôt que d'utiliser trois outils isolés, chaque passage client en caisse ou commande à emporter alimente naturellement la fidélité, le parrainage et la cagnotte collective :
         </p>
       </div>
 
-      <!-- Bandeau visuel du flux connecté (1 -> 2 -> 3) -->
-      <div class="fc-loop-banner">
-        <div class="fc-loop-node">
-          <span class="fc-node-badge">ÉTAPE 1 · FIDÉLISER</span>
-          <strong>🎟️ 1 visite = 100 points</strong>
-          <small>Accessible en 1 clic sur écran d'accueil ou Wallet, le client débloque ses récompenses dès 200 points.</small>
-        </div>
-        <div class="fc-loop-arrow" aria-hidden="true">➔</div>
-        <div class="fc-loop-node">
-          <span class="fc-node-badge">ÉTAPE 2 · DÉMULTIPLIER</span>
-          <strong>🤝 Parrainage immédiat</strong>
-          <small>Lien personnel partagé en 1 clic : l'ami reçoit son cadeau de bienvenue et le parrain monte en grade.</small>
-        </div>
-        <div class="fc-loop-arrow" aria-hidden="true">➔</div>
-        <div class="fc-loop-node">
-          <span class="fc-node-badge">ÉTAPE 3 · FÉDÉRER</span>
-          <strong>🎰 Jackpot commun à 100 %</strong>
-          <small>Chaque visite et chaque parrainage fait grimper la cagnotte jusqu'au grand tirage événementiel.</small>
-        </div>
-      </div>
-
-      <div class="fc-detail-grid">
-        <article class="fc-detail-box reveal">
-          <span class="fc-detail-kicker">🎟️ PASSEPORT DE FIDÉLITÉ</span>
-          <h3>Comment le client cumule ses passages ?</h3>
+      <!-- Flux Connecté en 3 Piliers Clairs -->
+      <div class="fc-trio-flow-cards">
+        <article class="fc-trio-card reveal" style="border-top: 5px solid #b48500; background: linear-gradient(180deg, #FFF0BD 0%, #ffffff 85%);">
+          <div class="fc-card-topbar">
+            <span class="fc-step-pill" style="background:#ecd37a;color:#161317;">ÉTAPE 1 · FIDÉLISER</span>
+            <span class="fc-card-icon" aria-hidden="true">🎟️</span>
+          </div>
+          <h3>Passeport de Fidélité</h3>
+          <p class="fc-card-pitch"><b>1 visite = 100 points</b> · Déblocage des cadeaux dès 200 points.</p>
           <ul class="fc-check-list">
-            <li><b>1er passage :</b> Le client scanne votre QR code et ouvre son passeport personnel en 1 clic <b>sur son écran d'accueil ou dans son Wallet</b>.</li>
-            <li><b>Validation sécurisée :</b> À chaque visite (<code>1 visite = 100 points</code>), son passage est validé par <b>code tournant sur votre affiche</b> ou par validation équipe.</li>
-            <li><b>Paliers sur mesure :</b> Vous définissez librement vos paliers dès <b>200 points (2 visites)</b> et vos récompenses.</li>
+            <li><b>Sans appli à télécharger :</b> Le client ouvre son passeport en 1 clic sur son écran d'accueil ou dans son Google Wallet.</li>
+            <li><b>Au comptoir ou en livraison :</b> Un scan rapide en caisse ou un QR code glissé dans les sacs à emporter / commandes (Uber Eats, Deliveroo) valide la visite.</li>
+            <li><b>Paliers 100% sur mesure :</b> Café offert, dessert maison, remise ou surprise exclusive dès 2 visites régulières.</li>
           </ul>
+          <div class="fc-card-chips">
+            <span>📱 Écran d'accueil &amp; Wallet</span>
+            <span>⚡ Scan caisse 2 sec</span>
+          </div>
         </article>
 
-        <article class="fc-detail-box reveal">
-          <span class="fc-detail-kicker">🤝 PARRAINAGE À PALIERS</span>
-          <h3>Comment fonctionne l'invitation d'amis ?</h3>
+        <div class="fc-flow-connector" aria-hidden="true">
+          <span>➔</span>
+        </div>
+
+        <article class="fc-trio-card reveal" style="border-top: 5px solid #6b21a8; background: linear-gradient(180deg, #CFBCFF 0%, #ffffff 85%);">
+          <div class="fc-card-topbar">
+            <span class="fc-step-pill" style="background:#7c3aed;color:#ffffff;">ÉTAPE 2 · DÉMULTIPLIER</span>
+            <span class="fc-card-icon" aria-hidden="true">🤝</span>
+          </div>
+          <h3>Parrainage Ambassadeurs</h3>
+          <p class="fc-card-pitch"><b>Vos habitués vous recommandent</b> · Double récompense garantie.</p>
           <ul class="fc-check-list">
-            <li><b>Lien personnel :</b> Chaque client dispose d'un bouton « Inviter un ami » directement accessible depuis son passeport.</li>
-            <li><b>Validation réelle :</b> Le parrainage n'est comptabilisé que lorsque l'ami invité vient réellement dans votre établissement et valide son passage !</li>
-            <li><b>Paliers progressifs :</b> Plus votre client amène de nouveaux visiteurs, plus il débloque des cadeaux ambassadeurs prestigieux.</li>
+            <li><b>Lien personnel en 1 clic :</b> Vos clients partagent directement leur lien d'invitation avec leurs amis ou collègues de bureau.</li>
+            <li><b>Validation réelle à la visite :</b> Le parrainage est comptabilisé uniquement lorsque l'ami franchit votre porte ou valide sa 1ère commande.</li>
+            <li><b>Statuts Bronze, Argent, Or :</b> Plus ils vous amènent de monde, plus ils montent de rang et débloquent des privilèges VIP.</li>
           </ul>
+          <div class="fc-card-chips">
+            <span>🔗 Lien unique partagé</span>
+            <span>👥 Visite réelle validée</span>
+          </div>
         </article>
 
-        <article class="fc-detail-box reveal">
-          <span class="fc-detail-kicker">🎰 JACKPOT COLLECTIF</span>
-          <h3>Comment se déclenche la cagnotte commune ?</h3>
+        <div class="fc-flow-connector" aria-hidden="true">
+          <span>➔</span>
+        </div>
+
+        <article class="fc-trio-card reveal" style="border-top: 5px solid #059669; background: linear-gradient(180deg, #9EF0C7 0%, #ffffff 85%);">
+          <div class="fc-card-topbar">
+            <span class="fc-step-pill" style="background:#059669;color:#ffffff;">ÉTAPE 3 · FÉDÉRER</span>
+            <span class="fc-card-icon" aria-hidden="true">🎰</span>
+          </div>
+          <h3>Jackpot Collectif</h3>
+          <p class="fc-card-pitch"><b>Cagnotte commune de salle</b> · Chaque passage fait monter la jauge.</p>
           <ul class="fc-check-list">
-            <li><b>Liaison directe :</b> Dans le Studio, vous reliez votre Passeport à votre campagne Jackpot en un seul clic.</li>
-            <li><b>La jauge grimpe toute seule :</b> Chaque scan, visite fidélité ou parrainage fait monter le pourcentage visible par tous vos clients.</li>
-            <li><b>Tirage événementiel à 100 % :</b> Dès que la barre atteint 100 %, le tirage désigne le gagnant parmi tous les participants !</li>
+            <li><b>Jauge automatique :</b> Chaque passage fidélité et chaque nouvel ami parrainé font grimper le pourcentage de la cagnotte.</li>
+            <li><b>Ambiance &amp; Fête :</b> Les habitués voient la barre progresser ensemble et attendent impatiemment les 100 %.</li>
+            <li><b>Grand tirage au sort :</b> À 100 %, l'algorithme désigne un gagnant parmi tous les participants de votre établissement.</li>
           </ul>
+          <div class="fc-card-chips">
+            <span>📈 Jauge partagée en direct</span>
+            <span>🎉 Tirage festif événementiel</span>
+          </div>
         </article>
       </div>
     </section>
 
     <!-- ==========================================================
-         3. MOTION DESIGN & SIMULATEUR RÉALISTE DU PASSEPORT DE FIDÉLITÉ
+         3. DÉMONSTRATION EN DIRECT & SIMULATEUR RÉALISTE DU PASSEPORT DE FIDÉLITÉ
          ========================================================== -->
     <section class="clog-lavender-split" id="simulateur-trio">
       <div class="lavender-split-wrap fc-motion-split-wrap">
@@ -219,7 +237,7 @@
             </button>
             <div class="fc-action-mini-row">
               <button type="button" class="ticket-btn pop-btn-ink fc-action-btn" id="fc-btn-replay" style="font-size:0.82rem;padding:0.55em 1.05em;">
-                ▶ Relancer le Motion Design
+                ▶ Relancer la démo animée
               </button>
               <button type="button" class="ticket-btn pop-btn-white fc-action-btn" id="fc-btn-reset" style="font-size:0.82rem;padding:0.55em 1.05em;">
                 ↺ Réinitialiser
@@ -238,9 +256,9 @@
           </div>
         </div>
 
-        <!-- Téléphone réaliste 9:18.5 avec Motion Design Fidélité intégré -->
+        <!-- Téléphone réaliste 9:18.5 avec Parcours Fidélité animé -->
         <div class="lavender-photo-frame fc-phone-stage-col">
-          <div class="fc-phone-case" id="fc-motion-phone-stage" role="region" aria-label="Motion design interactif : aperçu réel du Passeport de Fidélité">
+          <div class="fc-phone-case" id="fc-motion-phone-stage" role="region" aria-label="Aperçu interactif : parcours réel du Passeport de Fidélité">
             <span class="fc-phone-btn-vol-up" aria-hidden="true"></span>
             <span class="fc-phone-btn-vol-down" aria-hidden="true"></span>
             <span class="fc-phone-btn-power" aria-hidden="true"></span>
@@ -249,7 +267,7 @@
               <!-- Voile lavis identique à PlayerPageShell du code source -->
               <div class="fc-phone-lavis-veil" id="fc-phone-lavis-veil" aria-hidden="true"></div>
 
-              <!-- ZONE HAUTE FIXE : Barre d'état + Barre de progression Motion Design -->
+              <!-- ZONE HAUTE FIXE : Barre d'état + Barre de progression Aperçu animé -->
               <div class="fc-phone-chrome-top">
                 <div class="fc-phone-status-bar">
                   <span class="fc-status-time">09:41</span>
@@ -262,7 +280,7 @@
                   </span>
                 </div>
 
-                <!-- Piste animée Motion Design (4 segments) -->
+                <!-- Piste animée Aperçu animé (4 segments) -->
                 <div class="fc-motion-progress-bar">
                   <div class="fc-motion-segments" aria-hidden="true">
                     <div class="fc-motion-seg is-active" data-seg="0"><span></span></div>
@@ -412,7 +430,7 @@
                       <strong id="fc-boutique-solde">Solde : 300 pts</strong>
                     </div>
 
-                    <!-- Récompense fraîchement débloquée (animée par le Motion Design) -->
+                    <!-- Récompense fraîchement débloquée (animée par le Aperçu animé) -->
                     <div class="fc-src-reward-ticket" id="fc-reward-ticket" hidden>
                       <div class="fc-src-reward-top">
                         <span class="fc-src-new-tag">NOUVEAU</span>
