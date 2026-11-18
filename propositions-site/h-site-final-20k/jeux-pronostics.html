@@ -23,6 +23,31 @@
         <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
         <nav aria-label="Navigation principale">
           <a href="index.html">Accueil</a>
+          <div class="nav-dropdown-wrap">
+            <button type="button" class="nav-dropdown-btn" aria-expanded="false" aria-haspopup="true" aria-controls="nav-modules-panel">
+              🧩 Modules <span class="nav-dropdown-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="nav-dropdown-panel" id="nav-modules-panel" hidden>
+              <div class="nav-dropdown-head">
+                <span class="nav-dropdown-title">Les 12 modules Lastchance</span>
+                <a href="modules.html" class="nav-dropdown-all-link">Tout découvrir →</a>
+              </div>
+              <div class="nav-dropdown-grid">
+                <a href="modules.html?m=jeux-instantanes" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎡</span><span class="nav-dropdown-label">Jeux instantanés</span></a>
+                <a href="modules.html?m=passeport-fidelite" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">📔</span><span class="nav-dropdown-label">Passeport fidélité</span></a>
+                <a href="modules.html?m=calendrier" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗓️</span><span class="nav-dropdown-label">Calendrier</span></a>
+                <a href="modules.html?m=evenements-live" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎤</span><span class="nav-dropdown-label">Événements live</span></a>
+                <a href="modules.html?m=pronostics" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🏆</span><span class="nav-dropdown-label">Pronostics</span></a>
+                <a href="modules.html?m=jackpot-collectif" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎰</span><span class="nav-dropdown-label">Jackpot collectif</span></a>
+                <a href="modules.html?m=quiz" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">❓</span><span class="nav-dropdown-label">Quiz</span></a>
+                <a href="modules.html?m=chasse-au-qr" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗺️</span><span class="nav-dropdown-label">Chasse au QR</span></a>
+                <a href="modules.html?m=duo-miroir" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🪞</span><span class="nav-dropdown-label">Duo Miroir</span></a>
+                <a href="modules.html?m=portrait-de-la-bande" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">👥</span><span class="nav-dropdown-label">Portrait de la Bande</span></a>
+                <a href="modules.html?m=ticket-dor" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🎟️</span><span class="nav-dropdown-label">Ticket d’Or</span></a>
+                <a href="modules.html?m=missions-coffres" class="nav-dropdown-item"><span class="nav-dropdown-emoji" aria-hidden="true">🗝️</span><span class="nav-dropdown-label">Missions &amp; coffres</span></a>
+              </div>
+            </div>
+          </div>
           <a href="jeux-pronostics.html" class="nav-active">15 Jeux &amp; Pronostics</a>
           <a href="fidelite-communaute.html">Fidélité &amp; Jackpot</a>
           <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
@@ -73,21 +98,24 @@
               <span class="device-live-dot" aria-hidden="true"></span>
             </div>
 
-            <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-target="#catalogue-15-jeux" title="Scannez avec votre téléphone ou cliquez pour tester en direct">
+            <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-emulate="jeux" data-target="#catalogue-15-jeux" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie émulation client">
               <img src="img/qr-jeux.svg" alt="QR Code 15 Jeux — Scannez pour jouer" width="168" height="168" class="qr-bleed-img" id="page-hero-qr-img" />
               <div class="qr-center-wheel-badge" id="page-hero-qr-badge" aria-hidden="true">🎮</div>
             </button>
 
-            <p class="device-callout" id="qr-bubble-text">📱 Scannez pour tester sur mobile ou cliquez</p>
+            <p class="device-callout" id="qr-bubble-text">📱 Scannez pour ouvrir sur mobile ou cliquez</p>
 
-            <div class="qr-mode-switch" role="tablist" aria-label="Choisir l'expérience à tester">
-              <button type="button" class="qr-mode-btn active" data-qr-src="img/qr-jeux.svg" data-qr-badge="🎮" data-qr-bubble="📱 Scannez pour tester les 15 jeux !" data-target="#catalogue-15-jeux">
+            <div class="qr-mode-switch" role="group" aria-label="Choisir l'expérience à tester">
+              <button type="button" class="qr-mode-btn active" data-emulate="jeux" data-qr-src="img/qr-jeux.svg" data-qr-badge="🎮" data-qr-bubble="📱 Scannez pour tester les 15 jeux !" data-target="#catalogue-15-jeux">
                 🎲 15 Jeux
               </button>
-              <button type="button" class="qr-mode-btn" data-qr-src="img/qr-pronos.svg" data-qr-badge="🏆" data-qr-bubble="📱 Scannez pour tester un pronostic !" data-target="#pronostics-championnats">
+              <button type="button" class="qr-mode-btn" data-emulate="pronostics" data-qr-src="img/qr-pronos.svg" data-qr-badge="🏆" data-qr-bubble="📱 Scannez pour tester un pronostic !" data-target="#pronostics-championnats">
                 🏆 Pronostics
               </button>
             </div>
+            <button type="button" class="annex-emulate-cta" id="page-hero-emulate-cta">
+              📱 Ouvrir l’émulation client en direct →
+            </button>
           </div>
         </div>
       </div>
@@ -106,7 +134,7 @@
       </div>
 
       <!-- Filtres interactifs -->
-      <div class="jp-filter-bar" id="jp-filter-bar" role="tablist" aria-label="Filtrer les 15 jeux instantanés">
+      <div class="jp-filter-bar" id="jp-filter-bar" role="group" aria-label="Filtrer les 15 jeux instantanés">
         <button class="jp-filter-btn active" type="button" data-filter="all">✨ Les 15 mécaniques (Tout voir)</button>
         <button class="jp-filter-btn" type="button" data-filter="hasard">🎲 9 Jeux de Hasard (Tirage immédiat)</button>
         <button class="jp-filter-btn" type="button" data-filter="adresse">🎯 6 Jeux d'Adresse (Mini-défi avant tirage)</button>
@@ -423,7 +451,7 @@
               <span class="cs-day-num">J-3 · AUJOURD'HUI</span>
               <div class="cs-day-content" id="cs-today-inner">
                 <span class="cs-day-icon cs-pulse-icon">🎁</span>
-                <span class="cs-day-label" style="font-weight:900;color:#e63946;">Ouvre-moi !</span>
+                <span class="cs-day-label" style="font-weight:900;color:#b91c1c;">Ouvre-moi !</span>
               </div>
               <span class="cs-day-action-pill">▶ Découvrir mon cadeau</span>
             </button>
@@ -510,7 +538,7 @@
       </div>
 
       <!-- Sélecteur de vrais championnats pour que le client se projette -->
-      <div class="prono-champ-tabs" id="prono-champ-tabs" role="tablist" aria-label="Exemples de championnats et événements">
+      <div class="prono-champ-tabs" id="prono-champ-tabs" role="group" aria-label="Exemples de championnats et événements">
         <button class="prono-champ-tab active" type="button" data-champ="foot">
           ⚽ Football : Ligue des Champions, Ligue 1 &amp; Coupe du Monde
         </button>

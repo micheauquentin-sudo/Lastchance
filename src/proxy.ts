@@ -59,6 +59,9 @@ export default async function proxy(request: NextRequest) {
   if (!onAdminHost && pathname === "/vitrine-reservation") {
     return NextResponse.rewrite(new URL("/h-site-final-20k/vitrine-reservation.html", request.url));
   }
+  if (!onAdminHost && (pathname === "/modules" || pathname === "/modules.html")) {
+    return NextResponse.rewrite(new URL("/h-site-final-20k/modules.html", request.url));
+  }
 
   if (onAdminHost && !pathname.startsWith("/admin")) {
     const url = request.nextUrl.clone();
