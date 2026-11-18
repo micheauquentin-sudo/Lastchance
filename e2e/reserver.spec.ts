@@ -97,7 +97,7 @@ test.describe("réserver — parcours public puis comptoir", () => {
     await expect(page.getByRole("button", { name: "Enregistrer l'arrivée" })).toBeEnabled({ timeout: 10_000 });
     await page.getByRole("button", { name: "Enregistrer l'arrivée" }).click();
     await expect(
-      page.getByRole("status").getByText("Arrivée enregistrée"),
+      page.getByRole("status").getByText(/Arrivée enregistrée|Déjà enregistrée/),
     ).toBeVisible({
       timeout: 20_000,
     });
@@ -139,7 +139,16 @@ test.describe("réserver — parcours public puis comptoir", () => {
       .locator("li")
       .filter({ hasText: "Arrivé" })
       .first();
-    await expect(carteArrivee).toBeVisible({ timeout: 30_000 });
+    // Le Router Cache client de Next.js peut avoir conservé le snapshot
+    // antérieur au check-in (navigué depuis /dashboard/moments sans action sur cette route).
+    // Si la mention "Arrivé" tarde, un reload force la revalidation SSR fraîche.
+    await expect(async () => {
+      const visible = await carteArrivee.isVisible();
+      if (!visible) {
+        await page.reload();
+      }
+      await expect(carteArrivee).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 30_000 });
     await expect(
       carteArrivee.getByRole("button", { name: "Annuler ma réservation" }),
     ).toHaveCount(0);

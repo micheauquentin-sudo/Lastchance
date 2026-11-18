@@ -633,6 +633,45 @@
       live: { pill: "📺 Soirées &amp; Salle live", base: "✓ Socle Coup d'envoi (15 jeux) inclus +", cap: "📺 Écran géant live 250 joueurs inclus" },
       full: { pill: "👑 L'intégrale (-19 €)", base: "✓ Le Club + Sur Place + Le Grand Jeu", cap: "🚀 Toute la plateforme · Salle 250 pers." },
     };
+
+    const FORMULE_MODULES = {
+      core: [
+        { emoji: "🎡", name: "Jeux instantanés (15 jeux)" },
+        { emoji: "🪞", name: "Duo Miroir & 👥 Portrait" },
+        { emoji: "🎟️", name: "Ticket d’Or & 🗝️ Missions" },
+        { emoji: "📱", name: "Scans QR illimités (0 appli)" },
+        { emoji: "💬", name: "50 SMS automatiques inclus" },
+      ],
+      engagement: [
+        { emoji: "🎡", name: "15 Jeux Coup d'envoi inclus" },
+        { emoji: "📔", name: "Passeport fidélité (tampons & QR)" },
+        { emoji: "🗓️", name: "Calendrier surprise quotidien" },
+        { emoji: "❓", name: "Quiz interactifs & blind tests" },
+        { emoji: "🗺️", name: "Chasse au QR code" },
+      ],
+      place: [
+        { emoji: "🎡", name: "15 Jeux Coup d'envoi inclus" },
+        { emoji: "📖", name: "Vitrine en ligne & Tarifs QR" },
+        { emoji: "📅", name: "Prise de RDV sans commission" },
+        { emoji: "⚡", name: "Moments VIP & Ateliers" },
+        { emoji: "❓", name: "Quiz en direct à table" },
+      ],
+      live: [
+        { emoji: "🎡", name: "15 Jeux Coup d'envoi inclus" },
+        { emoji: "🎤", name: "Événements live (écran géant)" },
+        { emoji: "🏆", name: "Pronostics sportifs & de match" },
+        { emoji: "🎰", name: "Jackpot collectif de salle" },
+        { emoji: "👥", name: "Jusqu'à 250 joueurs simultanés" },
+      ],
+      full: [
+        { emoji: "👑", name: "Les 12 modules d'animation" },
+        { emoji: "📔", name: "Fidélité, Calendrier & Jackpot" },
+        { emoji: "📖", name: "Vitrine & Carte des tarifs QR" },
+        { emoji: "📅", name: "Agenda de RDV (0% com) & Moments" },
+        { emoji: "🎤", name: "Écran géant live (250 pers.)" },
+      ],
+    };
+
     O.FORMULES.forEach((f, i) => {
       const pill = el("button", {
         type: "button",
@@ -657,9 +696,6 @@
       switcherBtns.push(pill);
 
       const meta = ROLE_META[f.id] || ROLE_META.core;
-      const visiblePoints = meta.base
-        ? f.points.filter((p) => !p.startsWith("Tout Coup d'envoi") && !p.startsWith("Le Club + Sur Place"))
-        : f.points;
       const card = el("article", {
         class: `plan-ticket${f.id === "engagement" ? " is-popular-plan" : ""}`,
         style: `background:${PASS_COLORS[i]}`,
@@ -675,9 +711,20 @@
         </div>
         <p class="plan-summary-text">${f.tagline.split(":").slice(1).join(":").trim()}</p>
         <div class="plan-composition-box">
-          <span class="plan-comp-kicker">Composition de la formule</span>
+          <span class="plan-comp-kicker">Modules inclus dans cette formule</span>
           ${meta.base ? `<div class="plan-included-banner">${meta.base}</div>` : ""}
-          <ul>${visiblePoints.map((p) => `<li><span class="plan-chk-badge" aria-hidden="true">✓</span><span>${p}</span></li>`).join("")}</ul>
+          <ul class="plan-modules-list" style="list-style:none;padding:0;margin:0 0 0.6rem;display:grid;gap:0.35rem;">
+            ${(FORMULE_MODULES[f.id] || []).map((m) => `
+              <li style="display:flex;align-items:center;gap:0.45rem;font-size:0.83rem;font-weight:700;color:var(--ink);">
+                <span aria-hidden="true" style="font-size:1.05rem;flex-shrink:0;">${m.emoji}</span>
+                <span>${m.name}</span>
+              </li>
+            `).join("")}
+          </ul>
+          <a href="abonnements.html#grand-comparatif" class="plan-compare-link" style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.75rem;font-weight:800;color:#800038;text-decoration:underline;">
+            <span>Comparer les modules en détail</span>
+            <span aria-hidden="true">→</span>
+          </a>
         </div>
         <div style="margin-top:auto;display:grid;gap:0.55rem">
           <div class="plan-capacity-pill">${meta.cap}</div>
@@ -686,6 +733,9 @@
           </button>
           <a class="plan-custom-link" style="text-align:center;font-size:0.78rem;font-weight:700;color:var(--ink);text-decoration:underline;cursor:pointer;" href="#configurateur">
             Personnaliser avec des options ↓
+          </a>
+          <a href="abonnements.html#grand-comparatif" style="text-align:center;font-size:0.76rem;font-weight:800;color:#161317;text-decoration:underline;margin-top:-0.15rem;">
+            📊 Voir sur la page Abonnements →
           </a>
         </div>
       `);

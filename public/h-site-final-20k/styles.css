@@ -201,8 +201,8 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: var(--pink-hot) !important;
 }
 .header-nav nav a.nav-active {
-  color: var(--pink-hot) !important;
-  border-bottom: 2.5px solid var(--pink-hot);
+  color: #b80d57 !important;
+  border-bottom: 2.5px solid #b80d57;
 }
 .nav-highlight-link {
   background: var(--vanilla-card);
@@ -321,8 +321,8 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: var(--pink-hot) !important;
 }
 .header-nav-annex a.nav-active {
-  color: var(--pink-hot) !important;
-  border-bottom: 2.5px solid var(--pink-hot);
+  color: #800038 !important;
+  border-bottom: 2.5px solid #800038;
 }
 .header-nav a.pop-btn-ink,
 .header-nav-annex a.pop-btn-ink {
@@ -358,6 +358,21 @@ header, main, section, footer { position: relative; z-index: 2; }
 .annex-breadcrumb .bc-current {
   color: #ffffff;
   opacity: 0.95;
+}
+
+.page-abonnements .annex-breadcrumb {
+  background: var(--vanilla-card);
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.page-abonnements .annex-breadcrumb a {
+  color: #800038;
+  font-weight: 800;
+}
+.page-abonnements .annex-breadcrumb .bc-current {
+  color: var(--ink);
+  opacity: 1;
 }
 
 /* Grille du Héro de page annexe */
