@@ -1822,26 +1822,142 @@ header, main, section, footer { position: relative; z-index: 2; }
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
+  align-items: stretch;
 }
 .plan-ticket {
   position: relative;
-  padding: 1.65rem 1.15rem 1.35rem;
+  padding: 1.45rem 1.05rem 1.25rem;
   border: var(--border-thick);
   border-radius: 22px;
   box-shadow: 5px 5px 0 var(--ink);
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  transition: transform 0.25s var(--spring);
+  gap: 0.6rem;
+  transition: transform 0.25s var(--spring), box-shadow 0.2s ease;
 }
-.plan-ticket:hover { transform: translateY(-6px); }
-.plan-purpose { font: 700 1.35rem/1 var(--script); }
-.plan-ticket h3 { font-size: 1.4rem; font-family: var(--fun-font); }
-.plan-amount { font: 800 2.45rem/1 var(--fun-font); }
-.plan-amount small { font: 800 0.8rem var(--body); }
-.plan-summary-text { font-size: 0.82rem; font-weight: 600; margin: 0; min-height: 2.8em; }
-.plan-ticket ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.45rem; font-size: 0.8rem; }
-.plan-ticket ul li::before { content: "? "; font-weight: 900; }
+.plan-ticket:hover {
+  transform: translateY(-6px);
+  box-shadow: 7px 9px 0 var(--ink);
+}
+.plan-ticket.is-popular-plan {
+  box-shadow: 6px 8px 0 var(--ink);
+}
+.plan-role-pill {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.3rem;
+  background: var(--ink);
+  color: var(--yellow);
+  border-radius: var(--radius-pill);
+  padding: 0.26em 0.68em;
+  font: 800 0.64rem var(--body);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.plan-role-pill.is-top-deal {
+  background: #800038;
+  color: #ffffff;
+}
+.plan-purpose {
+  font: 700 1.22rem/1.05 var(--script);
+  color: var(--ink);
+}
+.plan-ticket h3 {
+  font-size: 1.38rem;
+  font-family: var(--fun-font);
+  margin: 0;
+  color: var(--ink);
+}
+.plan-amount {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.35rem;
+}
+.plan-price-main {
+  font: 800 2.15rem/1 var(--fun-font);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.plan-amount small {
+  font: 800 0.72rem var(--body);
+  color: #362e42;
+  white-space: nowrap;
+}
+.plan-summary-text {
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.38;
+  margin: 0;
+  color: #2c2434;
+  min-height: 3.9em;
+}
+.plan-composition-box {
+  background: rgba(255, 255, 255, 0.86);
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  padding: 0.65rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+}
+.plan-comp-kicker {
+  font: 800 0.65rem var(--body);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #423650;
+  border-bottom: 1.5px dashed rgba(33, 29, 22, 0.22);
+  padding-bottom: 0.3rem;
+}
+.plan-included-banner {
+  background: #dcfce7;
+  color: #065f46;
+  border: 1.5px solid #065f46;
+  border-radius: 9px;
+  padding: 0.28rem 0.48rem;
+  font: 800 0.7rem var(--body);
+  line-height: 1.25;
+}
+.plan-ticket ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.77rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+}
+.plan-ticket ul li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+.plan-chk-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #065f46;
+  color: #ffffff;
+  font: 900 0.64rem var(--body);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.plan-capacity-pill {
+  font-size: 0.73rem;
+  line-height: 1.3;
+  font-weight: 800;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.4rem 0.55rem;
+  border-radius: 10px;
+  border: 1.5px solid var(--ink);
+}
 .plan-chips { display: flex; flex-wrap: wrap; gap: 0.28rem; margin-top: auto; }
 .plan-chips span {
   font: 800 0.64rem var(--body);
@@ -3125,19 +3241,31 @@ header, main, section, footer { position: relative; z-index: 2; }
   padding: 0.5rem 0;
 }
 
-/* Modélisation Coque Smartphone Vertical Réaliste (Sortie du ratio 16:9) */
+/* ==========================================================
+   MODÉLISATION COQUE SMARTPHONE RÉALISTE + MOTION DESIGN FIDÉLITÉ
+   Fidèle aux composants React (SoldePanel #fde9ba, TierPanel, BoutiquePaliers, BlocParrainage)
+   ========================================================== */
+.fc-action-mini-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.55rem;
+}
+.fc-phone-stage-col {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 .fc-phone-case {
   width: 100%;
-  max-width: 360px;
-  min-height: 680px;
+  max-width: 400px;
   background: #141218;
   border: 4px solid var(--ink);
-  border-radius: 48px;
-  padding: 10px;
+  border-radius: 50px;
+  padding: 11px;
   box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.15) inset,
-    8px 14px 0 var(--ink),
-    0 24px 40px rgba(0, 0, 0, 0.25);
+    0 0 0 2px rgba(255, 255, 255, 0.16) inset,
+    10px 14px 0 var(--ink),
+    0 24px 48px rgba(17, 12, 28, 0.32);
   position: relative;
   margin: 0 auto;
   box-sizing: border-box;
@@ -3147,47 +3275,67 @@ header, main, section, footer { position: relative; z-index: 2; }
 .fc-phone-btn-vol-up {
   position: absolute;
   left: -7px;
-  top: 110px;
+  top: 116px;
   width: 4px;
-  height: 42px;
+  height: 44px;
   background: var(--ink);
   border-radius: 4px 0 0 4px;
 }
 .fc-phone-btn-vol-down {
   position: absolute;
   left: -7px;
-  top: 165px;
+  top: 172px;
   width: 4px;
-  height: 42px;
+  height: 44px;
   background: var(--ink);
   border-radius: 4px 0 0 4px;
 }
 .fc-phone-btn-power {
   position: absolute;
   right: -7px;
-  top: 130px;
+  top: 136px;
   width: 4px;
-  height: 55px;
+  height: 58px;
   background: var(--ink);
   border-radius: 0 4px 4px 0;
 }
 
-/* Écran du Smartphone (Format Portrait 9:18.5) */
+/* Écran Smartphone structuré en 3 zones fixes (Haut + Scène + Dock) */
 .fc-phone-screen.fc-trio-phone {
-  background: #fdfaf2;
+  background-color: #FAF6EC;
+  background-size: cover;
+  background-position: center;
   border: 2px solid var(--ink);
-  border-radius: 38px;
-  padding: 0.75rem 0.75rem 0.65rem;
+  border-radius: 39px;
+  padding: 0;
   box-shadow: none;
-  height: 660px;
-  max-height: 85vh;
+  height: 690px;
+  max-height: 86vh;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  justify-content: space-between;
   position: relative;
   overflow: hidden;
-  transition: background-image 0.3s ease;
+  transition: background-image 0.35s ease;
   box-sizing: border-box;
+}
+.fc-phone-lavis-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(250, 246, 236, 0.92) 0%, rgba(250, 246, 236, 0.85) 55%, rgba(250, 246, 236, 0.94) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 1. ZONE HAUTE FIXE : Barre de statut + Piste Motion Design */
+.fc-phone-chrome-top {
+  position: relative;
+  z-index: 4;
+  background: rgba(250, 246, 236, 0.96);
+  backdrop-filter: blur(8px);
+  padding: 0.65rem 0.95rem 0.45rem;
+  border-bottom: 2px solid rgba(33, 29, 22, 0.14);
+  flex-shrink: 0;
 }
 .fc-phone-status-bar {
   display: flex;
@@ -3195,293 +3343,338 @@ header, main, section, footer { position: relative; z-index: 2; }
   align-items: center;
   font: 800 0.72rem var(--body);
   color: var(--ink);
-  padding: 0 0.35rem 0.35rem;
-  border-bottom: 1.5px solid rgba(33, 29, 22, 0.15);
+  margin-bottom: 0.42rem;
+}
+.fc-status-time {
+  font-variant-numeric: tabular-nums;
+  width: 48px;
+}
+.fc-status-icons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  font: 800 0.68rem var(--body);
+  width: 48px;
 }
 .fc-dynamic-island {
-  width: 96px;
-  height: 18px;
+  width: 94px;
+  height: 20px;
   background: #141218;
   border-radius: 20px;
   margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 10px;
+  padding-right: 8px;
 }
 .fc-camera-lens {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   background: #08060c;
   border-radius: 50%;
-  box-shadow: inset 0 0 2px rgba(255, 255, 255, 0.4);
-}
-.fc-home-indicator {
-  width: 120px;
-  height: 4px;
-  background: rgba(33, 29, 22, 0.4);
-  border-radius: 999px;
-  margin: auto auto 2px;
-  flex-shrink: 0;
-}
-.fc-phone-header {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(4px);
-  padding: 0.65rem 0.85rem;
-  border-radius: 14px;
-  border: 2px solid var(--ink);
-  box-shadow: 2px 2px 0 var(--ink);
-}
-.fc-phone-header strong {
-  display: block;
-  font: 800 0.96rem var(--fun-font);
-  color: var(--ink);
-}
-.fc-phone-header small {
-  display: block;
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: #4b415a;
-  margin-top: 0.15rem;
-}
-.fc-iphone-nav {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.4rem;
-  background: rgba(255, 250, 237, 0.95);
-  backdrop-filter: blur(4px);
-  padding: 0.35rem;
-  border: 2px solid var(--ink);
-  border-radius: 16px;
-  box-shadow: 2px 2px 0 var(--ink);
-  flex-shrink: 0;
-}
-.fc-tab-btn {
-  border: none;
-  background: transparent;
-  padding: 0.5rem 0.25rem;
-  border-radius: 11px;
-  font: 700 0.78rem var(--fun-font);
-  cursor: pointer;
-  color: var(--ink);
-  text-align: center;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-}
-.fc-tab-btn.active {
-  background: var(--ink);
-  color: var(--yellow);
-  box-shadow: 1px 1px 0 var(--ink);
+  box-shadow: inset 0 0 2px rgba(255, 255, 255, 0.45);
 }
 
-/* Corps Défilant Vertical du Smartphone (Visu Client Réelle) */
-.fc-phone-scroll-body {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+/* Barre de progression Motion Design 4 étapes */
+.fc-motion-progress-bar {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  padding: 0.15rem 0.15rem 0.65rem 0.05rem;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(33, 29, 22, 0.25) transparent;
-  -webkit-overflow-scrolling: touch;
+  gap: 0.28rem;
 }
-.fc-phone-scroll-body::-webkit-scrollbar {
-  width: 4px;
+.fc-motion-segments {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.28rem;
 }
-.fc-phone-scroll-body::-webkit-scrollbar-thumb {
-  background: rgba(33, 29, 22, 0.25);
-  border-radius: 4px;
+.fc-motion-seg {
+  height: 4px;
+  background: rgba(33, 29, 22, 0.16);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.fc-motion-seg span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--ink);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.fc-motion-seg.is-done span {
+  width: 100%;
+  background: #065f46;
+}
+.fc-motion-seg.is-active span {
+  width: 100%;
+  background: var(--pink-hot);
+  animation: fcSegFill 4.6s linear forwards;
+}
+.fc-motion-paused .fc-motion-seg.is-active span {
+  animation-play-state: paused;
+}
+@keyframes fcSegFill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+.fc-motion-controls-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+}
+.fc-motion-caption {
+  font: 800 0.68rem var(--body);
+  color: #3d3548;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-motion-pause-btn {
+  border: 1.5px solid var(--ink);
+  background: #ffffff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  font: 800 0.65rem var(--body);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fc-motion-pause-btn:hover {
+  background: var(--yellow);
+}
+
+/* 2. ZONE CENTRALE SCÈNE : Sans coupure ni barre disgracieuse */
+.fc-phone-stage {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.65rem 0.85rem;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+}
+.fc-phone-stage::-webkit-scrollbar {
+  display: none;
 }
 
 .fc-tab-panel {
   display: none;
-  animation: fadeIn 0.25s ease;
 }
 .fc-tab-panel.active {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.55rem;
+  animation: fcSceneEnter 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.fc-phone-card {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(4px);
-  border: 2px solid var(--ink);
-  border-radius: 16px;
-  padding: 0.8rem 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  box-shadow: 2px 2px 0 var(--ink);
-}
-.fc-card-loyalty { background: rgba(232, 255, 245, 0.95); }
-.fc-card-referral { background: rgba(243, 232, 255, 0.95); }
-.fc-card-jackpot { background: rgba(255, 243, 207, 0.95); }
-.fc-card-desc {
-  font-size: 0.76rem;
-  color: #4b415a;
-  margin: 0;
-  line-height: 1.35;
+@keyframes fcSceneEnter {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* -- 1. En-tête Client Authentique (EntetePasseport) -- */
-.fc-passport-header {
-  text-align: center;
-  padding: 0.25rem 0.2rem 0.15rem;
-}
-.fc-passport-header-top {
+/* Composants sources fidèles (.fc-src-*) */
+.fc-src-header-row {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  text-align: left;
-  margin-bottom: 0.35rem;
+  gap: 0.65rem;
+  padding: 0.1rem 0;
 }
 .fc-passport-logo-disc {
   width: 44px;
   height: 44px;
-  margin: 0;
   border-radius: 50%;
   border: 2px solid var(--ink);
   background: #ffffff;
   display: grid;
   place-items: center;
-  font-size: 1.45rem;
+  font-size: 1.35rem;
   box-shadow: 2px 2px 0 var(--ink);
   flex-shrink: 0;
 }
-.fc-passport-header-titles {
-  display: flex;
-  flex-direction: column;
+.fc-src-header-text {
+  min-width: 0;
 }
 .fc-passport-merchant-name {
-  font: 800 0.68rem var(--body);
+  font: 800 0.66rem var(--body);
   letter-spacing: 0.08em;
-  color: #5a5042;
+  color: #4b415a;
   margin: 0;
   text-transform: uppercase;
 }
 .fc-passport-title {
-  font: 900 1rem var(--fun-font);
+  font: 800 1.05rem var(--fun-font);
   color: var(--ink);
-  margin: 0.1rem 0 0;
-  line-height: 1.2;
-}
-.fc-passport-user-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1.5px solid var(--ink);
-  border-radius: 999px;
-  padding: 0.2rem 0.65rem;
-  font: 700 0.72rem var(--body);
-  color: var(--ink);
-  box-shadow: 1px 1px 0 var(--ink);
-}
-.fc-user-status-tag {
-  font-weight: 800;
-  color: #854d0e;
-}
-.fc-pill-sep {
-  color: #bbb;
+  margin: 0.08rem 0 0;
+  line-height: 1.15;
 }
 
-/* -- 2. Carte Mes Points (SoldePanel) -- */
-.fc-card-points {
-  background: #fde9ba;
+.fc-src-identity-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: #ffffff;
   border: 2px solid var(--ink);
+  border-radius: 14px;
+  padding: 0.42rem 0.65rem;
   box-shadow: 3px 3px 0 var(--ink);
 }
-.fc-head-kicker {
-  font: 900 0.68rem var(--body);
-  letter-spacing: 0.08em;
-  color: #554428;
-}
-.fc-points-badge {
-  background: #ffffff;
+.fc-src-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   border: 1.5px solid var(--ink);
-  border-radius: 999px;
-  padding: 0.15rem 0.55rem;
-  font: 800 0.7rem var(--body);
+  background: var(--vanilla-card);
+  display: grid;
+  place-items: center;
+  font-size: 0.95rem;
+  flex-shrink: 0;
 }
-.fc-points-hero {
+.fc-src-identity-info {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: baseline;
-  gap: 0.35rem;
-  margin: 0.1rem 0;
+  gap: 0.4rem;
 }
-.fc-points-number {
-  font: 900 2.2rem var(--fun-font);
+.fc-src-identity-kicker {
+  font: 800 0.62rem var(--body);
+  letter-spacing: 0.05em;
+  color: #5b5268;
+}
+.fc-src-identity-name {
+  font: 800 0.85rem var(--fun-font);
   color: var(--ink);
-  line-height: 1;
 }
-.fc-points-unit {
-  font: 800 1rem var(--fun-font);
-  color: var(--ink);
-}
-.fc-progress-track {
-  width: 100%;
-  height: 10px;
-  background: #ffffff;
+.fc-tier-pill-mini {
+  background: #f3f4f6;
   border: 1.5px solid var(--ink);
   border-radius: 999px;
-  overflow: hidden;
+  padding: 0.16rem 0.55rem;
+  font: 800 0.68rem var(--body);
+  color: var(--ink);
+  white-space: nowrap;
 }
-.fc-progress-bar {
-  height: 100%;
-  background: var(--orange);
-  border-radius: 999px;
-  transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+/* SoldePanel & LinkedJackpotCard (#fde9ba exact) */
+.fc-src-solde-card {
+  background: #fde9ba;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  padding: 0.78rem 0.85rem;
+  box-shadow: 4px 4px 0 var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
 }
-.fc-points-footer {
+.fc-src-solde-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 0.2rem;
 }
-.fc-progress-msg {
-  font-size: 0.74rem;
-  color: #433522;
-  margin: 0;
-  line-height: 1.35;
-  flex: 1;
+.fc-src-kicker {
+  font: 800 0.65rem var(--body);
+  letter-spacing: 0.07em;
+  color: #4e3f27;
+  text-transform: uppercase;
+  display: block;
 }
-.fc-tier-badge {
+.fc-src-visites-chip {
   background: #ffffff;
   border: 1.5px solid var(--ink);
   border-radius: 999px;
-  padding: 0.2rem 0.5rem;
-  font: 900 0.68rem var(--fun-font);
+  padding: 0.14rem 0.55rem;
+  font: 800 0.68rem var(--body);
   color: var(--ink);
   white-space: nowrap;
-  box-shadow: 1px 1px 0 var(--ink);
 }
-
-/* -- 4. Zone Validation Client (QR / Code) -- */
-.fc-card-validation {
+.fc-src-points-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.38rem;
+  margin-top: 0.05rem;
+}
+.fc-src-points-num {
+  font: 900 2.05rem/1 var(--fun-font);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  transition: transform 0.25s ease;
+}
+.fc-src-points-num.is-popping {
+  animation: fcNumberPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes fcNumberPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.22); color: #9a3412; }
+  100% { transform: scale(1); }
+}
+.fc-src-points-unit {
+  font: 800 0.95rem var(--fun-font);
+  color: var(--ink);
+}
+.fc-src-bar-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font: 700 0.68rem var(--body);
+  color: #463a2a;
+}
+.fc-src-progress-track {
+  width: 100%;
+  height: 11px;
   background: #ffffff;
   border: 2px solid var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.fc-src-progress-fill {
+  height: 100%;
+  background: var(--orange);
+  border-radius: 999px;
+  transition: width 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fc-src-progress-fill.is-amber {
+  background: linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%);
+}
+.fc-src-solde-reassure {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #382e20;
+  margin: 0.1rem 0 0;
+  line-height: 1.3;
+}
+
+/* White source cards */
+.fc-src-white-card {
+  background: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  padding: 0.72rem 0.82rem;
+  box-shadow: 4px 4px 0 var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
   position: relative;
   overflow: hidden;
 }
 .fc-validation-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.35rem;
+  gap: 0.3rem;
   background: #f4eee2;
   border: 1.5px solid var(--ink);
-  border-radius: 12px;
-  padding: 0.25rem;
+  border-radius: 10px;
+  padding: 0.22rem;
 }
 .fc-val-mode-btn {
   border: none;
   background: transparent;
-  padding: 0.45rem 0.3rem;
-  border-radius: 9px;
-  font: 800 0.72rem var(--fun-font);
+  padding: 0.38rem 0.25rem;
+  border-radius: 8px;
+  font: 800 0.71rem var(--fun-font);
   color: var(--ink);
   cursor: pointer;
   transition: all 0.2s ease;
@@ -3490,216 +3683,323 @@ header, main, section, footer { position: relative; z-index: 2; }
 .fc-val-mode-btn.active {
   background: var(--ink);
   color: var(--yellow);
-  box-shadow: 1px 1px 0 var(--ink);
 }
 .fc-val-mode-view {
   display: none;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.38rem;
 }
 .fc-val-mode-view.active {
   display: flex;
 }
-.fc-val-sub {
-  font-size: 0.74rem;
-  color: #4b415a;
-  margin: 0;
-  line-height: 1.35;
-  text-align: center;
-}
-.fc-qr-display-box {
-  background: #faf7f2;
-  border: 2px dashed rgba(33, 29, 22, 0.3);
-  border-radius: 14px;
-  padding: 0.65rem 0.5rem;
+.fc-src-qr-stage {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.75rem;
+  padding: 0.2rem 0;
 }
 .fc-qr-inner-frame {
   position: relative;
-  width: 130px;
-  height: 130px;
+  width: 98px;
+  height: 98px;
   background: #ffffff;
   border: 2px solid var(--ink);
   border-radius: 12px;
-  padding: 6px;
+  padding: 5px;
   box-shadow: 2px 2px 0 var(--ink);
+  flex-shrink: 0;
+  overflow: hidden;
 }
 .fc-client-qr-img {
   width: 100%;
   height: 100%;
   display: block;
 }
+.fc-qr-laser-scan {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 3px;
+  background: #ec4899;
+  box-shadow: 0 0 8px #ec4899;
+  border-radius: 999px;
+  top: 12%;
+  animation: fcLaserSweep 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes fcLaserSweep {
+  0%, 100% { top: 12%; opacity: 0.85; }
+  50% { top: 84%; opacity: 1; }
+}
 .fc-client-qr-badge {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   background: #ffffff;
   border: 1.5px solid var(--ink);
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 0.85rem;
-  box-shadow: 1px 1px 0 var(--ink);
+  font-size: 0.75rem;
 }
-.fc-qr-token-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: #ffffff;
-  border: 1.5px solid var(--ink);
-  border-radius: 999px;
-  padding: 0.2rem 0.65rem;
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-.fc-token-dot {
-  color: #10b981;
-  font-size: 0.6rem;
-  animation: pulseDot 1.5s infinite;
-}
-@keyframes pulseDot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.85); }
-}
-.fc-token-timer {
-  color: #777;
-  font-family: monospace;
-}
-.fc-daily-code-box {
+.fc-src-qr-meta {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0;
+  gap: 0.26rem;
 }
-.fc-daily-code-input {
-  width: 100%;
-  max-width: 220px;
-  text-align: center;
-  font: 900 1.45rem monospace;
-  letter-spacing: 0.32em;
-  padding: 0.45rem 0.65rem;
-  border: 2px solid var(--ink);
-  border-radius: 12px;
-  background: #fdfdfd;
+.fc-src-qr-meta strong {
+  font: 800 0.82rem var(--fun-font);
   color: var(--ink);
-  box-shadow: inset 1px 1px 3px rgba(0,0,0,0.1);
 }
-.fc-daily-code-input:focus {
-  outline: none;
-  border-color: var(--orange);
-  box-shadow: 0 0 0 2px var(--yellow);
+.fc-src-qr-meta small {
+  font: 700 0.69rem var(--body);
+  color: #4b415a;
 }
-.fc-code-help {
-  font-size: 0.68rem;
-  color: #777;
+.fc-src-qr-meta code {
+  font-family: monospace;
+  font-weight: 800;
+  color: var(--ink);
+  background: #f3f4f6;
+  padding: 0.08rem 0.3rem;
+  border-radius: 5px;
+}
+.fc-src-yellow-btn {
+  background: var(--yellow);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  padding: 0.48rem 0.65rem;
+  font: 800 0.74rem var(--fun-font);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
   text-align: center;
 }
-.fc-client-action-btn {
-  width: 100%;
-  padding: 0.65rem 0.8rem;
-  font: 900 0.82rem var(--fun-font);
-  border: 2px solid var(--ink);
-  border-radius: 12px;
-  box-shadow: 2px 2px 0 var(--ink);
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  user-select: none;
-}
-.fc-client-action-btn:hover {
+.fc-src-yellow-btn:hover {
   transform: translateY(-1px);
   box-shadow: 3px 3px 0 var(--ink);
 }
-.fc-client-action-btn:active {
+.fc-src-yellow-btn:active {
   transform: translateY(1px);
   box-shadow: 1px 1px 0 var(--ink);
 }
+.fc-src-code-row {
+  display: flex;
+  gap: 0.45rem;
+  align-items: stretch;
+}
+.fc-daily-code-input {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font: 900 1.25rem monospace;
+  letter-spacing: 0.25em;
+  padding: 0.38rem 0.45rem;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--ink);
+}
+.fc-src-micro-help {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #4b415a;
+  text-align: center;
+}
+/* Toast Tampon validé */
 .fc-stamp-feedback {
   position: absolute;
   inset: 0;
-  background: rgba(255, 230, 0, 0.96);
+  background: rgba(255, 224, 51, 0.97);
   border-radius: 14px;
   display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  z-index: 10;
+  gap: 0.3rem;
+  z-index: 12;
   pointer-events: none;
 }
 .fc-stamp-feedback.is-visible {
   display: flex;
-  animation: popStampIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: fcPopStampIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-@keyframes popStampIn {
-  0% { transform: scale(0.6); opacity: 0; }
+@keyframes fcPopStampIn {
+  0% { transform: scale(0.65); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
-.fc-stamp-pop-icon {
-  font-size: 2.2rem;
-}
+.fc-stamp-pop-icon { font-size: 2rem; }
 .fc-stamp-pop-text {
-  font: 900 0.92rem var(--fun-font);
+  font: 900 0.88rem var(--fun-font);
   color: var(--ink);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
-/* -- 5. Boutique des Paliers (BoutiquePaliers) -- */
-.fc-card-boutique {
-  background: rgba(255, 255, 255, 0.95);
+/* Scène 2 : TierPanel + BoutiquePaliers */
+.fc-src-tier-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
-.fc-palier-list {
+.fc-src-tier-badge-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.22rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: #e5e7eb;
+  font: 800 0.85rem var(--fun-font);
+  color: var(--ink);
+}
+.fc-src-tier-badge-lg.is-gold {
+  background: #fde047;
+}
+.fc-src-cumul-box {
+  text-align: right;
+  line-height: 1.1;
+}
+.fc-src-cumul-box strong {
+  display: block;
+  font: 900 1.45rem var(--fun-font);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.fc-src-cumul-box small {
+  font: 700 0.66rem var(--body);
+  color: #4b415a;
+}
+.fc-src-tiers-frieze {
+  list-style: none;
+  padding: 0;
+  margin: 0.15rem 0;
+  display: flex;
+  gap: 0.35rem;
+}
+.fc-src-tiers-frieze li {
+  flex: 1;
+  text-align: center;
+  border-radius: 999px;
+  border: 2px dashed rgba(33, 29, 22, 0.35);
+  padding: 0.22rem 0.2rem;
+  font: 800 0.68rem var(--body);
+  color: #4b415a;
+}
+.fc-src-tiers-frieze li.is-reached {
+  border-style: solid;
+  border-color: var(--ink);
+  background: #fde68a;
+  color: var(--ink);
+}
+.fc-src-tiers-frieze li.is-current {
+  border-style: solid;
+  border-color: var(--ink);
+  background: #e5e7eb;
+  color: var(--ink);
+  box-shadow: 1.5px 1.5px 0 var(--ink);
+}
+.fc-src-micro-rule {
+  font-size: 0.67rem;
+  font-weight: 700;
+  color: #4b415a;
+  margin: 0.1rem 0 0;
+  line-height: 1.25;
+}
+
+.fc-src-boutique-wrap {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.42rem;
 }
-.fc-palier-item {
+.fc-src-section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font: 800 0.68rem var(--body);
+  letter-spacing: 0.06em;
+  color: #4b415a;
+  text-transform: uppercase;
+  padding: 0 0.15rem;
+}
+.fc-src-section-title strong {
+  color: var(--ink);
+  font-weight: 800;
+}
+.fc-src-milestone {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.4rem 0.55rem;
+  gap: 0.5rem;
   background: #ffffff;
-  border: 1.5px solid var(--ink);
-  border-radius: 11px;
-  box-shadow: 1px 1px 0 var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 13px;
+  padding: 0.48rem 0.58rem;
+  box-shadow: 2px 2px 0 var(--ink);
 }
-.fc-palier-icon {
-  width: 32px;
-  height: 32px;
-  background: #fbf7ee;
-  border: 1.5px solid var(--ink);
-  border-radius: 8px;
+.fc-src-cost-pill {
+  min-width: 44px;
+  height: 34px;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  border: 2px solid rgba(33, 29, 22, 0.35);
+  background: #faf6ec;
   display: grid;
   place-items: center;
-  font-size: 1.05rem;
+  font: 900 0.78rem var(--body);
+  color: #4b415a;
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
-.fc-palier-info {
+.fc-src-cost-pill.is-ready {
+  border-color: var(--ink);
+  background: var(--yellow);
+  color: var(--ink);
+}
+.fc-src-milestone-info {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   line-height: 1.2;
 }
-.fc-palier-info strong {
-  font: 800 0.74rem var(--fun-font);
+.fc-src-milestone-info strong {
+  font: 800 0.76rem var(--fun-font);
   color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.fc-palier-info small {
-  font-size: 0.68rem;
-  color: #666;
+.fc-src-milestone-info small {
+  font: 700 0.65rem var(--body);
+  color: #4b415a;
+}
+.fc-src-exchange-btn {
+  background: var(--yellow);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  padding: 0.34rem 0.62rem;
+  font: 800 0.7rem var(--fun-font);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--ink);
+  flex-shrink: 0;
+}
+.fc-src-exchange-btn:hover {
+  background: #ffe866;
 }
 .fc-palier-badge {
   font: 800 0.65rem var(--body);
-  padding: 0.2rem 0.5rem;
+  padding: 0.18rem 0.48rem;
   border-radius: 999px;
-  border: 1px solid var(--ink);
+  border: 1.5px solid var(--ink);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .fc-palier-badge.unlocked {
   background: #a7f3d0;
@@ -3707,68 +4007,145 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 .fc-palier-badge.progress {
   background: #fde68a;
-  color: #92400e;
+  color: #78350f;
 }
 .fc-palier-badge.locked {
   background: #f3f4f6;
-  color: #6b7280;
+  color: #374151;
 }
 
-/* -- 6. Mention Wallet discrète (InstallerPasseport) -- */
-.fc-wallet-mention-box {
-  background: rgba(255, 255, 255, 0.95);
-  border: 2px dashed rgba(33, 29, 22, 0.45);
+/* Carte récompense fraîchement débloquée */
+.fc-src-reward-ticket {
+  background: #dcfce7;
+  border: 2px solid var(--ink);
   border-radius: 14px;
-  padding: 0.55rem 0.75rem;
+  padding: 0.55rem 0.68rem;
+  box-shadow: 3px 3px 0 var(--ink);
+  animation: fcPopStampIn 0.35s ease;
+}
+.fc-src-reward-top {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  margin-top: 0.2rem;
-  box-shadow: 1px 1px 0 var(--ink);
-}
-.fc-wallet-pill-icon,
-.fc-wallet-icon {
-  font-size: 1.4rem;
-  flex-shrink: 0;
-}
-.fc-wallet-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.25;
-}
-.fc-wallet-text strong {
-  font: 800 0.74rem var(--fun-font);
+  gap: 0.45rem;
+  font: 800 0.78rem var(--fun-font);
   color: var(--ink);
 }
-.fc-wallet-text small {
-  font-size: 0.68rem;
-  color: #555;
+.fc-src-new-tag {
+  background: #065f46;
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 0.12rem 0.48rem;
+  font: 900 0.6rem var(--body);
+  letter-spacing: 0.04em;
+}
+.fc-src-reward-code-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.32rem;
+  padding-top: 0.3rem;
+  border-top: 1.5px dashed rgba(6, 95, 70, 0.35);
+  font: 700 0.72rem var(--body);
+  color: #065f46;
+}
+.fc-src-reward-code-row code {
+  font: 900 0.88rem monospace;
+  color: var(--ink);
+  background: #ffffff;
+  border: 1.5px solid var(--ink);
+  border-radius: 7px;
+  padding: 0.1rem 0.45rem;
 }
 
-/* -- Éléments Parrainage & Jackpot enrichis (Utilisation optimale de l'espace) -- */
+/* Scène 3 : BlocParrainage */
+.fc-src-card-h {
+  margin: 0.1rem 0 0;
+  font: 800 0.94rem var(--fun-font);
+  color: var(--ink);
+}
 .fc-ref-gain-badge {
-  background: var(--yellow);
+  background: #fde047;
   border: 1.5px solid var(--ink);
   border-radius: 999px;
-  padding: 0.15rem 0.55rem;
-  font: 900 0.68rem var(--fun-font);
+  padding: 0.16rem 0.55rem;
+  font: 900 0.68rem var(--body);
   color: var(--ink);
+  white-space: nowrap;
+}
+.fc-src-rule-copy {
+  font-size: 0.73rem;
+  line-height: 1.38;
+  color: #3d3548;
+  margin: 0;
+}
+.fc-promo-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #faf6ec;
+  border: 1.5px dashed var(--ink);
+  border-radius: 12px;
+  padding: 0.45rem 0.65rem;
+  gap: 0.5rem;
+}
+.fc-promo-code {
+  font: 900 0.9rem monospace;
+  letter-spacing: 0.04em;
+  color: #5b21b6;
+}
+.fc-copy-code-btn {
+  background: var(--yellow);
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  padding: 0.28rem 0.6rem;
+  font: 800 0.7rem var(--body);
+  cursor: pointer;
+  box-shadow: 1.5px 1.5px 0 var(--ink);
+  white-space: nowrap;
+}
+.fc-src-dl-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin: 0.1rem 0 0;
+}
+.fc-src-dl-cell {
+  background: #f3ead3;
+  border: 1.5px solid rgba(33, 29, 22, 0.25);
+  border-radius: 10px;
+  padding: 0.38rem 0.52rem;
+}
+.fc-src-dl-cell dt {
+  font: 800 0.62rem var(--body);
+  text-transform: uppercase;
+  color: #4b415a;
+}
+.fc-src-dl-cell dd {
+  margin: 0.12rem 0 0;
+  font: 800 0.78rem var(--fun-font);
+  color: var(--ink);
+}
+.fc-src-dl-cell dd small {
+  font: 700 0.65rem var(--body);
+  color: #4b415a;
 }
 .fc-filleul-item {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.5rem;
   padding: 0.35rem 0;
-  border-bottom: 1px dashed rgba(33, 29, 22, 0.15);
+  border-bottom: 1px dashed rgba(33, 29, 22, 0.16);
 }
-.fc-filleul-item:last-child {
+.fc-filleul-item:last-of-type {
   border-bottom: none;
 }
 .fc-filleul-avatar {
-  font-size: 1.2rem;
+  font-size: 1.15rem;
 }
 .fc-filleul-info {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   line-height: 1.2;
@@ -3778,199 +4155,147 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: var(--ink);
 }
 .fc-filleul-info small {
-  font-size: 0.66rem;
-  color: #666;
-}
-.fc-filleul-date {
-  font-size: 0.66rem;
-  font-weight: 700;
-  color: #888;
+  font: 600 0.65rem var(--body);
+  color: #4b415a;
 }
 
-/* -- Carte Lot & Jackpot -- */
-.fc-jackpot-big-pct {
-  font: 900 1.35rem var(--fun-font);
-  color: #c2410c;
-}
-.fc-card-lot {
-  background: #fff8e6;
-  border: 2px solid var(--ink);
-  box-shadow: 2px 2px 0 var(--ink);
-}
-.fc-lot-badge {
-  background: #ffedd5;
-  border: 1px solid var(--ink);
-  border-radius: 999px;
-  padding: 0.15rem 0.5rem;
-  font: 800 0.65rem var(--body);
-  color: #9a3412;
-}
-.fc-lot-content {
+/* Scène 4 : LinkedJackpotCard + InstallerPasseport + PiedCommerce */
+.fc-src-jackpot-nums {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-top: 0.2rem;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0.1rem 0;
 }
-.fc-lot-icon {
-  font-size: 1.7rem;
-  flex-shrink: 0;
-}
-.fc-lot-text strong {
-  display: block;
-  font: 800 0.76rem var(--fun-font);
+.fc-src-jackpot-euro {
+  font: 900 1.45rem/1 var(--fun-font);
   color: var(--ink);
 }
-.fc-lot-text small {
-  display: block;
-  font-size: 0.67rem;
-  color: #666;
+.fc-src-jackpot-nums strong {
+  font: 800 0.85rem var(--body);
+  color: var(--ink);
 }
-.fc-jackpot-rules {
-  list-style: none;
-  padding: 0;
-  margin: 0.2rem 0 0;
+.fc-src-install-box {
+  background: rgba(255, 255, 255, 0.92);
+  border: 2px dashed rgba(33, 29, 22, 0.35);
+  border-radius: 14px;
+  padding: 0.6rem 0.72rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.fc-src-install-box strong {
+  font: 800 0.78rem var(--fun-font);
+  color: var(--ink);
+}
+.fc-src-install-box small {
+  font: 600 0.66rem var(--body);
+  color: #4b415a;
+}
+.fc-src-install-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.22rem;
+}
+.fc-src-install-btn {
+  background: var(--yellow);
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  border-radius: 9px;
+  padding: 0.32rem 0.58rem;
+  font: 800 0.68rem var(--body);
+  cursor: pointer;
+}
+.fc-src-gwallet-pill {
+  background: #111827;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 0.34rem 0.62rem;
+  font: 700 0.68rem var(--body);
+  display: inline-flex;
+  align-items: center;
+}
+.fc-src-footer-commerce {
+  background: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  padding: 0.52rem 0.65rem;
+  box-shadow: 2px 2px 0 var(--ink);
+  text-align: center;
+}
+.fc-src-clock {
+  font: 700 0.7rem var(--body);
+  color: #3d3548;
+  margin: 0 0 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.fc-src-commerce-links {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: center;
+}
+.fc-src-commerce-links span {
+  flex: 1;
+  background: #faf6ec;
+  border: 1.5px solid var(--ink);
+  border-radius: 9px;
+  padding: 0.28rem 0.3rem;
+  font: 800 0.66rem var(--body);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* 3. ZONE BASSE FIXE : Dock 4 étapes + Home Indicator parfaitement intégré */
+.fc-phone-dock {
+  position: relative;
+  z-index: 4;
+  background: rgba(250, 246, 236, 0.97);
+  backdrop-filter: blur(10px);
+  border-top: 2px solid var(--ink);
+  padding: 0.38rem 0.6rem 0.35rem;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  font-size: 0.71rem;
-  line-height: 1.3;
-  color: #3f3944;
 }
-.fc-winner-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.3rem 0;
-  border-bottom: 1px dashed rgba(33, 29, 22, 0.15);
-  font-size: 0.7rem;
-}
-.fc-winner-row:last-child {
-  border-bottom: none;
-}
-.fc-winner-row small {
-  color: #888;
-  font-weight: 700;
-}
-
-.fc-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font: 700 0.85rem var(--fun-font);
-}
-.fc-card-head span {
-  background: #ffffff;
-  border: 1.5px solid var(--ink);
-  border-radius: 999px;
-  padding: 0.2em 0.65em;
-  font-size: 0.75rem;
-  font-weight: 800;
-}
-.fc-stamps-track {
-  display: flex;
-  gap: 0.45rem;
-  justify-content: space-between;
-}
-.fc-stamp {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  border: 2px solid var(--ink);
-  background: #ffffff;
+.fc-dock-tabs {
   display: grid;
-  place-items: center;
-  font: 800 1rem var(--fun-font);
-  transition: transform 0.25s var(--spring), background 0.2s ease;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.28rem;
 }
-.fc-stamp.is-filled {
-  background: var(--mint-card);
-  box-shadow: 2px 2px 0 var(--ink);
-  transform: scale(1.08);
-}
-.fc-stamp.is-gift {
-  background: var(--pink);
-  color: #ffffff;
-}
-.fc-ref-tiers {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.4rem;
-}
-.fc-tier-pill {
-  background: #ffffff;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  padding: 0.4rem 0.3rem;
-  text-align: center;
-  font: 700 0.74rem var(--fun-font);
+.fc-tab-btn {
+  border: 1.5px solid transparent;
+  background: transparent;
+  padding: 0.32rem 0.15rem;
+  border-radius: 12px;
+  cursor: pointer;
+  color: #3d3548;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
   transition: all 0.2s ease;
 }
-.fc-tier-pill.is-reached {
-  background: var(--yellow);
-  box-shadow: 2px 2px 0 var(--ink);
+.fc-tab-btn span {
+  font-size: 0.95rem;
+  line-height: 1;
 }
-.fc-promo-box {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #ffffff;
-  border: 1.5px dashed var(--ink);
-  border-radius: 12px;
-  padding: 0.45rem 0.75rem;
-  gap: 0.5rem;
-}
-.fc-promo-code {
-  font: 800 0.88rem monospace;
-  letter-spacing: 0.05em;
-  color: #7b1fa2;
-}
-.fc-copy-code-btn {
-  background: var(--yellow);
-  border: 1.5px solid var(--ink);
-  border-radius: 8px;
-  padding: 0.25rem 0.6rem;
-  font: 800 0.72rem var(--body);
-  cursor: pointer;
-  box-shadow: 1.5px 1.5px 0 var(--ink);
+.fc-tab-btn b {
+  font: 800 0.64rem var(--fun-font);
   white-space: nowrap;
 }
-.fc-copy-code-btn:active {
-  transform: translateY(1px);
-  box-shadow: none;
+.fc-tab-btn.active {
+  background: var(--ink);
+  color: var(--yellow);
+  border-color: var(--ink);
+  box-shadow: 1.5px 1.5px 0 rgba(0, 0, 0, 0.25);
 }
-.fc-jackpot-bar-outer {
-  width: 100%;
-  height: 20px;
-  background: #ffffff;
-  border: 2px solid var(--ink);
+.fc-home-indicator {
+  width: 118px;
+  height: 4px;
+  background: rgba(33, 29, 22, 0.45);
   border-radius: 999px;
-  overflow: hidden;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-}
-.fc-jackpot-bar-inner {
-  height: 100%;
-  background: linear-gradient(90deg, #ff4fa3 0%, #ff7a28 50%, #5de4b3 100%);
-  transition: width 0.4s var(--spring);
-}
-.fc-screen-action-btn {
-  width: 100%;
-  padding: 0.65rem 0.85rem;
-  font: 800 0.84rem var(--fun-font);
-  border: 2px solid var(--ink);
-  border-radius: 12px;
-  box-shadow: 2px 2px 0 var(--ink);
-  cursor: pointer;
-  text-align: center;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  user-select: none;
-}
-.fc-screen-action-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 3px 3px 0 var(--ink);
-}
-.fc-screen-action-btn:active {
-  transform: translateY(1px);
-  box-shadow: 1px 1px 0 var(--ink);
+  margin: 0 auto;
 }
 
 .fc-detail-grid {
@@ -6232,6 +6557,19 @@ header, main, section, footer { position: relative; z-index: 2; }
   .fc-sim-actions-box .fc-action-btn {
     font-size: 0.78rem;
     padding: 0.65em 0.9em;
+  }
+  .fc-action-mini-row {
+    grid-template-columns: 1fr;
+  }
+  .fc-phone-case {
+    max-width: min(94vw, 390px);
+    padding: 8px;
+    border-radius: 42px;
+  }
+  .fc-phone-screen.fc-trio-phone {
+    height: 640px;
+    max-height: 82vh;
+    border-radius: 34px;
   }
 
   /* Page vitrine-reservation.html */
