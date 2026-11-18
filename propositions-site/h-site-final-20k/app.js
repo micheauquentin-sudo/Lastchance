@@ -1675,7 +1675,10 @@
         const s2 = pronoScore2 ? pronoScore2.textContent : "1";
         if (pronoFeedback) {
           pronoFeedback.hidden = false;
-          pronoFeedback.innerHTML = `✅ <b>Pronostic enregistré (${t1} ${s1} - ${s2} ${t2}) !</b> Vous gagnez +10 pts et grimpez au classement.`;
+          pronoFeedback.textContent = "";
+          const bEl = document.createElement("b");
+          bEl.textContent = `Pronostic enregistré (${t1} ${s1} - ${s2} ${t2}) !`;
+          pronoFeedback.append("✅ ", bEl, " Vous gagnez +10 pts et grimpez au classement.");
         }
         if (pronoLbRows && userPronoPts >= 140) {
           pronoLbRows.innerHTML = `
@@ -3011,7 +3014,7 @@
           <div class="lc-emu-white-box" style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
             <div>
               <span style="font:800 0.72rem var(--body);color:#6b5e4b;">Mon surnom client</span>
-              <input type="text" id="emu-nick-input" value="${emuState.nickname}" aria-label="Modifier votre surnom sur le passeport" style="display:block;width:100%;margin-top:0.2rem;border:1.5px solid #211d16;border-radius:8px;padding:0.24rem 0.45rem;font:800 0.84rem var(--body);background:#faf6ec;color:#211d16;" />
+              <input type="text" id="emu-nick-input" aria-label="Modifier votre surnom sur le passeport" style="display:block;width:100%;margin-top:0.2rem;border:1.5px solid #211d16;border-radius:8px;padding:0.24rem 0.45rem;font:800 0.84rem var(--body);background:#faf6ec;color:#211d16;" />
             </div>
             <span style="font:800 0.75rem var(--body);color:#047857;white-space:nowrap;">Cumul : ${emuState.cumul} pts</span>
           </div>
@@ -3071,7 +3074,10 @@
       `;
 
       const nickInput = $("#emu-nick-input", screenEl);
-      if (nickInput) nickInput.addEventListener("change", (e) => (emuState.nickname = e.target.value || "Lisa M."));
+      if (nickInput) {
+        nickInput.value = emuState.nickname;
+        nickInput.addEventListener("change", (e) => (emuState.nickname = e.target.value || "Lisa M."));
+      }
       $$("[data-pass-tab]", screenEl).forEach((tb) => {
         tb.addEventListener("click", () => {
           emuState.passTab = tb.dataset.passTab;
@@ -3142,13 +3148,15 @@
             </p>
             ${
               emuState.jackpotWinner
-                ? `<div class="lc-emu-feedback">🎉 <b>Tirage collectif déclenché !</b><br/>Gagnante : <b>${emuState.jackpotWinner}</b> · Code <span class="lc-emu-code-pill">JACKPOT-WIN</span></div>
+                ? `<div class="lc-emu-feedback">🎉 <b>Tirage collectif déclenché !</b><br/>Gagnante : <b class="js-emu-winner"></b> · Code <span class="lc-emu-code-pill">JACKPOT-WIN</span></div>
                    <button type="button" class="lc-emu-chip" id="emu-jackpot-reset" style="margin-top:0.55rem;width:100%;">↻ Réinitialiser la démo à 47/50</button>`
                 : `<button type="button" class="lc-emu-primary-btn" id="emu-jackpot-inc">+ Valider 1 participation (${emuState.jackpotCount}/50)</button>`
             }
           </div>
         </div>
       `;
+      const winnerEl = $(".js-emu-winner", screenEl);
+      if (winnerEl) winnerEl.textContent = emuState.jackpotWinner;
       const incBtn = $("#emu-jackpot-inc", screenEl);
       if (incBtn) {
         incBtn.addEventListener("click", () => {
@@ -3186,7 +3194,7 @@
             emuState.parrainView === "parrain"
               ? `
             <div class="lc-emu-solde-panel">
-              <strong style="font:800 0.84rem var(--display);">Lien personnel de ${emuState.nickname}</strong>
+              <strong style="font:800 0.84rem var(--display);">Lien personnel de <span class="js-emu-nick"></span></strong>
               <code style="display:block;margin:0.4rem 0;background:#fff;padding:0.4rem;border-radius:8px;border:1.5px solid #211d16;font-size:0.72rem;word-break:break-all;">
                 lastchance.app/passeport/bistrot?parrain=PASS-LISA
               </code>
@@ -3196,12 +3204,12 @@
           `
               : `
             <div class="lc-emu-white-box">
-              <span class="lc-emu-code-pill" style="margin-bottom:0.4rem;">Invitation de ${emuState.nickname}</span>
+              <span class="lc-emu-code-pill" style="margin-bottom:0.4rem;">Invitation de <span class="js-emu-nick"></span></span>
               <h3 style="margin:0.2rem 0 0.4rem;font:900 1rem var(--display);">Bienvenue Tom ! 🎁 -20 % offerts sur votre 1re visite</h3>
               <p style="margin:0 0 0.7rem;font-size:0.79rem;font-weight:600;">Présentez votre téléphone en caisse pour activer votre offre de bienvenue et récompenser votre parrain.</p>
               ${
                 emuState.parrainFriendDone
-                  ? `<div class="lc-emu-feedback">🎉 1re visite validée ! Tom profite de <b>-20 %</b> et ${emuState.nickname} vient de recevoir <b>+150 pts</b>.</div>`
+                  ? `<div class="lc-emu-feedback">🎉 1re visite validée ! Tom profite de <b>-20 %</b> et <span class="js-emu-nick"></span> vient de recevoir <b>+150 pts</b>.</div>`
                   : `<button type="button" class="lc-emu-primary-btn" id="emu-friend-validate">✅ Valider la 1re visite de Tom</button>`
               }
             </div>
@@ -3209,6 +3217,7 @@
           }
         </div>
       `;
+      $$(".js-emu-nick", screenEl).forEach((elNick) => (elNick.textContent = emuState.nickname));
       $$("[data-pv]", screenEl).forEach((b) => {
         b.addEventListener("click", () => {
           emuState.parrainView = b.dataset.pv;
@@ -3338,7 +3347,7 @@
               : `
             <div class="lc-emu-white-box" style="display:flex;flex-direction:column;gap:0.45rem;">
               <div style="display:flex;justify-content:space-between;font:800 0.8rem var(--body);"><span>🥇 1. Tom B.</span><span>48 pts</span></div>
-              <div style="display:flex;justify-content:space-between;font:800 0.8rem var(--body);background:#fde9ba;padding:0.25rem 0.4rem;border-radius:8px;"><span>🥈 ${emuState.pronoSubmitted ? "2" : "3"}. Vous (${emuState.nickname})</span><span>${emuState.pronoSubmitted ? "46" : "41"} pts</span></div>
+              <div style="display:flex;justify-content:space-between;font:800 0.8rem var(--body);background:#fde9ba;padding:0.25rem 0.4rem;border-radius:8px;"><span>🥈 ${emuState.pronoSubmitted ? "2" : "3"}. Vous (<span class="js-emu-nick"></span>)</span><span>${emuState.pronoSubmitted ? "46" : "41"} pts</span></div>
               <div style="display:flex;justify-content:space-between;font:800 0.8rem var(--body);"><span>🥉 3. Sarah K.</span><span>39 pts</span></div>
               <div style="border-top:1px dashed rgba(33,29,22,0.2);padding-top:0.4rem;font-size:0.74rem;font-weight:700;">
                 🎁 1er prix saison : Maillot officiel + 100 € offerts
@@ -3348,6 +3357,7 @@
           }
         </div>
       `;
+      $$(".js-emu-nick", screenEl).forEach((elNick) => (elNick.textContent = emuState.nickname));
 
       $$("[data-ptab]", screenEl).forEach((b) => {
         b.addEventListener("click", () => {
@@ -3420,6 +3430,8 @@
       const services = emuState.sector === "coiffeur" || emuState.sector === "spa"
         ? ["Coupe & Coiffage (45 €)", "Soin Détente (58 €)", "Forfait Complet"]
         : ["Table pour 2 personnes", "Table pour 4 personnes", "Table en Terrasse"];
+      const days = ["Aujourd’hui", "Demain", "Samedi"];
+      const slots = ["12h15", "14h30", "19h30", "20h00"];
       if (!services.includes(emuState.rdvService)) emuState.rdvService = services[0];
 
       screenEl.innerHTML = `
@@ -3434,28 +3446,31 @@
           <div class="lc-emu-white-box">
             <strong style="font:800 0.76rem var(--body);display:block;margin-bottom:0.35rem;">1. Prestation ou table :</strong>
             <div class="lc-emu-theme-grid">
-              ${services.map((sv) => `<button type="button" class="lc-emu-chip ${emuState.rdvService === sv ? "active" : ""}" data-rsvc="${sv}">${sv}</button>`).join("")}
+              ${services.map((sv, idx) => `<button type="button" class="lc-emu-chip ${emuState.rdvService === sv ? "active" : ""}" data-rsvc-idx="${idx}">${sv}</button>`).join("")}
             </div>
             <strong style="font:800 0.76rem var(--body);display:block;margin:0.55rem 0 0.35rem;">2. Jour &amp; horaire disponible :</strong>
             <div class="lc-emu-theme-grid" style="margin-bottom:0.35rem;">
-              ${["Aujourd’hui", "Demain", "Samedi"].map((d) => `<button type="button" class="lc-emu-chip ${emuState.rdvDay === d ? "active" : ""}" data-rday="${d}">${d}</button>`).join("")}
+              ${days.map((d, idx) => `<button type="button" class="lc-emu-chip ${emuState.rdvDay === d ? "active" : ""}" data-rday-idx="${idx}">${d}</button>`).join("")}
             </div>
             <div class="lc-emu-theme-grid">
-              ${["12h15", "14h30", "19h30", "20h00"].map((sl) => `<button type="button" class="lc-emu-chip ${emuState.rdvSlot === sl ? "active" : ""}" data-rslot="${sl}">${sl}</button>`).join("")}
+              ${slots.map((sl, idx) => `<button type="button" class="lc-emu-chip ${emuState.rdvSlot === sl ? "active" : ""}" data-rslot-idx="${idx}">${sl}</button>`).join("")}
             </div>
           </div>
 
           ${
             emuState.rdvConfirmed
-              ? `<div class="lc-emu-feedback">✅ <b>Confirmé !</b> ${emuState.rdvService} · <b>${emuState.rdvDay} à ${emuState.rdvSlot}</b><br/>Pass <span class="lc-emu-code-pill">RES-492</span> ajouté à l’agenda client.</div>
+              ? `<div class="lc-emu-feedback">✅ <b>Confirmé !</b> <span class="js-rdv-svc"></span> · <b class="js-rdv-when"></b><br/>Pass <span class="lc-emu-code-pill">RES-492</span> ajouté à l’agenda client.</div>
                  <button type="button" class="lc-emu-chip" id="emu-rdv-reset">Modifier mon créneau</button>`
-              : `<button type="button" class="lc-emu-primary-btn" id="emu-rdv-confirm">Confirmer le créneau (${emuState.rdvSlot}) →</button>`
+              : `<button type="button" class="lc-emu-primary-btn" id="emu-rdv-confirm">Confirmer le créneau (<span class="js-rdv-slot"></span>) →</button>`
           }
         </div>
       `;
-      $$("[data-rsvc]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.rdvService = b.dataset.rsvc; emuState.rdvConfirmed = false; renderEmulatorPhone(screenEl); }));
-      $$("[data-rday]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.rdvDay = b.dataset.rday; emuState.rdvConfirmed = false; renderEmulatorPhone(screenEl); }));
-      $$("[data-rslot]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.rdvSlot = b.dataset.rslot; emuState.rdvConfirmed = false; renderEmulatorPhone(screenEl); }));
+      if ($(".js-rdv-svc", screenEl)) $(".js-rdv-svc", screenEl).textContent = emuState.rdvService;
+      if ($(".js-rdv-when", screenEl)) $(".js-rdv-when", screenEl).textContent = `${emuState.rdvDay} à ${emuState.rdvSlot}`;
+      if ($(".js-rdv-slot", screenEl)) $(".js-rdv-slot", screenEl).textContent = emuState.rdvSlot;
+      $$("[data-rsvc-idx]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.rdvService = services[Number(b.dataset.rsvcIdx)] || services[0]; emuState.rdvConfirmed = false; renderEmulatorPhone(screenEl); }));
+      $$("[data-rday-idx]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.rdvDay = days[Number(b.dataset.rdayIdx)] || days[0]; emuState.rdvConfirmed = false; renderEmulatorPhone(screenEl); }));
+      $$("[data-rslot-idx]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.rdvSlot = slots[Number(b.dataset.rslotIdx)] || slots[0]; emuState.rdvConfirmed = false; renderEmulatorPhone(screenEl); }));
       const cf = $("#emu-rdv-confirm", screenEl);
       if (cf) cf.addEventListener("click", () => { emuState.rdvConfirmed = true; renderEmulatorPhone(screenEl); });
       const rs = $("#emu-rdv-reset", screenEl);
@@ -3492,12 +3507,13 @@
             <div class="lc-emu-white-box">
               <strong style="font:900 0.95rem var(--display);">Position en direct : #2 sur la liste</strong>
               <p style="margin:0.35rem 0;font-size:0.78rem;font-weight:600;">Attente estimée : ~8 min · Continuez votre balade, votre téléphone bipe dès que votre table est prête.</p>
-              <div class="lc-emu-feedback">📲 Notification prête pour ${emuState.nickname}</div>
+              <div class="lc-emu-feedback">📲 Notification prête pour <span class="js-emu-nick"></span></div>
             </div>
           `
           }
         </div>
       `;
+      $$(".js-emu-nick", screenEl).forEach((elNick) => (elNick.textContent = emuState.nickname));
       $$("[data-mv]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.momentView = b.dataset.mv; renderEmulatorPhone(screenEl); }));
       const bk = $("#emu-moment-book", screenEl);
       if (bk) {
@@ -3669,6 +3685,7 @@
     }
 
     if (m === "portrait-de-la-bande") {
+      const players = ["Tom", "Lisa", "Sarah", "Max"];
       screenEl.innerHTML = `
         <div class="lc-emu-app-pad">
           <div class="lc-emu-app-header">
@@ -3678,17 +3695,18 @@
           <div class="lc-emu-white-box">
             <strong style="font:900 0.9rem var(--display);display:block;margin-bottom:0.45rem;">Qui met toujours 20 min à choisir sa commande ?</strong>
             <div class="lc-emu-theme-grid">
-              ${["Tom", "Lisa", "Sarah", "Max"].map((n) => `<button type="button" class="lc-emu-chip ${emuState.bandeVote === n ? "active" : ""}" data-bv="${n}">${n}</button>`).join("")}
+              ${players.map((n, idx) => `<button type="button" class="lc-emu-chip ${emuState.bandeVote === n ? "active" : ""}" data-bv-idx="${idx}">${n}</button>`).join("")}
             </div>
           </div>
           ${
             emuState.bandeVote
-              ? `<div class="lc-emu-feedback">🗳️ 3 votes reçus ! <b>${emuState.bandeVote}</b> remporte haut la main le titre de <b>« Décideur Éternel »</b> 🏆</div>`
+              ? `<div class="lc-emu-feedback">🗳️ 3 votes reçus ! <b class="js-bande-vote"></b> remporte haut la main le titre de <b>« Décideur Éternel »</b> 🏆</div>`
               : `<p style="font-size:0.78rem;font-weight:700;margin:0;text-align:center;">Votez secrètement : le verdict tombe dès que 3 personnes à table ont voté.</p>`
           }
         </div>
       `;
-      $$("[data-bv]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.bandeVote = b.dataset.bv; renderEmulatorPhone(screenEl); }));
+      if ($(".js-bande-vote", screenEl)) $(".js-bande-vote", screenEl).textContent = emuState.bandeVote;
+      $$("[data-bv-idx]", screenEl).forEach((b) => b.addEventListener("click", () => { emuState.bandeVote = players[Number(b.dataset.bvIdx)] || players[0]; renderEmulatorPhone(screenEl); }));
       return;
     }
 
