@@ -81,7 +81,7 @@ export default async function PortefeuillePage() {
               href="/?utm_source=wallet&utm_medium=footer"
               className="font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
             >
-              Lastchance
+              Simple comme QR
             </Link>
           </footer>
         </div>

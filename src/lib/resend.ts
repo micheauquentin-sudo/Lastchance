@@ -405,7 +405,7 @@ function teamInviteEmailHtml(p: {
       <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">Invitation</p>
       <h1 style="font-size:22px;color:#18181b;margin:0 0 12px;">Rejoignez l'équipe de ${org}</h1>
       <p style="color:#3f3f46;font-size:15px;line-height:1.6;margin:0 0 24px;">
-        Vous avez été invité(e) à accéder au dashboard Lastchance de ${org}.
+        Vous avez été invité(e) à accéder au dashboard Simple comme QR de ${org}.
       </p>
       <a href="${p.inviteUrl}" style="display:inline-block;background:#f97316;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">
         Accepter l'invitation
@@ -437,7 +437,7 @@ export async function sendTeamInviteEmail(params: {
     const { error } = await resend.emails.send({
       from,
       to: params.to,
-      subject: `Rejoignez l'équipe de ${params.organizationName} sur Lastchance`,
+      subject: `Rejoignez l'équipe de ${params.organizationName} sur Simple comme QR`,
       html: teamInviteEmailHtml({
         organizationName: params.organizationName,
         inviteUrl: params.inviteUrl,
@@ -865,7 +865,7 @@ function budgetPausedEmailHtml(p: {
       <a href="${p.dashboardUrl}" style="display:inline-block;color:#f97316;font-size:13px;text-decoration:none;">Gérer la campagne →</a>
     </div>
     <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
-      Notification automatique Lastchance (plafond de budget de campagne).
+      Notification automatique Simple comme QR (plafond de budget de campagne).
     </p>
   </div>
 </body>
@@ -938,7 +938,7 @@ function scheduleBlockedEmailHtml(p: {
       <a href="${p.modulesUrl}" style="display:inline-block;background:#f97316;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">Rouvrir le module</a>
     </div>
     <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
-      Notification automatique Lastchance (ouverture programmée d'une campagne).
+      Notification automatique Simple comme QR (ouverture programmée d'une campagne).
     </p>
   </div>
 </body>
@@ -1012,7 +1012,7 @@ function lowStockEmailHtml(p: {
       <a href="${p.dashboardUrl}" style="display:inline-block;color:#f97316;font-size:13px;text-decoration:none;">Gérer mes lots →</a>
     </div>
     <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
-      Notification automatique Lastchance (seuil d'alerte de stock).
+      Notification automatique Simple comme QR (seuil d'alerte de stock).
     </p>
   </div>
 </body>

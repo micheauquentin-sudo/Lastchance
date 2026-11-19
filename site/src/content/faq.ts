@@ -29,7 +29,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Et les avis Google ?",
     answer:
-      "LastChance respecte les règles de Google : le gain n'est jamais conditionné à un avis, et rien ne se débloque en échange d'une action. Avant la partie, vous pouvez simplement proposer vos liens (avis Google, Instagram, TikTok) : l'écran est facultatif, le bouton « Continuer vers le jeu » est toujours là, et le tirage est identique que le client clique ou non.",
+      "Simple comme QR respecte les règles de Google : le gain n'est jamais conditionné à un avis, et rien ne se débloque en échange d'une action. Avant la partie, vous pouvez simplement proposer vos liens (avis Google, Instagram, TikTok) : l'écran est facultatif, le bouton « Continuer vers le jeu » est toujours là, et le tirage est identique que le client clique ou non.",
   },
   {
     question: "Comment mes clients récupèrent-ils leur gain ?",
@@ -44,7 +44,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Est-ce rentable pour mon commerce ?",
     answer:
-      "Un lot offert coûte quelques euros ; une visite supplémentaire ou un email qualifié en rapporte davantage. Vous pilotez le coût exactement : probabilités, stocks et valeur des lots sont sous votre contrôle. Un simulateur de retour sur investissement arrive prochainement sur ce site.",
+      "Un lot offert coûte quelques euros ; une visite supplémentaire ou un email qualifié en rapporte davantage. Vous pilotez le coût exactement : probabilités, stocks et valeur des lots sont sous votre contrôle.",
   },
 ];
 

@@ -327,7 +327,12 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/attirer",
-        destination: "/jeux-instantanes",
+        destination: "/jeux-pronostics",
+        permanent: true,
+      },
+      {
+        source: "/jeux-instantanes",
+        destination: "/jeux-pronostics",
         permanent: true,
       },
       {
@@ -337,7 +342,17 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/fideliser",
-        destination: "/passeport-fidelite",
+        destination: "/fidelite-communaute",
+        permanent: true,
+      },
+      {
+        source: "/passeport-fidelite",
+        destination: "/fidelite-communaute",
+        permanent: true,
+      },
+      {
+        source: "/tarifs",
+        destination: "/abonnements",
         permanent: true,
       },
     ];

@@ -110,7 +110,7 @@ export function Sidebar({ permissions }: { permissions: Permission[] }) {
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 lg:hidden">
         <Link href="/admin" className="flex items-center gap-2 font-semibold text-white">
           <Logo />
-          <span>LastChance</span>
+          <span>Simple comme QR</span>
           <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300">
             Admin
           </span>
@@ -138,7 +138,7 @@ export function Sidebar({ permissions }: { permissions: Permission[] }) {
         <div className="sticky top-0 flex h-screen flex-col p-4">
           <Link href="/admin" className="mb-6 flex items-center gap-2 px-1 font-semibold text-white">
             <Logo />
-            <span>LastChance</span>
+            <span>Simple comme QR</span>
             <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300">
               Admin
             </span>

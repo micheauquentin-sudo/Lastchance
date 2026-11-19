@@ -145,7 +145,7 @@ export default async function DashboardLayout({
                 className="text-xl leading-none text-k-ink"
                 style={{ fontFamily: "var(--font-display), system-ui, sans-serif" }}
               >
-                LastChance<span className="text-k-orange">.</span>
+                Simple comme QR
               </Link>
               <p className="mt-1.5 hidden items-center gap-1.5 truncate text-xs font-bold text-k-body lg:flex">
                 <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
@@ -235,7 +235,7 @@ export default async function DashboardLayout({
             <div className="px-6 py-3 text-sm font-bold text-k-ink">
               <span className="font-black">Accès offert 🎁</span> — vous
               bénéficiez d&apos;un accès offert aux modules activés par
-              LastChance
+              Simple comme QR
               {compUntil ? ` jusqu'au ${formatDate(compUntil)}` : ""}.
             </div>
           </RappelFermable>

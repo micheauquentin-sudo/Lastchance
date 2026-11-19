@@ -4,19 +4,19 @@
  * relie (boutons « Essai gratuit » et « Connexion »).
  */
 
-export const SITE_NAME = "LastChance";
+export const SITE_NAME = "Simple comme QR";
 
 export const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.lastchance.app";
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.simplecommeqr.fr";
 
 /** URL de l'application commerçant (inscription / connexion). */
 export const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL ?? "https://app.lastchance.app";
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://app.simplecommeqr.fr";
 
 export const SIGNUP_URL = `${APP_URL}/signup`;
 export const LOGIN_URL = `${APP_URL}/login`;
 
-export const CONTACT_EMAIL = "contact@lastchance.app";
+export const CONTACT_EMAIL = "contact@simplecommeqr.fr";
 
 /**
  * Souscription en ligne ouverte ou non. Le site vitrine ne connaît pas Stripe :

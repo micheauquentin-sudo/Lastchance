@@ -22,7 +22,7 @@ export default async function SignupPage({
     <Card>
       <h1 className="text-xl font-bold mb-1">Créer un compte</h1>
       <p className="text-sm text-zinc-500 mb-6">
-        Accédez à votre espace Lastchance et préparez vos animations.
+        Accédez à votre espace Simple comme QR et préparez vos animations.
       </p>
 
       {plan && (

@@ -16,7 +16,7 @@ export default function TermsPage() {
         <p>Le code affiché doit être présenté au commerçant selon la durée et les modalités annoncées. Il ne peut être validé qu&apos;une fois. Un avis, une note, un abonnement marketing ou le partage de coordonnées non nécessaires ne peut jamais être exigé en contrepartie du gain.</p>
       </LegalSection>
       <LegalSection title="Disponibilité">
-        <p>En cas d&apos;incident technique, le commerçant reste l&apos;interlocuteur pour la remise d&apos;un gain déjà enregistré. LastChance peut suspendre une campagne manifestement frauduleuse ou dangereuse.</p>
+        <p>En cas d&apos;incident technique, le commerçant reste l&apos;interlocuteur pour la remise d&apos;un gain déjà enregistré. Simple comme QR peut suspendre une campagne manifestement frauduleuse ou dangereuse.</p>
       </LegalSection>
     </LegalPage>
   );

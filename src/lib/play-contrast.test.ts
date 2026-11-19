@@ -341,7 +341,6 @@ describe("les deux couleurs qui ne tiennent pas en texte", () => {
     // Contre-épreuve de la tolérance ci-dessus : si le point décoratif
     // disparaissait du produit, la tolérance devrait disparaître avec lui.
     const sites = [
-      "src/app/dashboard/layout.tsx",
       "src/components/marketing/site-header.tsx",
     ];
     for (const site of sites) {

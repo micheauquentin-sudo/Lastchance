@@ -47,7 +47,7 @@ export function PlanCatalog({
     <div className="space-y-3">
       {tiers.map((tier) => {
         const mailto = `mailto:${supportEmail}?subject=${encodeURIComponent(
-          `Offre ${tier.name} — LastChance`,
+          `Offre ${tier.name} — Simple comme QR`,
         )}`;
         return (
           <div

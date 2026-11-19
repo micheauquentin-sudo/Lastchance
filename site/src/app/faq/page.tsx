@@ -7,7 +7,7 @@ import { FAQ_ITEMS } from "@/content/faq";
 export const metadata: Metadata = {
   title: "FAQ",
   description:
-    "Mise en place, RGPD, contrôle des lots, avis Google, remise des gains : toutes les réponses sur LastChance, la roue de la fortune par QR code.",
+    "Mise en place, RGPD, contrôle des lots, avis Google, remise des gains : toutes les réponses sur Simple comme QR, la roue de la fortune par QR code.",
   alternates: { canonical: "/faq" },
 };
 

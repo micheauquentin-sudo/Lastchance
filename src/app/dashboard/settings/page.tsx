@@ -346,7 +346,7 @@ export default async function SettingsPage({
             <dl className="space-y-2 text-sm mb-6">
               <div className="flex justify-between">
                 <dt className="text-zinc-500">Accès</dt>
-                <dd className="font-medium">Offert par LastChance 🎁</dd>
+                <dd className="font-medium">Offert par Simple comme QR 🎁</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-zinc-500">Valable</dt>

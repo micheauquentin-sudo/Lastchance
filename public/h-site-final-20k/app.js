@@ -164,7 +164,7 @@
             <span class="jb-stamp-dot stamped" style="width:46px;height:46px;background:#ffb8d9;">🎟️</span>
             <span class="jb-stamp-dot stamped" style="width:46px;height:46px;background:#e3cfff;">⚡</span>
           </div>
-          <a href="jeux-pronostics.html" class="jb-live-pill" style="text-decoration:none;color:#161317;">✨ Explorer les 15 mécaniques en détail →</a>
+          <a href="/jeux-pronostics" class="jb-live-pill" style="text-decoration:none;color:#161317;">✨ Explorer les 15 mécaniques en détail →</a>
         </div>
       `,
     },
@@ -724,7 +724,7 @@
               </li>
             `).join("")}
           </ul>
-          <a href="abonnements.html#grand-comparatif" class="plan-compare-link" style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.75rem;font-weight:800;color:#800038;text-decoration:underline;">
+          <a href="/abonnements#grand-comparatif" class="plan-compare-link" style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.75rem;font-weight:800;color:#800038;text-decoration:underline;">
             <span>Comparer les modules en détail</span>
             <span aria-hidden="true">→</span>
           </a>
@@ -734,7 +734,7 @@
           <button type="button" class="ticket-btn pop-btn-ink choose-plan-signup-btn" style="text-align:center;width:100%;cursor:pointer;">
             Choisir ${f.nom} (7j offerts) →
           </button>
-          <a href="abonnements.html#grand-comparatif" style="text-align:center;font-size:0.78rem;font-weight:800;color:#161317;text-decoration:underline;">
+          <a href="/abonnements#grand-comparatif" style="text-align:center;font-size:0.78rem;font-weight:800;color:#161317;text-decoration:underline;">
             📊 Voir sur la page Abonnements →
           </a>
         </div>
@@ -1069,7 +1069,7 @@
         }
         drafts.lastModule = "roue";
         C.saveDrafts(drafts);
-        window.location.href = `studio.html?module=roue&preset=${encodeURIComponent(p.key)}&mech=${encodeURIComponent(hpMechanic)}`;
+        window.location.href = `/studio?module=roue&preset=${encodeURIComponent(p.key)}&mech=${encodeURIComponent(hpMechanic)}`;
       });
     }
   }
@@ -1330,7 +1330,7 @@
       drafts.vitrine.badge = sec.defaultBadge;
       drafts.lastModule = "vitrine";
       C.saveDrafts(drafts);
-      window.location.href = `studio.html?module=vitrine&sector=${encodeURIComponent(sec.key)}`;
+      window.location.href = `/studio?module=vitrine&sector=${encodeURIComponent(sec.key)}`;
     });
   }
 
@@ -1525,7 +1525,7 @@
         }
         drafts.lastModule = "roue";
         C.saveDrafts(drafts);
-        window.location.href = `studio.html?module=roue&preset=${encodeURIComponent(currentJpPresetKey)}&mech=${encodeURIComponent(mechKey)}`;
+        window.location.href = `/studio?module=roue&preset=${encodeURIComponent(currentJpPresetKey)}&mech=${encodeURIComponent(mechKey)}`;
       });
     }
   }
@@ -1598,7 +1598,7 @@
         drafts.pronostics.fond = currentPronoTheme === "neutre" ? "aucun" : currentPronoTheme;
         drafts.lastModule = "pronostics";
         C.saveDrafts(drafts);
-        window.location.href = "studio.html?module=pronostics";
+        window.location.href = "/studio?module=pronostics";
       });
     }
   }
@@ -1828,7 +1828,7 @@
         drafts.fidelite.fond = currentFcFond;
         drafts.lastModule = "fidelite";
         C.saveDrafts(drafts);
-        window.location.href = "studio.html?module=fidelite";
+        window.location.href = "/studio?module=fidelite";
       });
     }
   }
@@ -2290,7 +2290,7 @@
         <strong style="display:block;font:800 0.8rem var(--display);color:var(--k-ink);">✨ ${statusText}</strong>
         <small style="font-size:0.74rem;font-weight:700;color:var(--k-muted);">Reprenez votre modification là où vous vous étiez arrêté.</small>
       </div>
-      <a class="k-btn k-btn-yellow k-btn-sm" href="studio.html?module=${d.lastModule || "vitrine"}">
+      <a class="k-btn k-btn-yellow k-btn-sm" href="/studio?module=${d.lastModule || "vitrine"}">
         Reprendre ma création →
       </a>
       <button type="button" class="lc-draft-close" id="lc-draft-close" aria-label="Fermer cette notification" title="Fermer">✕</button>
@@ -2488,7 +2488,7 @@
         targetEl.classList.add("highlight-pulse");
         setTimeout(() => targetEl.classList.remove("highlight-pulse"), 1600);
         try {
-          history.pushState(null, "", "abonnements.html" + hash);
+          history.pushState(null, "", "/abonnements" + hash);
         } catch {}
       }
     });
@@ -2736,72 +2736,72 @@
       title: "Passeport Fidélité Client (Vue Smartphone)",
       desc: "Votre client garde sa carte sur son téléphone sans installer d’application : il cumule ses points, voit sa jauge de paliers évoluer et débloque ses cadeaux au comptoir.",
       group: ["passeport", "jackpot", "parrainage"],
-      studioHref: "studio.html?module=fidelite",
-      moduleHref: "modules.html?m=passeport-fidelite",
+      studioHref: "/studio?module=fidelite",
+      moduleHref: "/modules?m=passeport-fidelite",
     },
     jackpot: {
       kicker: "CAGNOTTE COLLECTIVE · /jackpot",
       title: "Jackpot Collectif de la Communauté",
       desc: "Chaque passage de vos clients remplit une cagnotte commune. Dès que l’objectif est atteint, un tirage collectif automatique récompense un membre parmi les participants.",
       group: ["passeport", "jackpot", "parrainage"],
-      studioHref: "studio.html?module=fidelite",
-      moduleHref: "modules.html?m=jackpot-collectif",
+      studioHref: "/studio?module=fidelite",
+      moduleHref: "/modules?m=jackpot-collectif",
     },
     parrainage: {
       kicker: "PARRAINAGE · /v/...?parrain=",
       title: "Bouche-à-oreille Traçable (Parrain & Filleul)",
       desc: "Vos habitués partagent leur lien personnel à leurs proches. À la première visite validée du filleul en caisse, les deux reçoivent instantanément leur récompense.",
       group: ["passeport", "jackpot", "parrainage"],
-      studioHref: "studio.html?module=fidelite",
-      moduleHref: "modules.html?m=passeport-fidelite",
+      studioHref: "/studio?module=fidelite",
+      moduleHref: "/modules?m=passeport-fidelite",
     },
     jeux: {
       kicker: "EXPERIENCE JOUEUR · /play",
       title: "Les 15 Jeux Instantanés (Vue Client)",
       desc: "Votre client scanne, participe en 15 secondes sur votre thème graphique et repart avec son code gain à présenter en caisse.",
       group: ["jeux", "pronostics"],
-      studioHref: "studio.html?module=roue",
-      moduleHref: "modules.html?m=jeux-instantanes",
+      studioHref: "/studio?module=roue",
+      moduleHref: "/modules?m=jeux-instantanes",
     },
     pronostics: {
       kicker: "CONCOURS DE PRONOSTICS · /pronos",
       title: "Grille & Classement de Saison",
       desc: "Vos clients saisissent leurs scores journée après journée sur leur téléphone, suivent leur classement en direct et jouent pour les dotations finales.",
       group: ["jeux", "pronostics"],
-      studioHref: "studio.html?module=pronostics",
-      moduleHref: "modules.html?m=pronostics",
+      studioHref: "/studio?module=pronostics",
+      moduleHref: "/modules?m=pronostics",
     },
     vitrine: {
       kicker: "CARTE & TARIFS · /v/commerce",
       title: "Vitrine Interactive Multi-Métiers",
       desc: "Menu, prestations, tarifs, histoire et boutons d’action vers votre jeu, votre prise de rendez-vous ou votre carte de fidélité sur une seule page rapide.",
       group: ["vitrine", "rdv", "moments"],
-      studioHref: "studio.html?module=vitrine",
-      moduleHref: "vitrine-reservation.html",
+      studioHref: "/studio?module=vitrine",
+      moduleHref: "/vitrine-reservation",
     },
     rdv: {
       kicker: "RÉSERVATION DIRECTE 0 % · /reserver",
       title: "Prise de Rendez-vous & Réservation de Table",
       desc: "Vos clients réservent un créneau en 3 gestes sans intermédiaire ni commission, reçoivent leur pass et l’ajoutent à leur agenda.",
       group: ["vitrine", "rdv", "moments"],
-      studioHref: "studio.html?module=vitrine",
-      moduleHref: "vitrine-reservation.html",
+      studioHref: "/studio?module=vitrine",
+      moduleHref: "/vitrine-reservation",
     },
     moments: {
       kicker: "ÉVÉNEMENTS & FILE D'ATTENTE · /reserver",
       title: "Moments VIP & File d’Attente en Direct",
       desc: "Ventes privées, ateliers à jauge limitée ou file d’attente numérique : vos clients réservent les dernières places ou suivent leur tour sur mobile.",
       group: ["vitrine", "rdv", "moments"],
-      studioHref: "studio.html?module=vitrine",
-      moduleHref: "vitrine-reservation.html",
+      studioHref: "/studio?module=vitrine",
+      moduleHref: "/vitrine-reservation",
     },
     calendrier: {
       kicker: "CALENDRIER QUOTIDIEN · /calendar",
       title: "Calendrier Interactif (Cases du Jour)",
       desc: "Chaque matin dévoile une nouvelle case : bonus fidélité, surprise comptoir ou tour de roue quotidien installable sur l’écran d’accueil.",
       group: ["calendrier"],
-      studioHref: "studio.html?module=calendrier",
-      moduleHref: "modules.html?m=calendrier",
+      studioHref: "/studio?module=calendrier",
+      moduleHref: "/modules?m=calendrier",
     },
     "evenements-live": {
       kicker: "SOIRÉE ANIMÉE · /event + /screen",
@@ -2809,7 +2809,7 @@
       desc: "Animez vos soirées au bar, en restaurant ou en boutique : les clients répondent ensemble sur téléphone pendant que l’écran géant affiche le live.",
       group: ["evenements-live"],
       studioHref: "/signup",
-      moduleHref: "modules.html?m=evenements-live",
+      moduleHref: "/modules?m=evenements-live",
     },
     quiz: {
       kicker: "QUIZ INTERACTIF · /quiz",
@@ -2817,7 +2817,7 @@
       desc: "Éduquez et divertissez vos visiteurs autour de votre savoir-faire, affichez le score en direct et offrez une récompense aux meilleurs.",
       group: ["quiz"],
       studioHref: "/signup",
-      moduleHref: "modules.html?m=quiz",
+      moduleHref: "/modules?m=quiz",
     },
     "chasse-au-qr": {
       kicker: "PARCOURS PHYSIQUE · /hunt",
@@ -2825,7 +2825,7 @@
       desc: "Faites circuler vos visiteurs dans votre établissement, entre vos rayons ou avec des commerçants voisins jusqu’au coffre final.",
       group: ["chasse-au-qr"],
       studioHref: "/signup",
-      moduleHref: "modules.html?m=chasse-au-qr",
+      moduleHref: "/modules?m=chasse-au-qr",
     },
     "duo-miroir": {
       kicker: "JEU DE TABLE À 2 · /lobby",
@@ -2833,7 +2833,7 @@
       desc: "Un brise-glace fun pour deux personnes à table ou en salle d’attente : chacun répond secrètement puis découvre votre score de complicité.",
       group: ["duo-miroir"],
       studioHref: "/signup",
-      moduleHref: "modules.html?m=duo-miroir",
+      moduleHref: "/modules?m=duo-miroir",
     },
     "portrait-de-la-bande": {
       kicker: "JEU DE GROUPE 2-12 JOUEURS · /lobby",
@@ -2841,7 +2841,7 @@
       desc: "Fous rires garantis pour vos grandes tablées : chacun vote discrètement pour le rôle de ses amis, révélation dès 3 votes reçus.",
       group: ["portrait-de-la-bande"],
       studioHref: "/signup",
-      moduleHref: "modules.html?m=portrait-de-la-bande",
+      moduleHref: "/modules?m=portrait-de-la-bande",
     },
     "ticket-dor": {
       kicker: "PROCHAINE VISITE · /ticket",
@@ -2849,7 +2849,7 @@
       desc: "Remis au comptoir ou glissé dans vos sacs à emporter et livraisons (Uber Eats, Deliveroo) : le client le scanne sur son téléphone pour révéler un code privilège unique valable sur sa prochaine visite en direct.",
       group: ["ticket-dor"],
       studioHref: "/signup",
-      moduleHref: "modules.html?m=ticket-dor",
+      moduleHref: "/modules?m=ticket-dor",
     },
     "missions-coffres": {
       kicker: "PROGRESSION AUTOMATIQUE · /progression",
@@ -2857,7 +2857,7 @@
       desc: "Transformez toutes les actions clients (jeu, avis, fidélité, parrainage) en missions récompensées par des clés ouvrant des coffres cadeaux.",
       group: ["missions-coffres"],
       studioHref: "/signup",
-      moduleHref: "modules.html?m=missions-coffres",
+      moduleHref: "/modules?m=missions-coffres",
     },
   };
 
@@ -2942,8 +2942,8 @@
             <div class="lc-emu-mode-pills" id="lc-emu-mode-pills"></div>
             <div class="lc-emu-context-box" id="lc-emu-context-box"></div>
             <div class="lc-emu-cta-row">
-              <a href="studio.html" class="ticket-btn pop-btn-yellow" id="lc-emu-studio-link">🛠️ Personnaliser le mien →</a>
-              <a href="modules.html" class="ticket-btn pop-btn-white" id="lc-emu-module-link">📖 Fiche complète du module</a>
+              <a href="/studio" class="ticket-btn pop-btn-yellow" id="lc-emu-studio-link">🛠️ Personnaliser le mien →</a>
+              <a href="/modules" class="ticket-btn pop-btn-white" id="lc-emu-module-link">📖 Fiche complète du module</a>
             </div>
           </div>
           <div class="lc-emu-right">
@@ -3920,8 +3920,8 @@
           { val: "Budget protégé", lbl: "Stock, quotas & probabilités réglés" },
         ],
         emulateMode: "jeux",
-        studioHref: "studio.html?module=roue",
-        detailHref: "jeux-pronostics.html",
+        studioHref: "/studio?module=roue",
+        detailHref: "/jeux-pronostics",
         detailLabel: "📖 Explorer les 15 jeux",
         steps: [
           { t: "1 · Posez votre QR partout", d: "En vitrine, sur le comptoir, sur table ou imprimé dans notre éditeur d’affiche A4 intégré." },
@@ -3961,8 +3961,8 @@
           { val: "Écran & Wallet", lbl: "Écran d’accueil & compatible Google Wallet" },
         ],
         emulateMode: "passeport",
-        studioHref: "studio.html?module=fidelite",
-        detailHref: "fidelite-communaute.html",
+        studioHref: "/studio?module=fidelite",
+        detailHref: "/fidelite-communaute",
         detailLabel: "📖 Voir Fidélité & Jackpot",
         steps: [
           { t: "1 · Comptoir ou sac livraison", d: "Tamponnez en 2 secondes sur l’écran Caisse, via le code tournant comptoir ou un QR en sac à emporter." },
@@ -4001,8 +4001,8 @@
           { val: "Tour de roue lié", lbl: "Chaque case peut offrir un lot ou une partie" },
         ],
         emulateMode: "calendrier",
-        studioHref: "studio.html?module=calendrier",
-        detailHref: "jeux-pronostics.html#calendrier-surprise",
+        studioHref: "/studio?module=calendrier",
+        detailHref: "/jeux-pronostics#calendrier-surprise",
         detailLabel: "📖 Voir le Calendrier",
         steps: [
           { t: "1 · Choisissez vos dates & lots", d: "7, 12, 24 ou 31 jours : glissez vos petites attentions sur les jours calmes de la semaine." },
@@ -4081,8 +4081,8 @@
           { val: "Vue TV incluse", lbl: "Classement général projetable en salle" },
         ],
         emulateMode: "pronostics",
-        studioHref: "studio.html?module=pronostics",
-        detailHref: "jeux-pronostics.html#pronostics-championnats",
+        studioHref: "/studio?module=pronostics",
+        detailHref: "/jeux-pronostics#pronostics-championnats",
         detailLabel: "📖 Voir les compétitions",
         steps: [
           { t: "1 · Créez votre saison en 2 min", d: "Football, rugby, tennis, basket ou hors-sport : ajoutez les affiches et vos lots de podium." },
@@ -4121,8 +4121,8 @@
           { val: "Pass 29 € / 30j", lbl: "Ou illimité dès Le Grand Jeu (89 €)" },
         ],
         emulateMode: "jackpot",
-        studioHref: "studio.html?module=fidelite",
-        detailHref: "fidelite-communaute.html",
+        studioHref: "/studio?module=fidelite",
+        detailHref: "/fidelite-communaute",
         detailLabel: "📖 Voir Fidélité & Jackpot",
         steps: [
           { t: "1 · Fixez votre lot & votre objectif", d: "Ex. 50 passages pour déclencher un dîner pour deux, un panier gourmand ou un bon d’achat." },

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@/components/analytics";
 import { CookieConsent } from "@/components/cookie-consent";
+import { APP_URL } from "@/lib/env";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,12 +16,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(APP_URL),
   title: {
-    default: "Lastchance — Gamification pour commerces",
-    template: "%s · Lastchance",
+    default: "Simple comme QR — Gamification pour commerces",
+    template: "%s · Simple comme QR",
   },
   description:
     "Plateforme de gamification pour commerces : 14 modules, 15 mécaniques de jeu, animations et fidélité par QR code pour restaurants, bars et boutiques.",
+  openGraph: {
+    siteName: "Simple comme QR",
+    locale: "fr_FR",
+    type: "website",
+  },
 };
 
 export default function RootLayout({

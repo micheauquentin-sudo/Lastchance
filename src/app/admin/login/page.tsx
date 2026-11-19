@@ -16,7 +16,7 @@ export default async function AdminLoginPage() {
           <span className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 text-sm font-bold text-white">
             L
           </span>
-          <span className="font-semibold text-white">LastChance</span>
+          <span className="font-semibold text-white">Simple comme QR</span>
           <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300">
             Admin
           </span>
@@ -25,7 +25,7 @@ export default async function AdminLoginPage() {
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 shadow-xl">
           <h1 className="text-lg font-semibold text-white">Console d&apos;administration</h1>
           <p className="mt-1 mb-5 text-sm text-zinc-400">
-            Accès réservé à l&apos;équipe LastChance.
+            Accès réservé à l&apos;équipe Simple comme QR.
           </p>
           <AdminLoginForm />
         </div>

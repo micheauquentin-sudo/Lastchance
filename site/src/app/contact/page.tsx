@@ -9,7 +9,7 @@ import { TRIAL_DAYS } from "@/content/pricing";
 export const metadata: Metadata = {
   title: "Contact",
   description:
-    "Une question sur LastChance ? Écrivez-nous, nous répondons sous 24 h ouvrées.",
+    "Une question sur Simple comme QR ? Écrivez-nous, nous répondons sous 24 h ouvrées.",
   alternates: { canonical: "/contact" },
 };
 
@@ -29,7 +29,7 @@ export default function ContactPage() {
             nous revenons vers vous rapidement.
           </p>
           <a
-            href={`mailto:${CONTACT_EMAIL}?subject=Question%20sur%20LastChance`}
+            href={`mailto:${CONTACT_EMAIL}?subject=Question%20sur%20Simple%20comme%20QR`}
             className="mt-5 inline-block font-semibold text-brand-600 hover:underline"
           >
             {CONTACT_EMAIL}
