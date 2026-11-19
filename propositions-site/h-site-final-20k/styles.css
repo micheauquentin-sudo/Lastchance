@@ -10519,3 +10519,592 @@ body.kermesse-modules-page {
   }
 }
 
+/* ============================================================================
+   DIRECTEUR COMMERCIAL · AVIS GOOGLE/RÉSEAUX, CAS CONCRETS, GUIDE FORMULES
+   ============================================================================ */
+
+/* 1. Bloc Accueil #avis-reseaux */
+.lc-social-spotlight-section {
+  background: linear-gradient(180deg, #fffdf6 0%, #fff7d6 100%);
+  border-top: 3px solid #211d16;
+  border-bottom: 3px solid #211d16;
+  padding: 4rem 1.5rem;
+}
+
+.lc-social-grid {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 2.5rem;
+  align-items: center;
+}
+
+.lc-social-lead {
+  font: 600 1rem/1.6 var(--body);
+  color: #362e23;
+  margin: 0 0 1.25rem;
+}
+
+.lc-social-steps-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.lc-social-steps-list li {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  background: #ffffff;
+  border: 2px solid #211d16;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  box-shadow: 3px 3px 0 #211d16;
+}
+
+.lc-social-step-badge {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #211d16;
+  color: #ffd93d;
+  font: 900 0.85rem var(--fun-font);
+  display: grid;
+  place-items: center;
+}
+
+.lc-social-steps-list strong {
+  display: block;
+  font: 800 0.94rem var(--fun-font);
+  color: #211d16;
+  margin-bottom: 0.2rem;
+}
+
+.lc-social-steps-list p {
+  margin: 0;
+  font: 600 0.85rem/1.45 var(--body);
+  color: #42392d;
+}
+
+.lc-social-compliance-note {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  background: #e8fbf0;
+  border: 2px solid #211d16;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  box-shadow: 3px 3px 0 #211d16;
+  font: 600 0.85rem/1.45 var(--body);
+  color: #163a28;
+}
+
+.lc-social-compliance-note > span {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.lc-social-mockup-col {
+  display: flex;
+  justify-content: center;
+}
+
+.lc-invit-phone {
+  width: min(350px, 100%);
+  background: #211d16;
+  border-radius: 32px;
+  padding: 12px;
+  border: 3px solid #211d16;
+  box-shadow: 8px 10px 0 rgba(33, 29, 22, 0.25);
+}
+
+.lc-invit-notch {
+  width: 96px;
+  height: 16px;
+  background: #211d16;
+  border-radius: 0 0 12px 12px;
+  margin: 0 auto -8px;
+  position: relative;
+  z-index: 2;
+}
+
+.lc-invit-screen {
+  background: #fffdf6;
+  border-radius: 22px;
+  padding: 1.4rem 1.05rem 1.1rem;
+  text-align: center;
+}
+
+.lc-invit-kicker {
+  margin: 0 0 0.35rem;
+  font: 900 0.72rem var(--fun-font);
+  letter-spacing: 0.08em;
+  color: #6b5320;
+}
+
+.lc-invit-title {
+  margin: 0 0 0.35rem;
+  font: 900 1.05rem/1.25 var(--fun-font);
+  color: #211d16;
+}
+
+.lc-invit-sub {
+  margin: 0 0 0.9rem;
+  font: 600 0.76rem/1.4 var(--body);
+  color: #4f4437;
+}
+
+.lc-invit-tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+}
+
+.lc-invit-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: #ffffff;
+  border: 2px solid #211d16;
+  border-radius: 13px;
+  padding: 0.6rem 0.75rem;
+  box-shadow: 2.5px 2.5px 0 #211d16;
+  text-align: left;
+}
+
+.lc-invit-emoji {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.lc-invit-tile-txt {
+  flex: 1;
+}
+
+.lc-invit-tile-txt strong {
+  display: block;
+  font: 800 0.85rem var(--fun-font);
+  color: #211d16;
+}
+
+.lc-invit-tile-txt small {
+  display: block;
+  font: 600 0.74rem var(--body);
+  color: #54473a;
+}
+
+.lc-invit-arrow {
+  font: 900 0.95rem var(--fun-font);
+  color: #211d16;
+}
+
+.lc-invit-continue-btn {
+  background: #211d16;
+  color: #ffffff;
+  font: 900 0.8rem var(--fun-font);
+  padding: 0.65rem 0.9rem;
+  border-radius: 12px;
+  letter-spacing: 0.03em;
+}
+
+.lc-invit-after-pill {
+  margin-top: 0.65rem;
+  background: #ffd93d;
+  color: #211d16;
+  border: 1.5px solid #211d16;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  font: 800 0.69rem/1.25 var(--body);
+}
+
+/* 2. Section Scénarios Métiers #cas-concrets */
+.lc-scenarios-section {
+  background: #faf6ec;
+  border-bottom: 3px solid #211d16;
+  padding: 4rem 1.5rem;
+}
+
+.lc-scenarios-grid {
+  max-width: 1180px;
+  margin: 2rem auto 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.35rem;
+}
+
+.lc-scenario-card {
+  background: #ffffff;
+  border: 2.5px solid #211d16;
+  border-top: 10px solid var(--sc-accent, #ffd93d);
+  border-radius: 20px;
+  padding: 1.35rem 1.35rem 1.2rem;
+  box-shadow: 5px 6px 0 #211d16;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.lc-scenario-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.lc-scenario-emoji {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: var(--sc-accent, #ffd93d);
+  border: 2px solid #211d16;
+  display: grid;
+  place-items: center;
+  font-size: 1.45rem;
+  flex-shrink: 0;
+}
+
+.lc-scenario-tag {
+  display: inline-block;
+  font: 900 0.68rem var(--fun-font);
+  letter-spacing: 0.05em;
+  color: #211d16;
+  background: #f3ede0;
+  border: 1.5px solid #211d16;
+  border-radius: 999px;
+  padding: 0.14rem 0.55rem;
+  margin-bottom: 0.25rem;
+}
+
+.lc-scenario-head h3 {
+  margin: 0;
+  font: 900 1.02rem/1.25 var(--fun-font);
+  color: #211d16;
+}
+
+.lc-scenario-pain,
+.lc-scenario-sol {
+  margin: 0;
+  font: 600 0.87rem/1.5 var(--body);
+  color: #3a3126;
+}
+
+.lc-scenario-pain {
+  background: #fff5f5;
+  border-left: 3px solid #be123c;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0 10px 10px 0;
+}
+
+.lc-scenario-sol {
+  background: #ecfdf5;
+  border-left: 3px solid #047857;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0 10px 10px 0;
+}
+
+.lc-scenario-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.lc-scenario-chips span {
+  font: 800 0.73rem var(--body);
+  background: #fff9e6;
+  color: #211d16;
+  border: 1.5px solid #211d16;
+  border-radius: 999px;
+  padding: 0.22rem 0.65rem;
+}
+
+/* 3. Callout Avis Google/Réseaux sur jeux-pronostics.html */
+.lc-jp-social-callout {
+  background: linear-gradient(135deg, #fff9e6 0%, #ffffff 100%);
+  border: 2.5px solid #211d16;
+  border-radius: 22px;
+  padding: 1.65rem 1.8rem;
+  box-shadow: 6px 7px 0 #211d16;
+}
+
+.lc-social-pill {
+  display: inline-block;
+  background: #ffd93d;
+  color: #211d16;
+  border: 2px solid #211d16;
+  border-radius: 999px;
+  padding: 0.24rem 0.75rem;
+  font: 900 0.73rem var(--fun-font);
+  margin-bottom: 0.6rem;
+}
+
+.lc-jp-social-head h2 {
+  margin: 0 0 0.65rem;
+  font: 900 1.35rem/1.25 var(--fun-font);
+  color: #211d16;
+}
+
+.lc-jp-social-lead {
+  margin: 0 0 1rem;
+  font: 600 0.94rem/1.55 var(--body);
+  color: #372f24;
+}
+
+.lc-jp-social-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.lc-jp-social-points span {
+  background: #e8fbf0;
+  color: #14432b;
+  border: 1.5px solid #047857;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font: 800 0.78rem var(--body);
+}
+
+/* 4. Terrain strip sur fidelite-communaute.html */
+.lc-fc-terrain-strip {
+  max-width: 1180px;
+  margin: 2.2rem auto 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.1rem;
+}
+
+.lc-fc-terrain-item {
+  background: #ffffff;
+  border: 2px solid #211d16;
+  border-radius: 18px;
+  padding: 1.15rem 1.2rem;
+  box-shadow: 4px 4px 0 #211d16;
+}
+
+.lc-fc-terrain-kicker {
+  display: inline-block;
+  background: #ffd93d;
+  color: #211d16;
+  border: 1.5px solid #211d16;
+  border-radius: 999px;
+  padding: 0.16rem 0.6rem;
+  font: 900 0.69rem var(--fun-font);
+  margin-bottom: 0.5rem;
+}
+
+.lc-fc-terrain-item h4 {
+  margin: 0 0 0.35rem;
+  font: 900 0.96rem var(--fun-font);
+  color: #211d16;
+}
+
+.lc-fc-terrain-item p {
+  margin: 0;
+  font: 600 0.83rem/1.48 var(--body);
+  color: #41372b;
+}
+
+/* 5. Psychologie & Cas concrets dans modules.html */
+.lc-mod-psy-card {
+  background: linear-gradient(135deg, #fffdf4 0%, #fff4cc 100%) !important;
+}
+
+.lc-mod-psy-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.lc-psy-lever-pill {
+  background: #211d16;
+  color: #ffd93d;
+  border-radius: 999px;
+  padding: 0.28rem 0.85rem;
+  font: 800 0.74rem var(--fun-font);
+}
+
+.lc-mod-cases-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.lc-mod-case-card {
+  position: relative;
+  background: #faf6ec;
+  border: 2px solid #211d16;
+  border-radius: 16px;
+  padding: 1.05rem 1.1rem;
+  box-shadow: 3px 3px 0 #211d16;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.lc-mod-case-biz {
+  display: inline-block;
+  align-self: flex-start;
+  background: #ffd93d;
+  color: #211d16;
+  border: 1.5px solid #211d16;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font: 900 0.74rem var(--fun-font);
+}
+
+.lc-mod-case-row strong {
+  display: block;
+  font: 800 0.8rem var(--fun-font);
+  color: #211d16;
+  margin-bottom: 0.18rem;
+}
+
+.lc-mod-case-row p {
+  margin: 0;
+  font: 600 0.82rem/1.45 var(--body);
+  color: #3d3428;
+}
+
+.lc-mod-case-outcome {
+  background: #ecfdf5;
+  border-left: 3px solid #047857;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0 10px 10px 0;
+}
+
+.lc-mod-case-idx {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.9rem;
+  font: 900 0.78rem var(--fun-font);
+  color: #7c6f5c;
+}
+
+/* 6. Guide rapide & calculateur abonnements.html */
+.ab-quick-guide-grid {
+  max-width: 1200px;
+  margin: 0 auto 1.25rem;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.ab-quick-guide-card {
+  background: #ffffff;
+  border: 2px solid #211d16;
+  border-radius: 16px;
+  padding: 0.85rem 0.9rem;
+  box-shadow: 3px 3px 0 #211d16;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ab-quick-guide-card.is-fav {
+  background: #fff9e6;
+}
+
+.ab-qg-badge {
+  display: inline-block;
+  align-self: flex-start;
+  background: #f3ede0;
+  color: #211d16;
+  border: 1.5px solid #211d16;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font: 900 0.68rem var(--fun-font);
+}
+
+.ab-qg-badge.badge-fav {
+  background: #ffd93d;
+}
+
+.ab-qg-badge.badge-all {
+  background: #211d16;
+  color: #ffd93d;
+}
+
+.ab-quick-guide-card b {
+  font: 900 0.84rem/1.25 var(--fun-font);
+  color: #211d16;
+}
+
+.ab-quick-guide-card p {
+  margin: 0;
+  font: 600 0.76rem/1.4 var(--body);
+  color: #463c30;
+}
+
+.calc-interactive-addon-card.is-requires-plan {
+  background: #f5f5f4 !important;
+  border: 2px dashed #78716c !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  opacity: 0.88;
+}
+
+.calc-card-status-badge.requires-plan {
+  background: #fef3c7;
+  color: #78350f;
+  border: 1px solid #d97706;
+}
+
+.soiree-tier-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.7rem;
+}
+
+.soiree-tier-btn {
+  flex: 1 1 auto;
+  border: 1.5px solid #211d16;
+  background: #ffffff;
+  color: #211d16;
+  border-radius: 999px;
+  padding: 0.28rem 0.5rem;
+  font: 800 0.72rem var(--fun-font);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.soiree-tier-btn.active {
+  background: #211d16;
+  color: #ffd93d;
+}
+
+@media (max-width: 1080px) {
+  .ab-quick-guide-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .lc-social-grid,
+  .lc-scenarios-grid,
+  .lc-fc-terrain-strip,
+  .lc-mod-cases-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .ab-quick-guide-grid {
+    grid-template-columns: 1fr;
+  }
+  .lc-jp-social-callout {
+    padding: 1.2rem 1.05rem;
+  }
+}
+
+

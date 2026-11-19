@@ -637,10 +637,10 @@
     const FORMULE_MODULES = {
       core: [
         { emoji: "🎡", name: "Jeux instantanés (15 jeux)" },
+        { emoji: "⭐", name: "Invitation Avis Google, Insta & TikTok" },
         { emoji: "🪞", name: "Duo Miroir & 👥 Portrait" },
         { emoji: "🎟️", name: "Ticket d’Or & 🗝️ Missions" },
-        { emoji: "📱", name: "Scans QR & affiches A4 illimités" },
-        { emoji: "📧", name: "4 emails de relance automatiques" },
+        { emoji: "📧", name: "Scans illimités & 4 emails auto" },
       ],
       engagement: [
         { emoji: "🎡", name: "Tout Coup d'envoi inclus" },
@@ -2356,8 +2356,6 @@
   const abCalcWrapper = $(".ab-calc-wrapper");
 
   if (abCompareTable || abCalcWrapper) {
-    let isAnnual = false;
-
     // Smooth scroll universel pour les ancres internes #... (contourne la redirection de <base href>)
     document.addEventListener("click", (e) => {
       const anchor = e.target.closest('a[href*="#"]');
@@ -2385,124 +2383,36 @@
     });
 
     const PLAN_DATA = {
-      none: { nom: "100% À la carte", prix: 0, annual: 0, rights: [] },
-      core: { nom: "Coup d'envoi", prix: 29, annual: 23, rights: ["games"] },
-      engagement: { nom: "Le Club", prix: 59, annual: 47, rights: ["games", "passport", "referral", "pass_hunt", "pass_advent", "pass_quiz"] },
-      place: { nom: "Sur Place", prix: 79, annual: 63, rights: ["games", "vitrine", "rdv", "moments", "pass_quiz"] },
-      live: { nom: "Le Grand Jeu", prix: 89, annual: 71, rights: ["games", "pass_screen", "pass_prono", "pass_quiz", "pass_pot"] },
-      full: { nom: "La Totale", prix: 129, annual: 103, rights: ["games", "passport", "referral", "vitrine", "rdv", "moments", "pass_hunt", "pass_advent", "pass_quiz", "pass_pot", "pass_prono", "pass_screen"] },
+      none: { nom: "100% À la carte", prix: 0, rights: [] },
+      core: { nom: "Coup d'envoi", prix: 29, rights: ["games", "duo", "bande"] },
+      engagement: { nom: "Le Club", prix: 59, rights: ["games", "duo", "bande", "passport", "referral", "pass_hunt", "pass_advent", "pass_quiz"] },
+      place: { nom: "Sur Place", prix: 79, rights: ["games", "duo", "bande", "vitrine", "rdv", "moments", "pass_quiz"] },
+      live: { nom: "Le Grand Jeu", prix: 89, rights: ["games", "duo", "bande", "pass_screen", "pass_prono", "pass_quiz", "pass_pot"] },
+      full: { nom: "La Totale", prix: 129, rights: ["games", "duo", "bande", "passport", "referral", "vitrine", "rdv", "moments", "pass_hunt", "pass_advent", "pass_quiz", "pass_pot", "pass_prono", "pass_screen"] },
     };
 
     const ADDON_DATA = {
-      // Options mensuelles récurrentes
-      vitrine: { nom: "Vitrine & Tarifs QR", prix: 20, type: "recurring", unit: "/mois" },
-      rdv: { nom: "Réservation Directe 0%", prix: 20, type: "recurring", unit: "/mois" },
-      moments: { nom: "Moments, File & Invendus", prix: 20, type: "recurring", unit: "/mois" },
+      // Options en ligne d'abonnement (nécessitent une formule dès Coup d'envoi)
+      vitrine: { nom: "Vitrine & Tarifs QR", prix: 20, type: "recurring", unit: "/mois", requiresPlan: true },
+      rdv: { nom: "Réservation Directe 0%", prix: 20, type: "recurring", unit: "/mois", requiresPlan: true },
+      moments: { nom: "Moments, File & Invendus", prix: 20, type: "recurring", unit: "/mois", requiresPlan: true },
+      // Modules mensuels autonomes (avec formule ou à la carte dès 0 €)
       passport: { nom: "Passeport Fidélité & Lots", prix: 19, type: "recurring", unit: "/mois" },
       referral: { nom: "Parrainage Ambassadeurs", prix: 12, type: "recurring", unit: "/mois" },
+      duo: { nom: "Duo Miroir", prix: 12, type: "recurring", unit: "/mois" },
+      bande: { nom: "Portrait de la Bande", prix: 12, type: "recurring", unit: "/mois" },
       // Pass événementiels ponctuels
       pass_hunt: { nom: "Pass Chasse au Trésor", prix: 29, type: "onetime", unit: "unique" },
       pass_advent: { nom: "Pass Calendrier Surprises", prix: 29, type: "onetime", unit: "unique" },
       pass_quiz: { nom: "Pass Quiz Express", prix: 15, type: "onetime", unit: "unique" },
       pass_pot: { nom: "Pass Cagnotte & Jackpot", prix: 29, type: "onetime", unit: "unique" },
       pass_prono: { nom: "Pass Saison Pronostics", prix: 39, type: "onetime", unit: "unique" },
-      pass_screen: { nom: "Pass Soirée Live (dès 10 joueurs)", prix: 9, type: "onetime", unit: "unique" },
+      pass_screen: { nom: "Pass Soirée Live (10 joueurs)", prix: 9, type: "onetime", unit: "unique" },
     };
-
-    // Toggle de facturation synchronisé (Hero + En-tête de tableau + Calculateur)
-    const setBillingPeriod = (annual) => {
-      isAnnual = Boolean(annual);
-
-      // Met à jour les boutons du hero
-      const heroMonthly = $("#btn-billing-monthly");
-      const heroAnnual = $("#btn-billing-annual");
-      if (heroMonthly && heroAnnual) {
-        heroMonthly.classList.toggle("active", !isAnnual);
-        heroMonthly.setAttribute("aria-pressed", String(!isAnnual));
-        heroAnnual.classList.toggle("active", isAnnual);
-        heroAnnual.setAttribute("aria-pressed", String(isAnnual));
-      }
-
-      // Met à jour la carte récapitulative du Hero
-      const heroSavingIndicator = $("#hero-saving-indicator");
-      const heroSavingText = $("#hero-saving-text");
-      if (heroSavingIndicator && heroSavingText) {
-        if (isAnnual) {
-          heroSavingIndicator.innerHTML = 'Dès 23 €<small>/mois</small> <span class="hero-save-badge">-20%</span>';
-          heroSavingText.textContent = "Facturation annuelle · 2 mois offerts chaque année";
-        } else {
-          heroSavingIndicator.innerHTML = 'Dès 29 €<small>/mois</small>';
-          heroSavingText.textContent = "Paiement mensuel sans engagement de durée";
-        }
-        heroSavingIndicator.classList.add("highlight-pulse");
-        setTimeout(() => heroSavingIndicator.classList.remove("highlight-pulse"), 1000);
-      }
-
-      // Met à jour les boutons du tableau comparatif
-      const tblMonthly = $("#btn-tbl-monthly");
-      const tblAnnual = $("#btn-tbl-annual");
-      if (tblMonthly && tblAnnual) {
-        tblMonthly.classList.toggle("active", !isAnnual);
-        tblMonthly.setAttribute("aria-pressed", String(!isAnnual));
-        tblAnnual.classList.toggle("active", isAnnual);
-        tblAnnual.setAttribute("aria-pressed", String(isAnnual));
-      }
-
-      // Met à jour les prix du tableau comparatif
-      $$(".th-plan-price").forEach((el) => {
-        const monthly = el.dataset.monthly;
-        const annualPrice = el.dataset.annual;
-        const price = isAnnual ? annualPrice : monthly;
-        el.innerHTML = `${price} €<small>/mois</small>`;
-      });
-
-      // Met à jour les prix du pied de tableau
-      $$(".tfoot-price").forEach((el) => {
-        const planKey = el.dataset.plan;
-        const info = PLAN_DATA[planKey];
-        if (info) {
-          const price = isAnnual ? info.annual : info.prix;
-          el.innerHTML = `${price} €<small>/mois</small>`;
-        }
-      });
-
-      // Met à jour les liens des boutons du tableau
-      $$(".tbl-cta-btn").forEach((btn) => {
-        const baseHref = btn.dataset.baseHref || btn.getAttribute("href").split("&billing=")[0];
-        btn.setAttribute("href", `${baseHref}&billing=${isAnnual ? "annual" : "monthly"}`);
-      });
-
-      // Synchronise les boutons de période dans le calculateur
-      const calcPeriodMonthly = $("#calc-period-monthly");
-      const calcPeriodAnnual = $("#calc-period-annual");
-      if (calcPeriodMonthly && calcPeriodAnnual) {
-        calcPeriodMonthly.classList.toggle("active", !isAnnual);
-        calcPeriodAnnual.classList.toggle("active", isAnnual);
-      }
-
-      updateCalculator();
-    };
-
-    // Attache les événements sur les boutons du hero et du tableau
-    const bindTogglePair = (btnMId, btnAId) => {
-      const btnM = $(btnMId);
-      const btnA = $(btnAId);
-      if (btnM) btnM.addEventListener("click", () => setBillingPeriod(false));
-      if (btnA) btnA.addEventListener("click", () => setBillingPeriod(true));
-    };
-
-    bindTogglePair("#btn-billing-monthly", "#btn-billing-annual");
-    bindTogglePair("#btn-tbl-monthly", "#btn-tbl-annual");
-
-    // Boutons de période dans le calculateur
-    const calcPeriodMonthly = $("#calc-period-monthly");
-    const calcPeriodAnnual = $("#calc-period-annual");
-    if (calcPeriodMonthly) calcPeriodMonthly.addEventListener("click", () => setBillingPeriod(false));
-    if (calcPeriodAnnual) calcPeriodAnnual.addEventListener("click", () => setBillingPeriod(true));
 
     const userCheckedAddons = new Set();
 
-    // Calculateur de budget sur-mesure & Add-ons Stripe
+    // Calculateur de budget sur-mesure (aligné 100 % sur les tarifs mensuels et add-ons)
     function updateCalculator() {
       if (!abCalcWrapper) return;
 
@@ -2513,12 +2423,12 @@
       // Met à jour l'affichage de la formule choisie
       const sumPlanName = $("#calc-summary-plan-name");
       const sumPlanPrice = $("#calc-summary-plan-price");
-      const planCost = isAnnual ? planInfo.annual : planInfo.prix;
+      const planCost = planInfo.prix;
 
       if (sumPlanName) sumPlanName.textContent = `Formule « ${planInfo.nom} »`;
       if (sumPlanPrice) sumPlanPrice.textContent = `${planCost},00 €`;
 
-      // Gestion des add-ons inclus automatiquement vs à la carte
+      // Gestion des add-ons inclus automatiquement vs nécessitant une formule vs à la carte
       let recurringAddonsCost = 0;
       let onetimeAddonsCost = 0;
       const selectedRecurringKeys = [];
@@ -2534,19 +2444,30 @@
         if (!data) return;
 
         const isIncluded = planInfo.rights.includes(key);
+        const needsPlan = Boolean(data.requiresPlan && selectedPlanKey === "none");
         const badge = card.querySelector(".calc-card-status-badge");
 
         if (isIncluded) {
           card.classList.add("is-included-in-plan");
-          card.classList.remove("is-selected");
+          card.classList.remove("is-selected", "is-requires-plan");
           input.checked = true;
           input.disabled = true;
           if (badge) {
             badge.className = "calc-card-status-badge included";
             badge.textContent = "✓ Inclus sans surcoût";
           }
+        } else if (needsPlan) {
+          userCheckedAddons.delete(key);
+          card.classList.remove("is-included-in-plan", "is-selected");
+          card.classList.add("is-requires-plan");
+          input.checked = false;
+          input.disabled = true;
+          if (badge) {
+            badge.className = "calc-card-status-badge requires-plan";
+            badge.textContent = "Nécessite une formule (dès 29 €)";
+          }
         } else {
-          card.classList.remove("is-included-in-plan");
+          card.classList.remove("is-included-in-plan", "is-requires-plan");
           input.disabled = false;
           input.checked = userCheckedAddons.has(key);
           card.classList.toggle("is-selected", input.checked);
@@ -2558,8 +2479,7 @@
 
           if (input.checked) {
             if (data.type === "recurring") {
-              const itemPrice = isAnnual ? Math.round(data.prix * 0.8) : data.prix;
-              recurringAddonsCost += itemPrice;
+              recurringAddonsCost += data.prix;
               selectedRecurringKeys.push(key);
             } else {
               onetimeAddonsCost += data.prix;
@@ -2578,11 +2498,10 @@
         } else {
           addonsList.innerHTML = totalCheckedKeys.map((key) => {
             const add = ADDON_DATA[key];
-            const displayPrice = (add.type === "recurring" && isAnnual) ? Math.round(add.prix * 0.8) : add.prix;
             return `
               <div class="calc-sum-addon-item">
                 <span>+ ${add.nom}</span>
-                <span>+${displayPrice},00 € <small>${add.unit}</small></span>
+                <span>+${add.prix},00 € <small>${add.unit}</small></span>
               </div>
             `;
           }).join("");
@@ -2592,20 +2511,12 @@
       // Calcul total récurrent et affichage
       const totalMonthly = planCost + recurringAddonsCost;
       const totalDisplay = $("#calc-total-display");
-      const discountLine = $("#calc-discount-line");
       const periodCaption = $("#calc-period-caption");
       const checkoutBtn = $("#calc-checkout-btn");
       const onetimeBox = $("#calc-onetime-total-box");
       const onetimeAmount = $("#calc-onetime-amount");
 
-      if (isAnnual) {
-        if (discountLine) discountLine.hidden = false;
-        if (periodCaption) periodCaption.textContent = "par mois (facturé annuellement · 2 mois offerts)";
-      } else {
-        if (discountLine) discountLine.hidden = true;
-        if (periodCaption) periodCaption.textContent = "par mois sans engagement";
-      }
-
+      if (periodCaption) periodCaption.textContent = "par mois sans engagement";
       if (totalDisplay) totalDisplay.textContent = `${totalMonthly} €`;
 
       const mobileTotalPill = $("#mobile-calc-total-pill");
@@ -2625,26 +2536,28 @@
         }
       }
 
-      // Mise à jour du CTA Stripe Checkout
+      // Mise à jour du CTA d'inscription
       if (checkoutBtn) {
-        const checkoutPlan = selectedPlanKey !== "none" ? selectedPlanKey : "addon_custom";
         const allSelectedAddons = [...selectedRecurringKeys, ...selectedOnetimeKeys];
-        const urlParams = new URLSearchParams({
-          plan: checkoutPlan,
-          billing: isAnnual ? "annual" : "monthly",
-          addons: allSelectedAddons.join(","),
-        });
-        checkoutBtn.setAttribute("href", `/signup?${urlParams.toString()}`);
-        checkoutBtn.textContent = selectedPlanKey !== "none"
-          ? `Démarrer mon essai gratuit de 7 jours (${planInfo.nom}) →`
-          : `Activer mes options sur-mesure (${totalMonthly} €/m) →`;
+        if (selectedPlanKey !== "none") {
+          const urlParams = new URLSearchParams({ plan: selectedPlanKey });
+          if (allSelectedAddons.length > 0) {
+            urlParams.set("addons", allSelectedAddons.join(","));
+          }
+          checkoutBtn.setAttribute("href", `/signup?${urlParams.toString()}`);
+          checkoutBtn.textContent = `Démarrer mon essai gratuit de 7 jours (${planInfo.nom}) →`;
+        } else {
+          checkoutBtn.setAttribute("href", "/signup?from=options&next=" + encodeURIComponent("/dashboard/settings/modules"));
+          checkoutBtn.textContent = totalMonthly > 0 || onetimeAddonsCost > 0
+            ? `Configurer mes options à la carte (${totalMonthly} €/m) →`
+            : "Choisir mes options dans mon espace →";
+        }
       }
 
       // Sauvegarde du brouillon de commande en mémoire
       try {
         localStorage.setItem("lc_checkout_draft", JSON.stringify({
           plan: selectedPlanKey,
-          isAnnual,
           recurringAddons: selectedRecurringKeys,
           onetimeAddons: selectedOnetimeKeys,
           totalMonthly,
@@ -2672,8 +2585,36 @@
       });
     });
 
+    // Sélecteur de paliers Soirée en jeu (10 / 30 / 50 joueurs -> 9 / 19 / 29 €)
+    $$(".soiree-tier-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const tier = btn.dataset.tier || "10";
+        const price = Number(btn.dataset.price || 9);
+        $$(".soiree-tier-btn").forEach((b) => {
+          const isCurrent = b === btn;
+          b.classList.toggle("active", isCurrent);
+          b.setAttribute("aria-pressed", String(isCurrent));
+        });
+        ADDON_DATA.pass_screen.prix = price;
+        ADDON_DATA.pass_screen.nom = `Pass Soirée Live (${tier} joueurs)`;
+        const pricePill = $("#pass-screen-price-pill");
+        if (pricePill) pricePill.innerHTML = `+${price} €<small> · 24h</small>`;
+        const chk = $('input[name="calc-addon"][value="pass_screen"]');
+        if (chk) {
+          chk.dataset.price = String(price);
+          if (!chk.disabled && !chk.checked) {
+            chk.checked = true;
+            userCheckedAddons.add("pass_screen");
+          }
+        }
+        updateCalculator();
+      });
+    });
+
     // Initialisation
-    setBillingPeriod(false);
+    updateCalculator();
   }
 
   /* ── 13. ÉMULATEUR CLIENT UNIVERSEL (HÉROS QR CODES & PAGES MODULES) ── */
@@ -3855,13 +3796,13 @@
         id: "jeux-instantanes",
         emoji: "🎡",
         title: "Jeux instantanés",
-        surtitre: "MODULE 01 · DÉCLIC AU COMPTOIR & RETOUR EN CAISSE",
-        subtitle: "Un simple « -10 % » ne fait vibrer personne. 15 mini-jeux (hasard ou adresse) qui déclenchent un vrai sourire en 15 secondes — et donnent une raison joyeuse de revenir.",
+        surtitre: "MODULE 01 · DÉCLIC AU COMPTOIR, AVIS GOOGLE & RETOUR EN CAISSE",
+        subtitle: "Un simple « -10 % » ne fait vibrer personne. 15 mini-jeux (hasard ou adresse) qui déclenchent un vrai sourire en 15 secondes, proposent l’avis Google / Instagram / TikTok au bon moment et créent une raison joyeuse de revenir.",
         offerBadge: "✓ Inclus dès Coup d’envoi (29 €/mois)",
-        pitchLead: "Samedi matin, un client attend son tour au comptoir ou passe devant votre vitrine. Au lieu de regarder son téléphone par ennui, il scanne, fait tourner la roue ou ouvre un coffre et ressent le petit frisson de la surprise. Vous réglez chaque lot, son stock et sa probabilité : un café ou une douceur qui vous coûte quelques centimes déclenche un grand sourire — et souvent une visite supplémentaire.",
+        pitchLead: "Samedi matin, un client attend son tour au comptoir ou paie son addition. En scannant votre QR, une carte discrète lui propose d’abord de vous laisser un avis Google ou de vous suivre sur Instagram / TikTok — avant même de lancer sa roue ou d’ouvrir son coffre (toujours libre d’accès). Une douceur ou un café à quelques centimes déclenche l’émotion de la surprise et ancre votre adresse.",
         kpis: [
           { val: "15 mécaniques", lbl: "9 tirages hasard + 6 défis d’adresse" },
-          { val: "18 thèmes", lbl: "Kermesse, Bistro, Néon, Noël…" },
+          { val: "Avis & Réseaux", lbl: "Invitation Google, Insta & TikTok avant/après jeu" },
           { val: "Budget protégé", lbl: "Stock, quotas & probabilités réglés" },
         ],
         emulateMode: "jeux",
@@ -3870,15 +3811,21 @@
         detailLabel: "📖 Explorer les 15 jeux",
         steps: [
           { t: "1 · Posez votre QR partout", d: "En vitrine, sur le comptoir, sur table ou imprimé dans notre éditeur d’affiche A4 intégré." },
-          { t: "2 · 15 secondes d’émotion", d: "Hasard express (roue, coffre, grattage digital) ou défi d’adresse (jauge, réflexe, mot mystère)." },
+          { t: "2 · Invitation avis + 15 s d’émotion", d: "Un écran optionnel propose Google, Instagram ou TikTok sans bloquer, puis place au jeu (roue, coffre, jauge…)." },
           { t: "3 · Validation en 1 clic en caisse", d: "Le code unique est validé sur votre écran Caisse Lastchance — zéro fraude, zéro matériel." },
+        ],
+        psyLever: "Récompense variable, réciprocité & temps d’attente inversé",
+        psyText: "Trois minutes d’attente semblent longues quand on ne fait rien ; avec une roue ou un défi, elles passent sans friction. En recevant une attention gratuite avant même d’avoir donné son avis ou de revenir, le client ressent naturellement l’envie de rendre la pareille.",
+        cases: [
+          { biz: "☕ Boulangerie · Samedi 10 h 15", setup: "Posez le chevalet A4 au comptoir, activez l’invitation Google / Insta libre d’accès et réglez 1 chouquette ou -10 % avec un stock journalier plafond.", outcome: "Le client sourit au lieu de s’impatienter dans la file, découvre vos réseaux naturellement et revient valider son code en caisse sous 15 jours." },
+          { biz: "💇 Salon & Institut · Fin de soin", setup: "Collez le QR devant le miroir ou le comptoir d’encaissement avec une roue ou un coffre aux couleurs exactes de votre institut.", outcome: "Moment d’enthousiasme juste après la coupe ou le soin : le client pense naturellement à vous noter sur Google et repart avec un privilège pour son prochain rendez-vous." },
         ],
         synergies: [
           { target: "ticket-dor", emoji: "🎟️", name: "Avec Ticket d’Or", why: "Après une première partie en salle, glissez un Ticket d’Or dans son sac pour sécuriser sa prochaine visite." },
           { target: "passeport-fidelite", emoji: "📔", name: "Avec Passeport fidélité", why: "Transformez un joueur d’un jour en habitué qui suit ses points et ses paliers sur téléphone." },
         ],
         motionScenes: [
-          { tag: "Scène 1 · Le Déclic", icon: "📷", title: "La curiosité déclenche le scan", text: "Posé au comptoir ou en vitrine, votre QR ouvre votre univers en plein écran sans appli.", chips: ["0 téléchargement", "Votre logo & couleurs"] },
+          { tag: "Scène 1 · Le Déclic & Avis", icon: "📷", title: "Scan au comptoir + invitation réseaux", text: "Posé au comptoir, votre QR invite librement sur Google / Instagram / TikTok sans bloquer, puis lance votre jeu.", chips: ["0 téléchargement", "Google · Insta · TikTok"] },
           { tag: "Scène 2 · Le Frisson", icon: "🎡", title: "5 secondes de suspense joyeux", text: "La récompense variable marque bien plus la mémoire qu’une remise banale.", chips: ["Café offert", "-15 % prochain achat"] },
           { tag: "Scène 3 · En Caisse", icon: "🧾", title: "Le client revient consommer son lot", text: "Code unique validé en 1 seconde sur votre écran caisse, souvent accompagné d’un achat.", chips: ["Stock maîtrisé", "Anti-fraude serveur"] },
         ],
@@ -3904,6 +3851,12 @@
           { t: "1 · Comptoir ou sac livraison", d: "Tamponnez en 2 secondes sur l’écran Caisse, via le code tournant comptoir ou un QR en sac à emporter." },
           { t: "2 · L’objectif reste visible", d: "Le client voit ses points grimper et son prochain cadeau approcher : il ne veut pas le laisser dormir." },
           { t: "3 · Il parraine ses proches", d: "D’un clic sur WhatsApp, il invite ses amis — les points ne tombent qu’à la vraie 1re visite." },
+        ],
+        psyLever: "Effet palier (Goal-Gradient) & statut acquis à vie",
+        psyText: "Plus un client se sent proche d’une récompense visible (« 400 / 500 pts »), plus il accélère sa prochaine visite pour ne pas « perdre » son effort. En dissociant les points dépensés du rang Bronze / Argent / Or acquis à vie, vous éliminez la déception de repartir à zéro.",
+        cases: [
+          { biz: "🍝 Bistro & Burger · Habitués du midi", setup: "Activez 100 pts par visite et un palier dessert ou menu à 500 pts (le rang Bronze, Argent ou Or reste acquis à vie même points dépensés).", outcome: "À 300 pts, le salarié choisit votre terrasse plutôt que le voisin pour boucler ses 2 derniers passages — sans jamais chercher de carte en carton oubliée." },
+          { biz: "🛍️ Boutique locale · Comptoir & à emporter", setup: "Tamponnez en 2 sec depuis votre écran Caisse (ou laissez le code tournant comptoir affiché sous plexi).", outcome: "Chaque passage rapproche d’une récompense concrète : le client épingle votre carte sur son écran d’accueil ou Google Wallet et partage son lien à ses proches." },
         ],
         synergies: [
           { target: "jackpot-collectif", emoji: "🎰", name: "Avec Jackpot collectif", why: "Chaque passage de fidélité fait aussi grimper la cagnotte commune de votre établissement." },
@@ -3937,6 +3890,12 @@
           { t: "2 · Un réflexe chaque matin", d: "Vos clients ouvrent la case du jour directement depuis l’icône sur leur écran d’accueil." },
           { t: "3 · Retour en boutique", d: "Leur surprise du jour s’utilise chez vous en caisse et déclenche une visite qu’ils n’avaient pas prévue." },
         ],
+        psyLever: "Habitude quotidienne volontaire & curiosité matinale",
+        psyText: "Recevoir un SMS promotionnel non sollicité agace ; ouvrir soi-même sa case mystère du matin déclenche une micro-sécrétion de curiosité. Votre enseigne devient le petit rituel plaisir du café matinal — zéro harcèlement, mémorisation maximale.",
+        cases: [
+          { biz: "🍫 Chocolatier / Épicerie · 1er au 24 décembre", setup: "Remplissez 24 cases en 5 min : douceurs maison et tours de roue les jours creux (mardi/mercredi), super-lot d’assiduité le 24.", outcome: "Vos clients ouvrent eux-mêmes votre enseigne chaque matin au café (horloge serveur anti-triche) et viennent retirer leurs surprises en boutique." },
+          { biz: "👕 Prêt-à-porter · Mois anniversaire ou avant-soldes", setup: "Choisissez 7 ou 14 jours au Studio Calendrier et programmez des attentions progressives valables sur vos jours calmes.", outcome: "Zéro SMS intrusif : c’est la curiosité matinale du client qui le ramène spontanément essayer la nouvelle collection." },
+        ],
         synergies: [
           { target: "passeport-fidelite", emoji: "📔", name: "Avec Passeport fidélité", why: "Reliez le calendrier à vos habitués pour multiplier les passages sur tout le mois." },
           { target: "ticket-dor", emoji: "🎟️", name: "Avec Ticket d’Or", why: "Remettez un Ticket d’Or en caisse pour prolonger l’élan dès le mois suivant." },
@@ -3968,6 +3927,12 @@
           { t: "1 · Affichez l’écran géant", d: "Ouvrez la vue TV sur votre téléviseur ou vidéoprojecteur en 1 clic." },
           { t: "2 · Toute la salle rejoint en 5 s", d: "Chaque client scanne le QR projeté, choisit son pseudo et voit son nom apparaître à l’écran." },
           { t: "3 · Vous lancez le rythme", d: "Depuis votre télécommande mobile, vous enchaînez les questions jusqu’au podium final !" },
+        ],
+        psyLever: "Effervescence collective & compétition bienveillante",
+        psyText: "Voir son propre pseudo grimper sur l’écran TV devant toute la salle crée une tension joyeuse : aucune table ne quitte son siège avant la dernière question. Plus le groupe reste tard pour défendre sa place sur le podium, plus les consommations s’enchaînent.",
+        cases: [
+          { biz: "🍻 Bar & Brasserie · Mardi soir 20 h", setup: "Affichez la vue TV du lieu sur votre téléviseur, lancez un quiz ou blind test déjà prêt et pilotez depuis votre téléphone.", outcome: "En 30 s, toutes les tables scannent le QR projeté : l’ambiance plateau télé dure 45 min, personne ne part avant le podium et les tournées suivent." },
+          { biz: "🎳 Bowling / Club / Séminaire · Soirée groupe", setup: "Ouvrez une salle jusqu’à 250 joueurs simultanés sans micro ni feuille papier, et annoncez le Top 3 depuis votre régie mobile.", outcome: "Animation fluide de bout en bout pour vos soirées d’entreprise ou anniversaires, avec souvenir mémorable associé à votre adresse." },
         ],
         synergies: [
           { target: "quiz", emoji: "❓", name: "Avec Quiz", why: "Réutilisez vos questionnaires maison en autonomie la semaine et en grand show le soir." },
@@ -4001,6 +3966,12 @@
           { t: "2 · Pronostics avant le coup d’envoi", d: "Vos clients saisissent leurs scores sur téléphone ; tout se verrouille automatiquement au début du match." },
           { t: "3 · Classement & retours chaque semaine", d: "Les points tombent tout seuls et vos habitués reviennent vibrer ensemble à la journée suivante." },
         ],
+        psyLever: "Rivalité amicale & effet rendez-vous hebdomadaire",
+        psyText: "Un client seul regarde le match chez lui ; un client inscrit dans la ligue privée de son bar ou pizzeria vient vérifier son classement entre amis et défendre son honneur chaque semaine.",
+        cases: [
+          { biz: "🍕 Pizzeria & Bar de quartier · Ligue des Champions", setup: "Créez votre ligue privée maison en 2 min avec vos affiches et vos lots de podium — scores figés automatiquement au coup d’envoi.", outcome: "Vos clients se chambrent sur le classement projeté sur votre TV et reviennent chaque soir de match chez vous défendre leur podium." },
+          { biz: "🎬 Café / Pub · Compétitions hors-sport (Eurovision, Top Chef)", setup: "Choisissez parmi nos 11 univers sportifs ou culturels (TV, cinéma, e-sport…) pour réunir toute votre clientèle.", outcome: "Même ceux qui ne suivent pas le foot rejoignent la compétition amicale et prennent l’habitude de revenir entre collègues." },
+        ],
         synergies: [
           { target: "jackpot-collectif", emoji: "🎰", name: "Avec Jackpot collectif", why: "Faites monter la cagnotte commune à chaque soirée de match pour doubler l’enjeu." },
           { target: "evenements-live", emoji: "🎤", name: "Avec Événements live", why: "Lancez un quiz rapide à la mi-temps sur l’écran TV entre deux matchs." },
@@ -4032,6 +4003,12 @@
           { t: "1 · Fixez votre lot & votre objectif", d: "Ex. 50 passages pour déclencher un dîner pour deux, un panier gourmand ou un bon d’achat." },
           { t: "2 · Chaque visite fait grimper la barre", d: "Au comptoir ou via le Passeport fidélité, chaque client ajoute sa pierre à la cagnotte commune." },
           { t: "3 · Tirage transparent à 100 %", d: "Dès l’objectif atteint, un gagnant est tiré au sort parmi tous les participants — et la fête recommence !" },
+        ],
+        psyLever: "Objectif partagé & preuve sociale en temps réel",
+        psyText: "Voir une barre commune à 88 % réveille l’instinct d’équipe : chacun veut être celui qui pousse la jauge vers les 100 % et entraîne ses amis chez vous pour multiplier ses chances tout en faisant exploser votre fréquentation.",
+        cases: [
+          { biz: "🥐 Boulangerie / Café · Mois calme de février", setup: "Fixez 1 seul gros lot (brunch pour 4 ou panier gourmand) et un objectif de 50 ou 100 passages validés en caisse.", outcome: "Quand la jauge commune affiche 88 %, vos habitués entraînent leurs amis chez vous pour faire sauter la barre — coût maîtrisé, effet viral maximal." },
+          { biz: "🛍️ Concept store · Week-end anniversaire", setup: "Affichez la jauge cagnotte en vitrine et au comptoir ; chaque passage ajoute sa pierre jusqu’au tirage automatique à 100 %.", outcome: "Moment de fête de quartier autour de votre enseigne : les clients de passage reviennent voir la cagnotte tomber." },
         ],
         synergies: [
           { target: "passeport-fidelite", emoji: "📔", name: "Avec Passeport fidélité", why: "Chaque passage de fidélité nourrit deux jauges à la fois : sa carte perso et la cagnotte collective." },
@@ -4065,6 +4042,12 @@
           { t: "2 · Vos clients jouent en attendant", d: "Correction directe avec une petite anecdote après chaque clic : on sourit et on apprend." },
           { t: "3 · Code gain en caisse", d: "Les meilleurs scores (ou tous les participants selon votre règle) débloquent un code à retirer chez vous." },
         ],
+        psyLever: "Fierté de réussir & valorisation de la valeur perçue",
+        psyText: "Quand un client découvre l’origine de votre farine, de votre torréfaction ou de votre savoir-faire à travers une anecdote ludique, votre produit cesse d’être banalisé par le prix : il ressent de la fierté à le choisir et savoure davantage son cadeau mérité.",
+        cases: [
+          { biz: "🍷 Caviste & Fromager · Pendant la mise en panier", setup: "Écrivez 4 questions rapides sur vos terroirs et producteurs avec une petite anecdote valorisante à chaque bonne réponse.", outcome: "Les 2 min d’attente instruisent et amusent : le client comprend pourquoi votre sélection vaut son prix et repart souvent avec la cuvée évoquée." },
+          { biz: "🧁 Artisan glacier / Pâtissier · Lancement carte d’été", setup: "Laissez le quiz accessible sur table en autonomie avec un mini-topping ou café offert en code caisse dès 3/4.", outcome: "Le client savoure d’autant plus son lot qu’il l’a gagné par sa curiosité — forte progression de la mémorisation de vos spécialités." },
+        ],
         synergies: [
           { target: "jeux-instantanes", emoji: "🎡", name: "Avec Jeux instantanés", why: "Offrez un lancer de roue en récompense à ceux qui réussissent votre quiz." },
           { target: "evenements-live", emoji: "🎤", name: "Avec Événements live", why: "Passez votre quiz sur grand écran le vendredi soir pour en faire un tournoi en salle !" },
@@ -4096,6 +4079,12 @@
           { t: "1 · Imprimez & placez vos balises", d: "Près de vos nouveautés, en terrasse, à l’étage ou chez des commerçants partenaires." },
           { t: "2 · Le client tamponne chaque étape", d: "Chaque scan allume une case sur sa carte de jeu et révèle l’indice du point suivant." },
           { t: "3 · Le trésor s’ouvre en caisse", d: "Une fois toutes les balises trouvées, le code récompense unique se déverrouille." },
+        ],
+        psyLever: "Curiosité spatiale & effet d’achèvement (Zeigarnik)",
+        psyText: "Un parcours incomplet (« 3 / 5 balises validées ») crée une démangeaison positive d’aller chercher la suite. En guidant le pied du visiteur jusqu’à votre étage ou vos rayons moins exposés, vous augmentez mécaniquement le temps passé sur place et les achats coups de cœur.",
+        cases: [
+          { biz: "🏺 Déco, Librairie & Magasin à étage", setup: "Imprimez 4 balises QR (entrée, coin lecture, étage, comptoir) avec un indice amusant reliant chaque recoin.", outcome: "Portés par l’envie de boucler les 4 étapes, vos visiteurs explorent le fond du magasin et montent à l’étage où ils repèrent vos coups de cœur." },
+          { biz: "🏘️ Association de rue commerçante · Salon ou braderie", setup: "Placez 1 balise par boutique partenaire ; le coffre final se débloque une fois toutes les étapes validées.", outcome: "Flux croisés mesurés d’une vitrine à l’autre : chaque commerçant bénéficie des visites générées par le parcours commun." },
         ],
         synergies: [
           { target: "missions-coffres", emoji: "🗝️", name: "Avec Missions & coffres", why: "Boucler la Chasse au QR fait avancer les missions et rapporte des clés de coffre." },
@@ -4129,6 +4118,12 @@
           { t: "2 · Chacun répond en secret", d: "Impossible de tricher : les choix restent scellés jusqu’à ce que les deux aient voté." },
           { t: "3 · Révélation & fous rires", d: "L’écran dévoile leur complicité : l’attente disparaît et l’ambiance de la table décolle !" },
         ],
+        psyLever: "Complicité émotionnelle & effacement du temps d’attente",
+        psyText: "Quand deux personnes rient ensemble devant une révélation complice, l’attente n’existe plus : ce ressenti positif se transfère directement sur l’accueil, l’assiette et le souvenir de votre établissement.",
+        cases: [
+          { biz: "🍽️ Restaurant · Table de 2 à 20 h 30", setup: "Posez simplement le chevalet QR Duo Miroir sur table — inclus d’office dans les 5 formules avec 0 € de lot à financer.", outcome: "Entre l’entrée et le plat, les 2 convives rejoignent le même salon en 5 s, votent en secret et éclatent de rire : l’attente disparaît totalement." },
+          { biz: "💇 Salon / Lounge · Client(e) & accompagnant", setup: "Posez le QR au coin café d’attente ; aucune création de compte ni validation en caisse nécessaire.", outcome: "L’accompagnant ne regarde plus sa montre, l’accueil paraît plus chaleureux et le souvenir positif rejaillit sur la note Google." },
+        ],
         synergies: [
           { target: "portrait-de-la-bande", emoji: "👥", name: "Avec Portrait de la Bande", why: "Duo Miroir pour vos tables de 2, Portrait de la Bande pour vos grandes tablées d’amis." },
           { target: "ticket-dor", emoji: "🎟️", name: "Avec Ticket d’Or", why: "Glissez un Ticket d’Or avec l’addition pour les faire revenir dès la semaine suivante." },
@@ -4160,6 +4155,12 @@
           { t: "1 · Un convive ouvre la salle", d: "Un scan sur table crée la partie de 2 à 12 joueurs en 5 secondes, sans rien télécharger." },
           { t: "2 · Tout le monde vote sous la table", d: "Chacun désigne secrètement qui dans la bande correspond le mieux à chaque portrait." },
           { t: "3 · Révélation & débats complices", d: "Dès 3 votes, le résultat tombe et la tablée éclate de rire autour de son verre !" },
+        ],
+        psyLever: "Dynamique de groupe & prolongation spontanée des tournées",
+        psyText: "Dans une bande d’amis, personne ne veut couper l’ambiance au milieu d’un fou rire collectif : on commande encore une tournée ou un dessert partagé pour commenter les votes secrets. Votre lieu devient leur « adresse signature ».",
+        cases: [
+          { biz: "🍹 Bar / Tapas · Vendredi apéro (6 à 12 collègues)", setup: "Posez le QR sur vos grandes tablées : dès que 3 amis ont voté secrètement sur la question du tour, le résultat se révèle.", outcome: "Les fous rires enchaînent les débats bienveillants — la bande venue « juste prendre un verre » reste dîner et prolonge sa soirée." },
+          { biz: "🎂 Brasserie / Bowling · Dîners d’anniversaire", setup: "Aucune gestion serveur ni coût matière : 2 à 12 joueurs lancent leur salon privé depuis leur propre smartphone.", outcome: "Votre lieu s’impose comme leur QG festif naturel sans jamais monopoliser votre équipe pendant le coup de feu." },
         ],
         synergies: [
           { target: "duo-miroir", emoji: "🪞", name: "Avec Duo Miroir", why: "Toutes vos tailles de tables sont animées : à 2 comme à 12, sans rien acheter en plus." },
@@ -4193,6 +4194,12 @@
           { t: "2 · Glissez-le dans le sac ou l’addition", d: "En caisse, en Click & Collect ou dans un sachet Uber Eats / Deliveroo : le client le scanne chez lui." },
           { t: "3 · Il revient le présenter en caisse", d: "Son code de retrait reste mémorisé sur son téléphone et vous le validez en 1 clic sur votre écran Caisse !" },
         ],
+        psyLever: "Effet dotation & aversion à laisser expirer son privilège",
+        psyText: "Dès que le client scanne son Ticket d’Or chez lui, son gain devient « le sien ». La peur humaine de laisser périmer un privilège acquis (avant 30 jours) le pousse à pousser votre porte ou vous appeler en direct — sans repasser par Uber Eats / Deliveroo.",
+        cases: [
+          { biz: "🍔 Burger, Sushi & À emporter · Soirées Uber Eats / Deliveroo", setup: "Fixez vos lots (poids, stock, durée réglable de 1 à 180 j, défaut 30 j), imprimez vos tickets QR uniques et glissez-en 1 dans chaque sac.", outcome: "Chez lui, le client scanne le QR (zéro grattage, code unique mémorisé sur téléphone) et revient commander chez vous en direct à 0 % de commission pour ne pas perdre son privilège." },
+          { biz: "✂️ Boutique & Commerce local · Avec le ticket de caisse", setup: "Remettez 1 Ticket d’Or imprimé avec le sac d’achat, puis validez son code en 1 clic quand il revient en boutique.", outcome: "Vous transformez un acheteur occasionnel en deuxième visite rapprochée au lieu d’attendre les prochaines soldes." },
+        ],
         synergies: [
           { target: "passeport-fidelite", emoji: "📔", name: "Avec Passeport fidélité", why: "Quand votre ancien client Uber Eats revient retirer son Ticket d’Or, créez son Passeport en 2 secondes !" },
           { target: "missions-coffres", emoji: "🗝️", name: "Avec Missions & coffres", why: "Chaque retrait alimente naturellement l’habitude de revenir en direct." },
@@ -4224,6 +4231,12 @@
           { t: "1 · Vous ne gérez rien au quotidien", d: "Vos clients jouent à vos jeux, ouvrent votre calendrier, font un quiz ou une chasse au QR." },
           { t: "2 · Leurs missions avancent seules", d: "Chaque action validée leur rapporte des clés qui s’accumulent sur leur profil." },
           { t: "3 · Le coffre s’ouvre en récompense", d: "Une fois les clés réunies, le client déverrouille son coffre et vient profiter de son lot chez vous !" },
+        ],
+        psyLever: "Progression en fil rouge & gratification cumulative",
+        psyText: "Au lieu d’un jeu isolé vite oublié, chaque visite laisse une trace concrète (« 2 clés sur 3 ! »). Ce sentiment d’avancer transforme plusieurs petits interactions en une véritable quête agréable auprès de votre enseigne.",
+        cases: [
+          { biz: "☕ Tout commerce · Client multi-modules", setup: "Rien à gérer au quotidien : dès qu’un module est actif, les quêtes attribuent automatiquement des clés sur le profil joueur.", outcome: "Lundi un quiz, jeudi une roue : le client voit « Plus qu’une clé avant mon coffre ! » et revient boucler sa saison chez vous." },
+          { biz: "🛍️ Boulangerie / Retail · Habitués de la semaine", setup: "Réglez simplement le coffre récompense final (validable en caisse) ; le moteur relie vos jeux, calendrier et fidélité tout seul.", outcome: "Crée un fil rouge engageant façon grande enseigne (fidélité + quêtes + récompense) sans une seule minute de gestion en plus." },
         ],
         synergies: [
           { target: "chasse-au-qr", emoji: "🗺️", name: "Avec Chasse au QR", why: "Boucler un parcours valide une mission clé vers le coffre supérieur." },
@@ -4312,6 +4325,9 @@
       const studioLink = $("#mod-studio-link", modulesShowcaseEl);
       const detailLink = $("#mod-detail-link", modulesShowcaseEl);
       const stepsGrid = $("#mod-steps-grid", modulesShowcaseEl);
+      const psyLever = $("#mod-psy-lever", modulesShowcaseEl);
+      const psyText = $("#mod-psy-text", modulesShowcaseEl);
+      const casesGrid = $("#mod-cases-grid", modulesShowcaseEl);
       const synGrid = $("#mod-synergies-grid", modulesShowcaseEl);
 
       if (surtitre) surtitre.textContent = mod.surtitre;
@@ -4320,6 +4336,8 @@
       if (badge) badge.textContent = mod.offerBadge;
       if (pitchLead) pitchLead.textContent = mod.pitchLead;
       if (studioLink) studioLink.setAttribute("href", mod.studioHref);
+      if (psyLever) psyLever.textContent = mod.psyLever || "Engagement client";
+      if (psyText) psyText.textContent = mod.psyText || "";
 
       if (detailLink) {
         if (mod.detailHref) {
@@ -4344,6 +4362,25 @@
       if (stepsGrid) {
         stepsGrid.innerHTML = mod.steps
           .map((s, idx) => `<div class="k-dash-step-box"><span class="k-dash-step-num">ÉTAPE 0${idx + 1}</span><h3>${s.t}</h3><p>${s.d}</p></div>`)
+          .join("");
+      }
+
+      if (casesGrid) {
+        casesGrid.innerHTML = (mod.cases || [])
+          .map((c, idx) => `
+            <div class="lc-mod-case-card">
+              <span class="lc-mod-case-biz">${c.biz}</span>
+              <div class="lc-mod-case-row">
+                <strong>⚙️ Réglage en 2 min :</strong>
+                <p>${c.setup}</p>
+              </div>
+              <div class="lc-mod-case-row lc-mod-case-outcome">
+                <strong>✅ Ce que vit le client &amp; ce que vous gagnez :</strong>
+                <p>${c.outcome}</p>
+              </div>
+              <span class="lc-mod-case-idx" aria-hidden="true">#0${idx + 1}</span>
+            </div>
+          `)
           .join("");
       }
 
