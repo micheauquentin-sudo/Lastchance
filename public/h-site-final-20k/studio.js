@@ -312,7 +312,7 @@
         <div class="k-field-group">
           <label class="k-label" for="v-slug">3. Adresse publique de votre vitrine QR</label>
           <div class="k-slug-row">
-            <span>lastchance.app/v/</span>
+            <span>simplecommeqr.fr/v/</span>
             <input id="v-slug" type="text" class="k-input" value="${escapeAttr(v.slug)}" data-bind="vitrine.slug" />
           </div>
         </div>
@@ -1350,28 +1350,28 @@ $$("[data-bind]", container).forEach((inp) => {
     if (!phone) return;
 
     if (currentModule === "vitrine") {
-      if (urlPill) urlPill.textContent = `lastchance.app/v/${drafts.vitrine.slug || "mon-commerce"}`;
+      if (urlPill) urlPill.textContent = `simplecommeqr.fr/v/${drafts.vitrine.slug || "mon-commerce"}`;
       if (tools) {
         tools.innerHTML = `<span class="k-tool-pill">Aperçu en direct</span>`;
       }
       phone.innerHTML = buildVitrinePreviewHTML();
     } else if (currentModule === "roue") {
-      if (urlPill) urlPill.textContent = `lastchance.app/play/mon-jeu`;
+      if (urlPill) urlPill.textContent = `simplecommeqr.fr/play/mon-jeu`;
       if (tools) tools.innerHTML = `<span class="k-tool-pill">Thème : ${drafts.roue.preset}</span>`;
       phone.innerHTML = buildRouePreviewHTML();
       bindInteractivePlayInside(phone);
     } else if (currentModule === "pronostics") {
-      if (urlPill) urlPill.textContent = `lastchance.app/pronos/mon-concours`;
+      if (urlPill) urlPill.textContent = `simplecommeqr.fr/pronos/mon-concours`;
       if (tools) tools.innerHTML = `<span class="k-tool-pill">Saison : ${drafts.pronostics.theme}</span>`;
       phone.innerHTML = buildPronosticsPreviewHTML();
     } else if (currentModule === "fidelite") {
-      if (urlPill) urlPill.textContent = `lastchance.app/passeport/mon-programme`;
+      if (urlPill) urlPill.textContent = `simplecommeqr.fr/passeport/mon-programme`;
       if (tools) tools.innerHTML = `<span class="k-tool-pill">1 visite = 100 pts</span>`;
       phone.innerHTML = buildFidelitePreviewHTML();
     } else if (currentModule === "calendrier") {
       const cName = drafts.calendrier?.name || "mon-calendrier";
       const slug = encodeURIComponent(cName.toLowerCase().replace(/[^a-z0-9]+/g, "-")).slice(0, 24);
-      if (urlPill) urlPill.textContent = `lastchance.app/cal/${slug}`;
+      if (urlPill) urlPill.textContent = `simplecommeqr.fr/cal/${slug}`;
       if (tools) tools.innerHTML = `<span class="k-tool-pill">Cases : ${drafts.calendrier?.nbCases || 24}j · ${drafts.calendrier?.theme || "kermesse"}</span>`;
       phone.innerHTML = buildCalendrierPreviewHTML();
       bindCalendrierInteractive(phone);

@@ -1,6 +1,6 @@
 ﻿/* eslint-disable @next/next/no-location-assign-relative-destination */
 /* ============================================================
-   SITE FINAL 20K (H) — LASTCHANCE
+   SITE FINAL 20K (H) — SIMPLE COMME QR
    Accueille l'interactivité de index.html ET de vitrine-reservation.html
    Source unique des prix et formules : ../shared/offre.js (window.LC_OFFRE)
    ============================================================ */
@@ -337,7 +337,7 @@
       cat: "Zéro lot coûteux · 100 % fous rires pendant l'attente",
       color: "#ff7eb6",
       desc: "10 minutes d'attente entre deux plats peuvent vite paraître longues. Inclus dans toutes nos formules : vos couples et grandes tablées votent en secret sur leurs téléphones, éclatent de rire à la révélation et repartent avec un souvenir chaleureux.",
-      usage: "💬 Inclus d'office dans les 5 formules Lastchance",
+      usage: "💬 Inclus d'office dans les 5 formules Simple comme QR",
       visual: `
         <div class="jb-anim-scene">
           <div style="display:flex;gap:0.5rem;align-items:center;">
@@ -1763,7 +1763,7 @@
         `;
       }
       if (actionPill) {
-        actionPill.outerHTML = `<span class="cs-day-status" style="color:#1b7a43;font-weight:800;">✓ Réclamé (Code : LC-CAL7)</span>`;
+        actionPill.outerHTML = `<span class="cs-day-status" style="color:#1b7a43;font-weight:800;">✓ Réclamé (Code : QR-CAL7)</span>`;
       }
 
       const progressText = $("#cs-progress-text");
@@ -2163,7 +2163,7 @@
       fcCopyCodeBtn.addEventListener("click", () => {
         stopFcMotion();
         try {
-          navigator.clipboard.writeText("https://lastchance.app/passeport/bistrot?parrain=PASS-LISA");
+          navigator.clipboard.writeText("https://simplecommeqr.fr/passeport/bistrot?parrain=PASS-LISA");
         } catch {}
         fcCopyCodeBtn.textContent = "✓ Lien copié !";
         setTimeout(() => {
@@ -3283,7 +3283,7 @@
             <div class="lc-emu-solde-panel">
               <strong style="font:800 0.84rem var(--display);">Lien personnel de <span class="js-emu-nick"></span></strong>
               <code style="display:block;margin:0.4rem 0;background:#fff;padding:0.4rem;border-radius:8px;border:1.5px solid #211d16;font-size:0.72rem;word-break:break-all;">
-                lastchance.app/passeport/bistrot?parrain=PASS-LISA
+                simplecommeqr.fr/passeport/bistrot?parrain=PASS-LISA
               </code>
               <span style="font-size:0.76rem;font-weight:700;">Chaque ami qui vient pour la 1re fois vous rapporte <b>+150 pts</b> !</span>
             </div>
@@ -3910,7 +3910,7 @@
         showSocialLogos: true,
         emoji: "🎡",
         title: "Jeux instantanés",
-        surtitre: "MODULE 01 · DÉCLIC AU COMPTOIR, AVIS & RETOUR EN CAISSE",
+        surtitre: "MODULE 01 · SIMPLE COMME JEUX & AVIS 5★",
         subtitle: "Un simple « -10 % » ne fait vibrer personne. 15 mini-jeux (hasard ou adresse) qui déclenchent un vrai sourire en 15 secondes, proposent l’avis Google / Tripadvisor ou vos réseaux (Instagram, Facebook, TikTok) et créent une raison joyeuse de revenir.",
         offerBadge: "✓ Inclus dès Coup d’envoi (29 €/mois)",
         pitchLead: "Samedi matin, un client attend son tour au comptoir ou paie son addition. En scannant votre QR, une carte discrète lui propose d’abord de vous laisser un avis Google / Tripadvisor ou de vous suivre sur Instagram, Facebook ou TikTok — avant même de lancer sa roue ou d’ouvrir son coffre (toujours libre d’accès). Une douceur ou un café à quelques centimes déclenche l’émotion de la surprise et ancre votre adresse.",
@@ -3926,7 +3926,7 @@
         steps: [
           { t: "1 · Posez votre QR partout", d: "En vitrine, sur le comptoir, sur table ou imprimé dans notre éditeur d’affiche A4 intégré." },
           { t: "2 · Invitation avis & réseaux + 15 s d’émotion", d: "Un écran optionnel propose Google, Tripadvisor, Instagram, Facebook ou TikTok sans bloquer, puis place au jeu." },
-          { t: "3 · Validation en 1 clic en caisse", d: "Le code unique est validé sur votre écran Caisse Lastchance — zéro fraude, zéro matériel." },
+          { t: "3 · Validation en 1 clic en caisse", d: "Le code unique est validé sur votre écran Caisse Simple comme QR — zéro fraude, zéro matériel." },
         ],
         psyLever: "Récompense variable, réciprocité & temps d’attente inversé",
         psyText: "Trois minutes d’attente semblent longues quand on ne fait rien ; avec une roue ou un défi, elles passent sans friction. En recevant une attention gratuite avant même d’avoir donné son avis ou de revenir, le client ressent naturellement l’envie de rendre la pareille.",
@@ -3951,7 +3951,7 @@
         showSocialLogos: true,
         emoji: "📔",
         title: "Passeport fidélité",
-        surtitre: "MODULE 02 · RÉTENTION & BOUCHE-À-OREILLE",
+        surtitre: "MODULE 02 · SIMPLE COMME PASSEPORT FIDÉLITÉ",
         subtitle: "Une carte en carton finit oubliée dans un manteau. Le Passeport sur téléphone garde votre commerce sous les yeux du client et le pousse à revenir.",
         offerBadge: "✓ Inclus Le Club (59 €) & La Totale · Option 19 €/mois",
         pitchLead: "Pourquoi tant de clients ravis ne reviennent-ils jamais ? Parce qu’ils n’ont rien qui les rattache à vous. Quand votre client voit sur son écran « Plus que 2 visites avant votre dessert offert » — et sait que son statut Bronze, Argent ou Or ne redescend jamais même quand il dépense ses points — il choisit naturellement votre porte plutôt que celle du voisin.",
@@ -3991,7 +3991,7 @@
         accentSoft: "#fff4cc",
         emoji: "🗓️",
         title: "Calendrier",
-        surtitre: "MODULE 03 · RENDEZ-VOUS QUOTIDIEN",
+        surtitre: "MODULE 03 · SIMPLE COMME CALENDRIER SURPRISE",
         subtitle: "Restez dans la tête de vos clients tous les matins sans jamais les harceler de pubs : une case mystère à ouvrir chaque jour (Avent, anniversaire, soldes).",
         offerBadge: "✓ Inclus Le Club (59 €) & La Totale · Pass 29 € / 31j",
         pitchLead: "Comment faire penser à votre commerce un mardi matin pluvieux ? En créant un petit rituel qu’ils attendent eux-mêmes. Pendant 7, 14 ou 31 jours, vos clients ouvrent leur case du jour sur leur téléphone. Vous choisissez librement chaque surprise — douceur offerte, remise ciblée sur vos jours creux ou tour de roue — et un super-lot d’assiduité récompense les plus fidèles.",
@@ -4031,7 +4031,7 @@
         accentSoft: "#f1e9ff",
         emoji: "🎤",
         title: "Événements live",
-        surtitre: "MODULE 04 · SOIRÉES & ÉCRAN GÉANT",
+        surtitre: "MODULE 04 · SIMPLE COMME SOIRÉE LIVE",
         subtitle: "Votre mardi ou jeudi soir mérite mieux qu’une salle à moitié vide : transformez votre TV en vrai plateau télé où toute la salle joue ensemble.",
         offerBadge: "✓ Inclus Le Grand Jeu (89 €) & La Totale · Pass dès 9 €",
         pitchLead: "Organiser une soirée quiz avec papier, stylos et micro demande des heures et tourne vite au chaos. Avec Événements live, vous branchez votre TV, vous pilotez depuis votre téléphone et jusqu’à 250 personnes buzzent en direct. Les tables s’enflamment autour du classement, commandent une tournée de plus pour la manche suivante et réservent déjà pour la semaine d’après.",
@@ -4071,7 +4071,7 @@
         accentSoft: "#e2f1ff",
         emoji: "🏆",
         title: "Pronostics",
-        surtitre: "MODULE 05 · SAISONS SPORTIVES & CULTURELLES",
+        surtitre: "MODULE 05 · SIMPLE COMME PRONOSTICS",
         subtitle: "Devenez le QG officiel des grands matchs : vos clients pronostiquent sur votre ligue privée, se chambrent au classement et reviennent toute la saison.",
         offerBadge: "✓ Inclus Le Grand Jeu (89 €) & La Totale · Pass 39 € / compétition",
         pitchLead: "Pendant la Ligue des champions, le Top 14, la Coupe du monde ou même Top Chef et l’Eurovision, vos clients parlent déjà des résultats. En créant votre ligue privée maison, vous leur donnez une raison concrète de revenir chaque semaine vérifier leur place au classement affiché sur votre TV et défendre leur podium entre collègues ou amis.",
@@ -4111,7 +4111,7 @@
         accentSoft: "#fff0dd",
         emoji: "🎰",
         title: "Jackpot collectif",
-        surtitre: "MODULE 06 · OBJECTIF COMMUNAUTAIRE",
+        surtitre: "MODULE 06 · SIMPLE COMME JACKPOT COLLECTIF",
         subtitle: "Un seul gros lot maîtrisé, mais toute votre clientèle unie pour le faire tomber : quand la jauge atteint 100 %, le tirage au sort déclenche la fête !",
         offerBadge: "✓ Inclus Le Grand Jeu (89 €) & La Totale · Pass 29 € / 30j",
         pitchLead: "Dans une loterie classique, chacun joue dans son coin. Avec le Jackpot collectif, vos clients découvrent une jauge partagée (« 44 / 50 visites — plus que 6 passages avant le tirage ! »). Effet immédiat sur le comportement humain : ils veulent voir la barre franchir les 100 %, en parlent à leurs amis et les entraînent chez vous pour faire sauter la cagnotte.",
@@ -4151,7 +4151,7 @@
         accentSoft: "#e6f3ff",
         emoji: "❓",
         title: "Quiz",
-        surtitre: "MODULE 07 · SAVOIR-FAIRE & ATTENTE ENCHANTÉE",
+        surtitre: "MODULE 07 · SIMPLE COMME QUIZ",
         subtitle: "Faites aimer votre métier en 5 questions rapides : vos clients jouent en autonomie pendant l’attente, découvrent vos coulisses et remportent leur récompense.",
         offerBadge: "✓ Inclus Le Club, Sur Place, Le Grand Jeu & La Totale · Pass 15 € / 7j",
         pitchLead: "Vos clients connaissent rarement toute l’histoire derrière votre savoir-faire, vos producteurs ou vos nouveautés. Un quiz court de 3 à 5 questions transforme 2 minutes d’attente en découverte ludique : chaque bonne réponse apporte une anecdote valorisante qui justifie vos prix et donne envie de goûter ou d’essayer votre produit phare.",
@@ -4191,7 +4191,7 @@
         accentSoft: "#e2fbf0",
         emoji: "🗺️",
         title: "Chasse au QR",
-        surtitre: "MODULE 08 · PARCOURS PHYSIQUE MULTI-ÉTAPES",
+        surtitre: "MODULE 08 · SIMPLE COMME CHASSE AU QR",
         subtitle: "Un rayon peu visité, un étage méconnu ou plusieurs commerces partenaires ? Faites circuler vos visiteurs de QR en QR jusqu’au trésor final.",
         offerBadge: "✓ Inclus Le Club (59 €) & La Totale (129 €) · Pass 29 € / 30j",
         pitchLead: "Dans toute boutique ou salon, 80 % des clients suivent toujours le même trajet et passent à côté de vos nouveautés ou du fond du magasin. Placez 2 à 10 QR codes aux endroits stratégiques (ou entre voisins d’une même rue commerçante) : l’instinct d’exploration pousse vos visiteurs à tout parcourir pour compléter leur carte et ouvrir le coffre final en caisse.",
@@ -4231,7 +4231,7 @@
         accentSoft: "#ffe8f3",
         emoji: "🪞",
         title: "Duo Miroir",
-        surtitre: "MODULE 09 · BRISE-GLACE À 2 (0 € DE LOT)",
+        surtitre: "MODULE 09 · SIMPLE COMME DUO MIROIR",
         subtitle: "10 minutes d’attente à table peuvent vite paraître longues. Transformez-les en éclats de rire complices pour vos couples, amis ou collègues — sans offrir un seul lot.",
         offerBadge: "✓ Inclus dans les 5 formules (ou 12 €/mois seul)",
         pitchLead: "En restauration, en café ou en salle d’attente, l’ennui pendant l’attente abîme l’impression générale — même si le plat est délicieux. Posez simplement votre QR code sur la table : deux convives ouvrent un salon privé, répondent chacun en secret et éclatent de rire quand leurs réponses se révèlent en même temps. Zéro budget cadeau, 100 % bonne humeur associée à votre adresse.",
@@ -4271,7 +4271,7 @@
         accentSoft: "#f1e9ff",
         emoji: "👥",
         title: "Portrait de la Bande",
-        surtitre: "MODULE 10 · GRANDES TABLÉES (2 À 12 JOUEURS)",
+        surtitre: "MODULE 10 · SIMPLE COMME PORTRAIT DE LA BANDE",
         subtitle: "Le jeu d’ambiance qui enflamme vos afterworks et dîners entre amis : chacun vote en secret, la réponse ne se révèle qu’à partir de 3 voix !",
         offerBadge: "✓ Inclus dans les 5 formules (ou 12 €/mois seul)",
         pitchLead: "Vos grandes tables d’amis, familles ou collègues sont vos meilleurs clients — plus l’ambiance est chaleureuse, plus ils restent et commandent un dessert ou une tournée de plus. Portrait de la Bande fait voter tout le monde en secret sur des questions décalées (« Qui met 20 minutes à choisir la carte ? ») : débats amicaux, rires garantis et zéro coût matière pour vous.",
@@ -4311,7 +4311,7 @@
         accentSoft: "#fff4cc",
         emoji: "🎟️",
         title: "Ticket d’Or",
-        surtitre: "MODULE 11 · RÉCUPÉRER VOS CLIENTS LIVRAISON & COMPTOIR",
+        surtitre: "MODULE 11 · SIMPLE COMME TICKET D’OR",
         subtitle: "Sur Uber Eats ou Deliveroo, vous payez jusqu’à 30 % de commission et le client appartient à la plateforme. Glissez un Ticket d’Or QR dans le sac pour le faire revenir chez vous en direct !",
         offerBadge: "✓ Inclus dans les 5 formules (socle commercial)",
         pitchLead: "Vendredi 20 h 15 : une commande à emporter ou Uber Eats / Deliveroo quitte votre commerce. Sans accroche dans le sac, ce client reste prisonnier de la plateforme. Avec le Ticket d’Or, vous imprimez vos tickets QR uniques et en glissez un dans le sac (ou avec l’addition). Chez lui, le client scanne le QR, découvre un privilège valable 30 jours (réglable de 1 à 180 jours) mémorisé sur son téléphone — et pour ne pas « perdre » son cadeau, il revient commander directement chez vous !",
@@ -4351,7 +4351,7 @@
         accentSoft: "#e4fbf2",
         emoji: "🗝️",
         title: "Missions & coffres",
-        surtitre: "MODULE 12 · PROGRESSION & QUÊTES AUTOMATIQUES",
+        surtitre: "MODULE 12 · SIMPLE COMME MISSIONS & COFFRES",
         subtitle: "Le lien secret qui multiplie l’effet de tous vos modules : chaque partie ou visite fait avancer des missions toutes seules et donne des clés ouvrant de vrais coffres.",
         offerBadge: "✓ Inclus automatiquement dans les 5 formules",
         pitchLead: "Les grandes applications comme Duolingo ou Starbucks gardent leurs utilisateurs grâce à un ressort humain universel : quand une barre de progression est déjà à 2 sur 3, on a irrésistiblement envie de la terminer. Missions & coffres applique ce mécanisme automatiquement sur vos modules — vos clients jouent, cumulent des clés dorées et reviennent ouvrir leurs coffres cadeaux sans aucun travail supplémentaire pour vous.",
