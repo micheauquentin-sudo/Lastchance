@@ -33,7 +33,7 @@ export interface Benefit {
   description: string;
 }
 
-/** Pourquoi LastChance — bénéfices commerçant, chacun répond à une objection. */
+/** Pourquoi Simple comme QR — bénéfices commerçant, chacun répond à une objection. */
 export const BENEFITS: Benefit[] = [
   {
     title: "Des clients qui reviennent",

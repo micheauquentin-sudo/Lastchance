@@ -15,7 +15,7 @@ import { CHECKOUT_ENABLED, SIGNUP_URL } from "@/content/site";
 export const metadata: Metadata = {
   title: "Tarifs",
   description:
-    "Quatre offres LastChance par objectif — lancer, fidéliser, animer, tout réunir — et huit options achetables seules.",
+    "Quatre offres Simple comme QR par objectif — lancer, fidéliser, animer, tout réunir — et huit options achetables seules.",
   alternates: { canonical: "/tarifs" },
 };
 

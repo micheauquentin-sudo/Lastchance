@@ -2,7 +2,7 @@
   "name": "lastchance-site",
   "version": "0.1.0",
   "private": true,
-  "description": "Site vitrine officiel de LastChance â€” indÃ©pendant de l'application commerÃ§ant.",
+  "description": "Site vitrine officiel de Simple comme QR — indépendant de l'application commerçant.",
   "scripts": {
     "dev": "next dev --port 3001",
     "build": "next build",

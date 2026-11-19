@@ -6,7 +6,7 @@ export function Benefits() {
   return (
     <Section
       id="pourquoi"
-      eyebrow="Pourquoi LastChance"
+      eyebrow="Pourquoi Simple comme QR"
       title="Plus qu'un jeu : un moteur de fidélisation"
       subtitle="Chaque partie jouée travaille pour votre commerce."
       className="bg-surface-raised"

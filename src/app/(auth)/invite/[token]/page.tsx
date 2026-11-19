@@ -22,7 +22,7 @@ export default async function InvitePage({
         Invitation d&apos;équipe
       </h1>
       <p className="text-sm text-zinc-500 mb-6 text-center">
-        On vous a invité(e) à rejoindre un établissement sur Lastchance.
+        On vous a invité(e) à rejoindre un établissement sur Simple comme QR.
       </p>
 
       {user ? (

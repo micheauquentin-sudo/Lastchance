@@ -119,7 +119,7 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "Content-Security-Policy", value: contentSecurityPolicy() },
           // 2 ans, comme l'application. `preload` volontairement omis : il
-          // engage TOUS les sous-domaines de lastchance.app, décision qui
+          // engage TOUS les sous-domaines de simplecommeqr.fr, décision qui
           // appartient à l'app et non au site vitrine.
           // Posé UNIQUEMENT sur une origine réellement servie en HTTPS : hors
           // TLS il n'apporte rien et casse la navigation WebKit (pavé de

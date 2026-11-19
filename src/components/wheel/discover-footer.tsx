@@ -20,7 +20,7 @@ export function DiscoverFooter({ kermesse = false }: { kermesse?: boolean }) {
             : "font-bold text-zinc-300 underline underline-offset-2 hover:text-white"
         }
       >
-        Lastchance
+        Simple comme QR
       </Link>
       <br />
       Commerçant ? Créez le vôtre en 10 minutes.

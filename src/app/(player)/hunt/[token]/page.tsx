@@ -134,7 +134,7 @@ export default async function HuntStepPage({
           href="/?utm_source=hunt&utm_medium=footer"
           className="font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
         >
-          Lastchance
+          Simple comme QR
         </Link>
       </footer>
     </Shell>

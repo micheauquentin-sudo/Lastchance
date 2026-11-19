@@ -6,9 +6,9 @@ export function Logo({ className }: { className?: string }) {
     <Link
       href="/"
       className={cn("font-bold tracking-tight text-ink", className)}
-      aria-label="LastChance — accueil"
+      aria-label="Simple comme QR — accueil"
     >
-      Lastchance<span className="text-brand-600">.</span>
+      Simple comme QR<span className="text-brand-600">.</span>
     </Link>
   );
 }

@@ -9,5 +9,5 @@ import { optionalEnv } from "@/lib/env";
  * en prop aux composants client.
  */
 export function getSupportEmail(): string {
-  return optionalEnv("LEGAL_CONTACT_EMAIL") ?? "contact@lastchance.app";
+  return optionalEnv("LEGAL_CONTACT_EMAIL") ?? "contact@simplecommeqr.fr";
 }

@@ -1,6 +1,6 @@
-# LastChance — Site vitrine
+# Simple comme QR — Site vitrine
 
-Site officiel de LastChance. **Projet indépendant** de l'application
+Site officiel de Simple comme QR. **Projet indépendant** de l'application
 commerçant (racine du repo) : dépendances, build et déploiement séparés.
 Seule la variable `NEXT_PUBLIC_APP_URL` le relie à l'app (boutons
 « Essai gratuit » et « Connexion »).

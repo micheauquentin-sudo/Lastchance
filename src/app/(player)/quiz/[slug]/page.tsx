@@ -130,7 +130,7 @@ export default async function QuizPage({
           href="/?utm_source=quiz&utm_medium=footer"
           className="font-bold text-k-ink underline underline-offset-2 hover:text-k-orange"
         >
-          Lastchance
+          Simple comme QR
         </Link>
       </footer>
     </PlayerPageShell>
