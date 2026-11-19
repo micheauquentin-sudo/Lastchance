@@ -6,6 +6,7 @@
   <base href="/h-site-final-20k/" />
   <title>15 Jeux Instantanés Personnalisables &amp; Pronostics — Lastchance</title>
   <meta name="description" content="Découvrez les 15 mécaniques de jeux instantanés personnalisables (9 jeux de hasard et 6 jeux d'adresse) ainsi que le module de Pronostics sur les grands championnats et événements." />
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700;800&family=Unbounded:wght@700;800;900&family=Caveat:wght@600;700&family=Manrope:wght@500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&display=swap" rel="stylesheet" />
@@ -90,38 +91,33 @@
           </div>
         </div>
 
-        <!-- Colonne Droite : Carte Objet 3D Pass Joueur -->
+        <!-- Colonne Droite : QR Code Cartoon 3D Flottant unifié avec la page d'accueil -->
         <div class="hero-annex-right">
-          <div class="annex-device-card">
-            <div class="device-card-header">
-              <span class="device-tag">📱 PASS TEST JOUEUR</span>
-              <span class="device-live-dot" aria-hidden="true"></span>
-            </div>
-
-            <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-emulate="jeux" data-target="#catalogue-15-jeux" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie émulation client">
-              <img src="img/qr-jeux.svg" alt="QR Code 15 Jeux — Scannez pour jouer" width="200" height="200" class="qr-bleed-img" id="page-hero-qr-img" />
+          <div class="qr-floating-unit qr-floating-unit--annex">
+            <button type="button" class="qr-cartoon-3d-block" id="page-hero-qr-btn" data-emulate="jeux" data-target="#catalogue-15-jeux" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie émulation client">
+              <span class="qr-live-sticker" aria-hidden="true"><i class="device-live-dot"></i> TEST LIVE</span>
+              <div class="qr-cartoon-inner">
+                <img src="img/qr-jeux.svg" alt="QR Code 15 Jeux — Scannez pour jouer" width="232" height="232" class="qr-bleed-img" id="page-hero-qr-img" />
+              </div>
             </button>
 
             <div class="qr-call-footer">
-              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 64 52" aria-hidden="true">
-                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
-                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
-                <polygon points="12,28 4,14 20,8" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 60 56" aria-hidden="true">
+                <path d="M50,42 C24,48 16,32 25,15" fill="none" stroke="#161317" stroke-width="7" stroke-linecap="round" />
+                <path d="M50,42 C24,48 16,32 25,15" fill="none" stroke="#ffd93d" stroke-width="3.6" stroke-linecap="round" />
+                <polygon points="16,13 29,3 32,20" fill="#ffd93d" stroke="#161317" stroke-width="2.6" stroke-linejoin="round" />
               </svg>
-              <span class="qr-call-bubble" id="qr-bubble-text">📱 Clique ou scanne pour jouer !</span>
+              <button type="button" class="qr-call-bubble" id="page-hero-emulate-cta">📱 Clique ou scanne les 15 jeux !</button>
             </div>
 
             <div class="qr-mode-switch" role="group" aria-label="Choisir l'expérience à tester">
-              <button type="button" class="qr-mode-btn active" data-emulate="jeux" data-qr-src="img/qr-jeux.svg" data-qr-badge="🎮" data-qr-bubble="📱 Scannez pour tester les 15 jeux !" data-target="#catalogue-15-jeux">
+              <button type="button" class="qr-mode-btn active" data-emulate="jeux" data-qr-src="img/qr-jeux.svg" data-qr-badge="🎮" data-qr-bubble="📱 Clique ou scanne les 15 jeux !" data-target="#catalogue-15-jeux">
                 🎲 15 Jeux
               </button>
-              <button type="button" class="qr-mode-btn" data-emulate="pronostics" data-qr-src="img/qr-pronos.svg" data-qr-badge="🏆" data-qr-bubble="📱 Scannez pour tester un pronostic !" data-target="#pronostics-championnats">
+              <button type="button" class="qr-mode-btn" data-emulate="pronostics" data-qr-src="img/qr-pronos.svg" data-qr-badge="🏆" data-qr-bubble="📱 Clique ou scanne les Pronostics !" data-target="#pronostics-championnats">
                 🏆 Pronostics
               </button>
             </div>
-            <button type="button" class="annex-emulate-cta" id="page-hero-emulate-cta">
-              📱 Ouvrir l’émulation client en direct →
-            </button>
           </div>
         </div>
       </div>
@@ -405,35 +401,85 @@
     <!-- ==========================================================
          3 BIS. AVIS GOOGLE, INSTAGRAM & TIKTOK AUTOUR DU JEU
          ========================================================== -->
-    <section class="section section-narrow" id="avis-avant-apres" style="padding-top:2.8rem;padding-bottom:2.8rem;">
-      <div class="lc-jp-social-callout">
-        <div class="lc-jp-social-head">
-          <span class="lc-social-pill">⭐ AVIS GOOGLE · 📸 INSTAGRAM · 🎵 TIKTOK</span>
-          <h2>Avant &amp; après chaque partie : récoltez des avis Google et des abonnés sans risquer votre fiche.</h2>
+    <section class="section section-wide" id="avis-avant-apres" style="padding-top:2.8rem;padding-bottom:2.8rem;">
+      <div class="lc-jp-social-callout lc-jp-social-split">
+        <div class="lc-jp-social-left">
+          <div class="lc-jp-social-head">
+            <span class="lc-social-pill">AVANT &amp; APRÈS CHAQUE PARTIE</span>
+            <h2>Récoltez des avis Google et des abonnés sans risquer votre fiche.</h2>
+          </div>
+          <div class="lc-cartoon-logo-trio lc-cartoon-logo-trio--compact" aria-label="Google, Instagram et TikTok intégrés">
+            <span class="lc-sticker-badge is-google">
+              <img src="img/logo-google-cartoon.svg" alt="Google" width="30" height="30" class="lc-cartoon-logo" />
+              <span><b>Avis 5★</b><small>Google</small></span>
+            </span>
+            <span class="lc-sticker-badge is-instagram">
+              <img src="img/logo-instagram-cartoon.svg" alt="Instagram" width="30" height="30" class="lc-cartoon-logo" />
+              <span><b>Abonnés</b><small>Instagram</small></span>
+            </span>
+            <span class="lc-sticker-badge is-tiktok">
+              <img src="img/logo-tiktok-cartoon.svg" alt="TikTok" width="30" height="30" class="lc-cartoon-logo" />
+              <span><b>Communauté</b><small>TikTok</small></span>
+            </span>
+          </div>
+          <p class="lc-jp-social-lead">
+            Dans les réglages de votre jeu, activez d'un clic l'invitation sociale. Votre client découvre vos 3 tuiles claires (<b>Donnez votre avis sur Google</b>, <b>Suivez-nous sur Instagram</b>, <b>Suivez-nous sur TikTok</b>) juste avant de jouer — puis un second rappel doux juste après avoir découvert son gain, au moment précis où il sourit.
+          </p>
+          <div class="lc-jp-social-points">
+            <span>✓ Proposition libre (le jeu reste toujours ouvert)</span>
+            <span>✓ 100 % conforme aux règles Google, Meta &amp; TikTok</span>
+            <span>✓ Zéro risque de suppression d'avis ou de sanction</span>
+          </div>
         </div>
-        <p class="lc-jp-social-lead">
-          Dans les réglages de votre jeu, activez d'un clic l'invitation sociale. Votre client découvre vos 3 tuiles claires (<b>Donnez votre avis sur Google</b>, <b>Suivez-nous sur Instagram</b>, <b>Suivez-nous sur TikTok</b>) juste avant de jouer — puis un second rappel doux juste après avoir découvert son gain, au moment précis où il sourit.
-        </p>
-        <div class="lc-jp-social-points">
-          <span>✓ Proposition libre (le jeu reste toujours ouvert)</span>
-          <span>✓ 100 % conforme aux règles Google, Meta &amp; TikTok</span>
-          <span>✓ Zéro risque de suppression d'avis ou de sanction</span>
+
+        <div class="lc-jp-social-mini-stage" id="lc-jp-social-stage">
+          <div class="lc-jp-mini-top">
+            <strong>👆 Testez la réaction client en direct :</strong>
+            <span class="lc-jp-mini-mode-pill" id="lc-jp-mini-mode-pill">Avant &amp; après gain</span>
+          </div>
+          <div class="lc-social-burst-layer" id="lc-jp-burst-layer" aria-hidden="true"></div>
+          <div class="lc-jp-mini-tiles">
+            <button type="button" class="lc-invit-tile is-spotlight" data-jp-social="google">
+              <img src="img/logo-google-cartoon.svg" alt="Google" width="32" height="32" class="lc-cartoon-logo" />
+              <div class="lc-invit-tile-txt">
+                <strong>Laisser un avis 5★</strong>
+                <small>Sur Google</small>
+              </div>
+              <span class="lc-invit-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button type="button" class="lc-invit-tile" data-jp-social="instagram">
+              <img src="img/logo-instagram-cartoon.svg" alt="Instagram" width="32" height="32" class="lc-cartoon-logo" />
+              <div class="lc-invit-tile-txt">
+                <strong>Suivre le compte</strong>
+                <small>Sur Instagram</small>
+              </div>
+              <span class="lc-invit-arrow" aria-hidden="true">↗</span>
+            </button>
+            <button type="button" class="lc-invit-tile" data-jp-social="tiktok">
+              <img src="img/logo-tiktok-cartoon.svg" alt="TikTok" width="32" height="32" class="lc-cartoon-logo" />
+              <div class="lc-invit-tile-txt">
+                <strong>Suivre la page</strong>
+                <small>Sur TikTok</small>
+              </div>
+              <span class="lc-invit-arrow" aria-hidden="true">↗</span>
+            </button>
+          </div>
+          <div class="lc-jp-mini-feedback" id="lc-jp-social-feedback">
+            ✨ Cliquez sur Google, Instagram ou TikTok pour lancer l'animation !
+          </div>
         </div>
       </div>
     </section>
 
     <!-- Damier de transition -->
-    <div class="checker-strip" aria-hidden="true"></div>
+    <div class="damier-separator damier-bw" aria-hidden="true"></div>
 
     <!-- ==========================================================
-         4. PRONOSTICS : VRAIS EXEMPLES DE CHAMPIONNATS & ÉVÉNEMENTS
+         4. CALENDRIER SURPRISE : LE RENDEZ-VOUS QUOTIDIEN (FOND MENTHE)
          ========================================================== -->
-    
-    <!-- ==========================================================
-         4. CALENDRIER SURPRISE : LE RENDEZ-VOUS QUOTIDIEN
-         ========================================================== -->
-    <section class="clog-cards-section" id="calendrier-surprise">
+    <section class="calendrier-mint-section" id="calendrier-surprise">
       <div class="center">
+        <span class="section-universe-pill pill-mint-head">🗓️ MODULE CALENDRIER SURPRISE</span>
         <p class="section-script">comment rester dans l'esprit de vos clients chaque matin (sans les spammer)</p>
         <h2 class="section-title">LE CALENDRIER SURPRISE <mark class="pop-mark pop-mark-yellow">AU QUOTIDIEN</mark></h2>
         <p class="section-lead">
@@ -551,17 +597,22 @@
       </div>
     </section>
 
-    <!-- Damier de transition -->
-    <div class="checker-strip" aria-hidden="true"></div>
+    <!-- Damier jaune & noir de transition -->
+    <div class="damier-separator damier-yellow-black" aria-hidden="true"></div>
 
+    <!-- ==========================================================
+         4 BIS. PRONOSTICS : CHAMPIONNATS & ÉVÉNEMENTS (FOND BLEU CIEL STADE)
+         ========================================================== -->
     <section class="prono-showcase-section" id="pronostics-championnats">
-      <div class="center">
-        <p class="section-script">transformez chaque soir de match en rendez-vous incontournable chez vous</p>
-        <h2 class="section-title">LE MODULE <mark class="pop-mark pop-mark-yellow">PRONOSTICS</mark> EN ACTION</h2>
-        <p class="section-lead">
-          Pourquoi vos clients suivraient-ils les grands matchs chez eux ou chez le voisin ? Lancez votre ligue privée : ils déposent leurs scores avant le coup d'envoi, se chambrent autour du classement affiché sur votre TV, et reviennent semaine après semaine défendre leur podium !
-        </p>
-      </div>
+      <div class="prono-showcase-inner">
+        <div class="center">
+          <span class="section-universe-pill pill-sky-head">🏆 MODULE PRONOSTICS · LIGUES &amp; MATCHS</span>
+          <p class="section-script">transformez chaque soir de match en rendez-vous incontournable chez vous</p>
+          <h2 class="section-title">LE MODULE <mark class="pop-mark pop-mark-yellow">PRONOSTICS</mark> EN ACTION</h2>
+          <p class="section-lead">
+            Pourquoi vos clients suivraient-ils les grands matchs chez eux ou chez le voisin ? Lancez votre ligue privée : ils déposent leurs scores avant le coup d'envoi, se chambrent autour du classement affiché sur votre TV, et reviennent semaine après semaine défendre leur podium !
+          </p>
+        </div>
 
       <!-- Sélecteur de vrais championnats pour que le client se projette -->
       <div class="prono-champ-tabs" id="prono-champ-tabs" role="group" aria-label="Exemples de championnats et événements">
@@ -679,7 +730,11 @@
           </div>
         </div>
       </div>
+      </div>
     </section>
+
+    <!-- Damier de transition vers finale -->
+    <div class="damier-separator damier-bw" aria-hidden="true"></div>
 
     <!-- ==========================================================
          5. PASSERELLE VERS LE STUDIO DE CONFIGURATION & FIDÉLITÉ / JACKPOT
@@ -705,10 +760,12 @@
     <div class="footer-wrap">
       <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
       <nav aria-label="Liens rapides">
-        <a href="studio.html?module=roue">🛠️ Studio de Configuration</a>
-        <a href="index.html">← Retour à l'accueil</a>
+        <a href="modules.html">🧩 Les 12 Modules</a>
+        <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
         <a href="fidelite-communaute.html">Fidélité, Parrainage &amp; Jackpot</a>
         <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+        <a href="abonnements.html">💎 Abonnements</a>
+        <a href="studio.html?module=roue">🛠️ Studio de Configuration</a>
         <a href="/legal">Mentions légales</a>
         <a href="/privacy">Confidentialité</a>
         <a href="/terms">CGU</a>

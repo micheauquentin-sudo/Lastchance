@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" fill="none">
+  <rect x="6" y="7" width="44" height="44" rx="14" fill="#161317" />
+  <rect x="3" y="4" width="44" height="44" rx="14" fill="#FFFFFF" stroke="#161317" stroke-width="3" />
+  <path d="M9 11C13 7 24 7 32 8" stroke="#EAF3FF" stroke-width="2.5" stroke-linecap="round" />
+  <g stroke="#161317" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+    <!-- Rouge haut -->
+    <path d="M25.5 14C29.8 14 33.4 15.6 35.8 18.1L30.8 22.8C29.3 21.4 27.5 20.6 25.5 20.6C21.5 20.6 18.2 23.1 17 26.6L11 22C13.3 17.2 18.9 14 25.5 14Z" fill="#FF4757" />
+    <!-- Jaune gauche -->
+    <path d="M17 26.6C16.6 27.7 16.4 28.8 16.4 30C16.4 31.2 16.6 32.3 17 33.4L11 38C9.7 35.5 9 32.8 9 30C9 27.2 9.7 24.5 11 22L17 26.6Z" fill="#FFD93D" />
+    <!-- Vert bas -->
+    <path d="M25.5 39.4C28.8 39.4 31.4 38.3 33.2 36.4L38.3 40.9C35.4 43.9 31 46 25.5 46C18.9 46 13.3 42.8 11 38L17 33.4C18.2 36.9 21.5 39.4 25.5 39.4Z" fill="#2ED573" />
+    <!-- Bleu droite + barre horizontale du G -->
+    <path d="M40.7 27.2C40.9 28.1 41 29.1 41 30.2C41 35 39.4 38.6 36.7 41.1C36.6 41.2 36.5 41.3 36.4 41.4L31.4 36.8C32.7 35.6 33.6 34 34 32.1H25.5V26.2H40.3C40.5 26.5 40.6 26.8 40.7 27.2Z" fill="#4285F4" />
+  </g>
+  <!-- Étoile 5* cartoon en coin haut droit -->
+  <path d="M44.5 2.5L46.9 7.3L52.2 8.1L48.3 11.9L49.2 17.2L44.5 14.7L39.8 17.2L40.7 11.9L36.8 8.1L42.1 7.3L44.5 2.5Z" fill="#FFD93D" stroke="#161317" stroke-width="2.2" stroke-linejoin="round" />
+</svg>

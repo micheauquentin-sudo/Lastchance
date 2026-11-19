@@ -6,6 +6,7 @@
   <base href="/h-site-final-20k/" />
   <title>Vitrine &amp; Réservation par QR Code — Lastchance</title>
   <meta name="description" content="Affichez votre vitrine digitale, prenez vos rendez-vous sans commission et remplissez vos événements grâce à un simple QR code Lastchance." />
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700;800&family=Unbounded:wght@700;800;900&family=Caveat:wght@600;700&family=Manrope:wght@500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&display=swap" rel="stylesheet" />
@@ -90,41 +91,36 @@
           </div>
         </div>
 
-        <!-- Colonne Droite : Carte Objet 3D Chevalet Vitrine -->
+        <!-- Colonne Droite : QR Code Cartoon 3D Flottant unifié avec la page d'accueil -->
         <div class="hero-annex-right">
-          <div class="annex-device-card">
-            <div class="device-card-header">
-              <span class="device-tag">📱 SCAN TEST VITRINE</span>
-              <span class="device-live-dot" aria-hidden="true"></span>
-            </div>
-
-            <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-emulate="vitrine" data-target="#simulateur-live" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie vitrine client">
-              <img src="img/qr-vitrine.svg" alt="QR Code Vitrine & Réservation — Scannez pour tester" width="200" height="200" class="qr-bleed-img" id="page-hero-qr-img" />
+          <div class="qr-floating-unit qr-floating-unit--annex">
+            <button type="button" class="qr-cartoon-3d-block" id="page-hero-qr-btn" data-emulate="vitrine" data-target="#simulateur-live" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie vitrine client">
+              <span class="qr-live-sticker" aria-hidden="true"><i class="device-live-dot"></i> TEST LIVE</span>
+              <div class="qr-cartoon-inner">
+                <img src="img/qr-vitrine.svg" alt="QR Code Vitrine & Réservation — Scannez pour tester" width="232" height="232" class="qr-bleed-img" id="page-hero-qr-img" />
+              </div>
             </button>
 
             <div class="qr-call-footer">
-              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 64 52" aria-hidden="true">
-                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
-                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
-                <polygon points="12,28 4,14 20,8" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 60 56" aria-hidden="true">
+                <path d="M50,42 C24,48 16,32 25,15" fill="none" stroke="#161317" stroke-width="7" stroke-linecap="round" />
+                <path d="M50,42 C24,48 16,32 25,15" fill="none" stroke="#ffd93d" stroke-width="3.6" stroke-linecap="round" />
+                <polygon points="16,13 29,3 32,20" fill="#ffd93d" stroke="#161317" stroke-width="2.6" stroke-linejoin="round" />
               </svg>
-              <span class="qr-call-bubble" id="qr-bubble-text">📱 Clique ou scanne pour jouer !</span>
+              <button type="button" class="qr-call-bubble" id="page-hero-emulate-cta">📱 Clique ou scanne la Vitrine !</button>
             </div>
 
             <div class="qr-mode-switch" role="group" aria-label="Choisir l'expérience à tester">
-              <button type="button" class="qr-mode-btn active" data-emulate="vitrine" data-qr-src="img/qr-vitrine.svg" data-qr-badge="📖" data-qr-bubble="📱 Scannez pour tester la Vitrine !" data-target="#simulateur-live">
+              <button type="button" class="qr-mode-btn active" data-emulate="vitrine" data-qr-src="img/qr-vitrine.svg" data-qr-badge="📖" data-qr-bubble="📱 Clique ou scanne la Vitrine !" data-target="#simulateur-live">
                 📖 Carte &amp; Tarifs
               </button>
-              <button type="button" class="qr-mode-btn" data-emulate="rdv" data-qr-src="img/qr-rdv.svg" data-qr-badge="📅" data-qr-bubble="📱 Scannez pour tester les RDV !" data-target="#simulateur-live">
+              <button type="button" class="qr-mode-btn" data-emulate="rdv" data-qr-src="img/qr-rdv.svg" data-qr-badge="📅" data-qr-bubble="📱 Clique ou scanne les RDV !" data-target="#simulateur-live">
                 📅 Rendez-vous
               </button>
-              <button type="button" class="qr-mode-btn" data-emulate="moments" data-qr-src="img/qr-moments.svg" data-qr-badge="⚡" data-qr-bubble="📱 Scannez pour tester les Moments !" data-target="#simulateur-live">
+              <button type="button" class="qr-mode-btn" data-emulate="moments" data-qr-src="img/qr-moments.svg" data-qr-badge="⚡" data-qr-bubble="📱 Clique ou scanne les Moments !" data-target="#simulateur-live">
                 ⚡ Moments VIP
               </button>
             </div>
-            <button type="button" class="annex-emulate-cta" id="page-hero-emulate-cta">
-              📱 Ouvrir l’émulation client en direct →
-            </button>
           </div>
         </div>
       </div>
@@ -254,6 +250,12 @@
           <!-- Panneau 3 : Moments VIP -->
           <div class="vr-tab-panel" id="panel-moments">
             <div class="vr-moment-card" id="vr-moment-box"></div>
+          </div>
+
+          <div class="vr-phone-social-foot" aria-label="Liens avis et réseaux intégrés sur la Vitrine">
+            <span><img src="img/logo-google-cartoon.svg" alt="" width="15" height="15" class="lc-mini-svg-inline" /> Avis Google</span>
+            <span><img src="img/logo-instagram-cartoon.svg" alt="" width="15" height="15" class="lc-mini-svg-inline" /> Instagram</span>
+            <span><img src="img/logo-tiktok-cartoon.svg" alt="" width="15" height="15" class="lc-mini-svg-inline" /> TikTok</span>
           </div>
         </div>
       </div>
@@ -407,7 +409,7 @@
             <p>14 h 10, vous êtes en pleine coloration : la cliente réserve sa coupe sur votre créneau de jeudi sans vous interrompre au téléphone, l'ajoute à son agenda — à 0 % de commission — et clique sur vos liens Avis Google &amp; Instagram intégrés.</p>
           </div>
           <div class="clog-card-bottom">
-            <span class="clog-usage-tag">📅 Carte des soins + RDV 0 % + Réseaux</span>
+            <span class="clog-usage-tag lc-chip-logos">📅 Carte + RDV 0 % · <img src="img/logo-google-cartoon.svg" alt="Google" width="15" height="15" /><img src="img/logo-instagram-cartoon.svg" alt="Instagram" width="15" height="15" /><img src="img/logo-tiktok-cartoon.svg" alt="TikTok" width="15" height="15" /> Réseaux</span>
           </div>
         </article>
 
@@ -475,10 +477,12 @@
     <div class="footer-wrap">
       <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
       <nav aria-label="Navigation secondaire">
-        <a href="studio.html?module=vitrine">🛠️ Studio Vitrine</a>
-        <a href="index.html">← Accueil Lastchance</a>
+        <a href="modules.html">🧩 Les 12 Modules</a>
         <a href="jeux-pronostics.html">15 Jeux Instantanés &amp; Pronostics</a>
         <a href="fidelite-communaute.html">Fidélité, Parrainage &amp; Jackpot</a>
+        <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+        <a href="abonnements.html">💎 Abonnements</a>
+        <a href="studio.html?module=vitrine">🛠️ Studio Vitrine</a>
         <a href="/legal">Mentions légales</a>
         <a href="/privacy">Confidentialité</a>
         <a href="/terms">CGU</a>

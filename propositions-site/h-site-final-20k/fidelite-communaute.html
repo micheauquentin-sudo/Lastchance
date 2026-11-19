@@ -6,6 +6,7 @@
   <base href="/h-site-final-20k/" />
   <title>Passeport Fidélité, Parrainage &amp; Jackpot Collectif — Lastchance</title>
   <meta name="description" content="Faites revenir vos clients sans carte papier : Passeport Fidélité sur téléphone (écran d'accueil &amp; Google Wallet), Parrainage validé à la 1re visite et Jackpot Collectif." />
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700;800&family=Unbounded:wght@700;800;900&family=Caveat:wght@600;700&family=Manrope:wght@500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&display=swap" rel="stylesheet" />
@@ -90,41 +91,36 @@
           </div>
         </div>
 
-        <!-- Colonne Droite : Carte Objet 3D Passeport Wallet -->
+        <!-- Colonne Droite : QR Code Cartoon 3D Flottant unifié avec la page d'accueil -->
         <div class="hero-annex-right">
-          <div class="annex-device-card">
-            <div class="device-card-header">
-              <span class="device-tag">📱 SCAN TEST PASSEPORT</span>
-              <span class="device-live-dot" aria-hidden="true"></span>
-            </div>
-
-            <button type="button" class="annex-qr-frame" id="page-hero-qr-btn" data-emulate="passeport" data-target="#simulateur-trio" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie carte client">
-              <img src="img/qr-passeport.svg" alt="QR Code Passeport Fidélité — Scannez pour tester" width="200" height="200" class="qr-bleed-img" id="page-hero-qr-img" />
+          <div class="qr-floating-unit qr-floating-unit--annex">
+            <button type="button" class="qr-cartoon-3d-block" id="page-hero-qr-btn" data-emulate="passeport" data-target="#simulateur-trio" title="Scannez avec votre téléphone ou cliquez pour ouvrir la vraie carte client">
+              <span class="qr-live-sticker" aria-hidden="true"><i class="device-live-dot"></i> TEST LIVE</span>
+              <div class="qr-cartoon-inner">
+                <img src="img/qr-passeport.svg" alt="QR Code Passeport Fidélité — Scannez pour tester" width="232" height="232" class="qr-bleed-img" id="page-hero-qr-img" />
+              </div>
             </button>
 
             <div class="qr-call-footer">
-              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 64 52" aria-hidden="true">
-                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#161317" stroke-width="6.5" stroke-linecap="round" />
-                <path d="M42,44 Q50,16 16,16" fill="none" stroke="#ffd93d" stroke-width="3.5" stroke-linecap="round" />
-                <polygon points="12,28 4,14 20,8" fill="#ffd93d" stroke="#161317" stroke-width="2.5" stroke-linejoin="round" />
+              <svg class="qr-curved-arrow qr-arrow-up" viewBox="0 0 60 56" aria-hidden="true">
+                <path d="M50,42 C24,48 16,32 25,15" fill="none" stroke="#161317" stroke-width="7" stroke-linecap="round" />
+                <path d="M50,42 C24,48 16,32 25,15" fill="none" stroke="#ffd93d" stroke-width="3.6" stroke-linecap="round" />
+                <polygon points="16,13 29,3 32,20" fill="#ffd93d" stroke="#161317" stroke-width="2.6" stroke-linejoin="round" />
               </svg>
-              <span class="qr-call-bubble" id="qr-bubble-text">📱 Clique ou scanne pour jouer !</span>
+              <button type="button" class="qr-call-bubble" id="page-hero-emulate-cta">📱 Clique ou scanne le Passeport !</button>
             </div>
 
             <div class="qr-mode-switch" role="group" aria-label="Choisir l'expérience à tester">
-              <button type="button" class="qr-mode-btn active" data-emulate="passeport" data-qr-src="img/qr-passeport.svg" data-qr-badge="🎟️" data-qr-bubble="📱 Scannez pour tester le Passeport !" data-target="#simulateur-trio">
+              <button type="button" class="qr-mode-btn active" data-emulate="passeport" data-qr-src="img/qr-passeport.svg" data-qr-badge="🎟️" data-qr-bubble="📱 Clique ou scanne le Passeport !" data-target="#simulateur-trio">
                 🎟️ Passeport
               </button>
-              <button type="button" class="qr-mode-btn" data-emulate="jackpot" data-qr-src="img/qr-jackpot.svg" data-qr-badge="🎰" data-qr-bubble="📱 Scannez pour tester le Jackpot !" data-target="#simulateur-trio">
+              <button type="button" class="qr-mode-btn" data-emulate="jackpot" data-qr-src="img/qr-jackpot.svg" data-qr-badge="🎰" data-qr-bubble="📱 Clique ou scanne le Jackpot !" data-target="#simulateur-trio">
                 🎰 Jackpot
               </button>
-              <button type="button" class="qr-mode-btn" data-emulate="parrainage" data-qr-src="img/qr-parrainage.svg" data-qr-badge="🤝" data-qr-bubble="📱 Scannez pour tester le Parrainage !" data-target="#simulateur-trio">
+              <button type="button" class="qr-mode-btn" data-emulate="parrainage" data-qr-src="img/qr-parrainage.svg" data-qr-badge="🤝" data-qr-bubble="📱 Clique ou scanne le Parrainage !" data-target="#simulateur-trio">
                 🤝 Parrainage
               </button>
             </div>
-            <button type="button" class="annex-emulate-cta" id="page-hero-emulate-cta">
-              📱 Ouvrir l’émulation client en direct →
-            </button>
           </div>
         </div>
       </div>
@@ -144,9 +140,9 @@
 
       <!-- Flux Connecté en 3 Piliers Clairs -->
       <div class="fc-trio-flow-cards">
-        <article class="fc-trio-card reveal" style="border-top: 5px solid #b48500; background: linear-gradient(180deg, #FFF0BD 0%, #ffffff 85%);">
+        <article class="fc-trio-card fc-card-gold reveal">
           <div class="fc-card-topbar">
-            <span class="fc-step-pill" style="background:#ecd37a;color:#161317;">ÉTAPE 1 · FIDÉLISER</span>
+            <span class="fc-step-pill" style="background:#ffd93d;color:#161317;">ÉTAPE 1 · FIDÉLISER</span>
             <span class="fc-card-icon" aria-hidden="true">🎟️</span>
           </div>
           <h3>Passeport de Fidélité</h3>
@@ -166,7 +162,7 @@
           <span>➔</span>
         </div>
 
-        <article class="fc-trio-card reveal" style="border-top: 5px solid #6b21a8; background: linear-gradient(180deg, #CFBCFF 0%, #ffffff 85%);">
+        <article class="fc-trio-card fc-card-lilac reveal">
           <div class="fc-card-topbar">
             <span class="fc-step-pill" style="background:#7c3aed;color:#ffffff;">ÉTAPE 2 · DÉMULTIPLIER</span>
             <span class="fc-card-icon" aria-hidden="true">🤝</span>
@@ -188,7 +184,7 @@
           <span>➔</span>
         </div>
 
-        <article class="fc-trio-card reveal" style="border-top: 5px solid #059669; background: linear-gradient(180deg, #9EF0C7 0%, #ffffff 85%);">
+        <article class="fc-trio-card fc-card-mint reveal">
           <div class="fc-card-topbar">
             <span class="fc-step-pill" style="background:#059669;color:#ffffff;">ÉTAPE 3 · FÉDÉRER</span>
             <span class="fc-card-icon" aria-hidden="true">🎰</span>
@@ -208,21 +204,27 @@
       </div>
 
       <!-- 3 mini-histoires terrain + Rappel Avis Google / Réseaux en pied de Passeport -->
+      <p class="lc-fc-terrain-heading">✦ CONCRÈTEMENT SUR LE TERRAIN</p>
       <div class="lc-fc-terrain-strip">
-        <article class="lc-fc-terrain-item">
+        <article class="lc-fc-terrain-item is-gold">
           <span class="lc-fc-terrain-kicker">🥐 BOULANGERIE · COMPTOIR</span>
           <h4>La fin des cartes papier oubliées</h4>
           <p>Au lieu de chercher un tampon dans le tiroir à 12 h 30, le client garde son Passeport sur l'écran d'accueil et voit « Plus que 2 visites avant votre pâtisserie offerte ! ».</p>
         </article>
-        <article class="lc-fc-terrain-item">
+        <article class="lc-fc-terrain-item is-lilac">
           <span class="lc-fc-terrain-kicker">🍕 PIZZERIA · UBER EATS &amp; DELIVEROO</span>
           <h4>Transformer la livraison en retour direct</h4>
           <p>Glissez votre QR Passeport ou Ticket d'Or dans le sac : à l'ouverture chez lui, le client rejoint votre club maison et passe sa commande suivante en direct.</p>
         </article>
-        <article class="lc-fc-terrain-item">
+        <article class="lc-fc-terrain-item is-mint">
           <span class="lc-fc-terrain-kicker">💇‍♀️ INSTITUT · RÉSEAUX &amp; AVIS</span>
           <h4>Avis Google, Instagram &amp; TikTok intégrés</h4>
-          <p>Chaque Passeport affiche au pied de la carte vos liens ⭐ Avis Google, 📸 Instagram et 🎵 TikTok en plus de l'heure locale de votre établissement.</p>
+          <p>Chaque Passeport affiche au pied de la carte l'heure locale de votre établissement et vos 3 liens cliquables :</p>
+          <div class="lc-fc-terrain-logos">
+            <span class="lc-social-inline-pill"><img src="img/logo-google-cartoon.svg" alt="" width="18" height="18" class="lc-cartoon-logo lc-cartoon-logo--sm" /> Avis Google</span>
+            <span class="lc-social-inline-pill"><img src="img/logo-instagram-cartoon.svg" alt="" width="18" height="18" class="lc-cartoon-logo lc-cartoon-logo--sm" /> Instagram</span>
+            <span class="lc-social-inline-pill"><img src="img/logo-tiktok-cartoon.svg" alt="" width="18" height="18" class="lc-cartoon-logo lc-cartoon-logo--sm" /> TikTok</span>
+          </div>
         </article>
       </div>
     </section>
@@ -595,8 +597,9 @@
                     <p class="fc-src-clock" id="fc-commerce-clock">🕒 Il est 12:45:10 chez Bistrot L'Étoile</p>
                     <div class="fc-src-commerce-links">
                       <span>📖 La carte</span>
-                      <span>⭐ Avis Google</span>
-                      <span>📸 Instagram</span>
+                      <span><img src="img/logo-google-cartoon.svg" alt="" width="14" height="14" class="lc-mini-svg-inline" /> Avis Google</span>
+                      <span><img src="img/logo-instagram-cartoon.svg" alt="" width="14" height="14" class="lc-mini-svg-inline" /> Instagram</span>
+                      <span><img src="img/logo-tiktok-cartoon.svg" alt="" width="14" height="14" class="lc-mini-svg-inline" /> TikTok</span>
                     </div>
                   </div>
 
@@ -637,7 +640,7 @@
     </section>
 
     <!-- Damier de transition -->
-    <div class="checker-strip" aria-hidden="true"></div>
+    <div class="damier-separator damier-bw" aria-hidden="true"></div>
 
 
 
@@ -665,10 +668,12 @@
     <div class="footer-wrap">
       <a class="brand-logo" href="index.html">LAST<span class="logo-club">chance</span></a>
       <nav aria-label="Liens rapides">
-        <a href="studio.html?module=fidelite">🛠️ Studio Fidélité</a>
-        <a href="index.html">← Retour à l'accueil</a>
-        <a href="jeux-pronostics.html">15 Jeux Instantanés &amp; Pronostics</a>
+        <a href="modules.html">🧩 Les 12 Modules</a>
+        <a href="jeux-pronostics.html">15 Jeux &amp; Pronostics</a>
+        <a href="fidelite-communaute.html">Fidélité, Parrainage &amp; Jackpot</a>
         <a href="vitrine-reservation.html">Vitrine &amp; Réservation</a>
+        <a href="abonnements.html">💎 Abonnements</a>
+        <a href="studio.html?module=fidelite">🛠️ Studio Fidélité</a>
         <a href="/legal">Mentions légales</a>
         <a href="/privacy">Confidentialité</a>
         <a href="/terms">CGU</a>

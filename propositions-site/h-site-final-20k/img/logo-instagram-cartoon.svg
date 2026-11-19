@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" fill="none">
+  <defs>
+    <linearGradient id="igPopGrad" x1="6" y1="48" x2="48" y2="6" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFD93D" />
+      <stop offset="52%" stop-color="#FF4FA3" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+  <rect x="6" y="7" width="44" height="44" rx="14" fill="#161317" />
+  <rect x="3" y="4" width="44" height="44" rx="14" fill="url(#igPopGrad)" stroke="#161317" stroke-width="3" />
+  <path d="M9 11C13 7 23 7 31 8" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="2.4" stroke-linecap="round" />
+  <!-- Boîtier photo cartoon -->
+  <rect x="11.5" y="12.5" width="27" height="27" rx="8.5" fill="#FFFFFF" fill-opacity="0.18" stroke="#161317" stroke-width="3.2" />
+  <rect x="13" y="14" width="24" height="24" rx="7" stroke="#FFFFFF" stroke-width="2.6" />
+  <!-- Objectif central -->
+  <circle cx="25" cy="26" r="6.8" fill="#161317" />
+  <circle cx="25" cy="26" r="4.8" fill="url(#igPopGrad)" stroke="#FFFFFF" stroke-width="2.2" />
+  <circle cx="23.2" cy="24.2" r="1.5" fill="#FFFFFF" />
+  <!-- Flash cartoon -->
+  <circle cx="33.5" cy="17.8" r="2.6" fill="#FFD93D" stroke="#161317" stroke-width="1.6" />
+</svg>
