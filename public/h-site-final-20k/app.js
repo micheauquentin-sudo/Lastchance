@@ -637,7 +637,10 @@
     const FORMULE_MODULES = {
       core: [
         { emoji: "🎡", name: "Jeux instantanés (15 jeux)" },
-        { emoji: "⭐", name: "Invitation Avis Google, Insta & TikTok" },
+        {
+          emojiHtml: `<span class="plan-social-mini-logos" aria-hidden="true"><img src="img/logo-google-cartoon.svg" alt="" width="15" height="15" /><img src="img/logo-instagram-cartoon.svg" alt="" width="15" height="15" /><img src="img/logo-tiktok-cartoon.svg" alt="" width="15" height="15" /></span>`,
+          name: "Invitation Avis Google, Insta & TikTok",
+        },
         { emoji: "🪞", name: "Duo Miroir & 👥 Portrait" },
         { emoji: "🎟️", name: "Ticket d’Or & 🗝️ Missions" },
         { emoji: "📧", name: "Scans illimités & 4 emails auto" },
@@ -716,7 +719,7 @@
           <ul class="plan-modules-list" style="list-style:none;padding:0;margin:0 0 0.6rem;display:grid;gap:0.35rem;">
             ${(FORMULE_MODULES[f.id] || []).map((m) => `
               <li style="display:flex;align-items:center;gap:0.45rem;font-size:0.83rem;font-weight:700;color:var(--ink);">
-                <span aria-hidden="true" style="font-size:1.05rem;flex-shrink:0;">${m.emoji}</span>
+                ${m.emojiHtml || `<span aria-hidden="true" style="font-size:1.05rem;flex-shrink:0;">${m.emoji}</span>`}
                 <span>${m.name}</span>
               </li>
             `).join("")}
@@ -3794,6 +3797,9 @@
     const MODULES_CATALOG_12 = [
       {
         id: "jeux-instantanes",
+        accent: "#ff4fa3",
+        accentSoft: "#ffe4f2",
+        showSocialLogos: true,
         emoji: "🎡",
         title: "Jeux instantanés",
         surtitre: "MODULE 01 · DÉCLIC AU COMPTOIR, AVIS GOOGLE & RETOUR EN CAISSE",
@@ -3832,6 +3838,9 @@
       },
       {
         id: "passeport-fidelite",
+        accent: "#5de4b3",
+        accentSoft: "#e2fbf0",
+        showSocialLogos: true,
         emoji: "📔",
         title: "Passeport fidélité",
         surtitre: "MODULE 02 · RÉTENTION & BOUCHE-À-OREILLE",
@@ -3870,6 +3879,8 @@
       },
       {
         id: "calendrier",
+        accent: "#ffd93d",
+        accentSoft: "#fff4cc",
         emoji: "🗓️",
         title: "Calendrier",
         surtitre: "MODULE 03 · RENDEZ-VOUS QUOTIDIEN",
@@ -3908,6 +3919,8 @@
       },
       {
         id: "evenements-live",
+        accent: "#c4a3ff",
+        accentSoft: "#f1e9ff",
         emoji: "🎤",
         title: "Événements live",
         surtitre: "MODULE 04 · SOIRÉES & ÉCRAN GÉANT",
@@ -3946,6 +3959,8 @@
       },
       {
         id: "pronostics",
+        accent: "#5eb0ff",
+        accentSoft: "#e2f1ff",
         emoji: "🏆",
         title: "Pronostics",
         surtitre: "MODULE 05 · SAISONS SPORTIVES & CULTURELLES",
@@ -3984,6 +3999,8 @@
       },
       {
         id: "jackpot-collectif",
+        accent: "#ff9f43",
+        accentSoft: "#fff0dd",
         emoji: "🎰",
         title: "Jackpot collectif",
         surtitre: "MODULE 06 · OBJECTIF COMMUNAUTAIRE",
@@ -4022,6 +4039,8 @@
       },
       {
         id: "quiz",
+        accent: "#84c4ff",
+        accentSoft: "#e6f3ff",
         emoji: "❓",
         title: "Quiz",
         surtitre: "MODULE 07 · SAVOIR-FAIRE & ATTENTE ENCHANTÉE",
@@ -4060,6 +4079,8 @@
       },
       {
         id: "chasse-au-qr",
+        accent: "#5de4b3",
+        accentSoft: "#e2fbf0",
         emoji: "🗺️",
         title: "Chasse au QR",
         surtitre: "MODULE 08 · PARCOURS PHYSIQUE MULTI-ÉTAPES",
@@ -4098,6 +4119,8 @@
       },
       {
         id: "duo-miroir",
+        accent: "#ff7eb6",
+        accentSoft: "#ffe8f3",
         emoji: "🪞",
         title: "Duo Miroir",
         surtitre: "MODULE 09 · BRISE-GLACE À 2 (0 € DE LOT)",
@@ -4136,6 +4159,8 @@
       },
       {
         id: "portrait-de-la-bande",
+        accent: "#c4a3ff",
+        accentSoft: "#f1e9ff",
         emoji: "👥",
         title: "Portrait de la Bande",
         surtitre: "MODULE 10 · GRANDES TABLÉES (2 À 12 JOUEURS)",
@@ -4174,6 +4199,8 @@
       },
       {
         id: "ticket-dor",
+        accent: "#ffd93d",
+        accentSoft: "#fff4cc",
         emoji: "🎟️",
         title: "Ticket d’Or",
         surtitre: "MODULE 11 · RÉCUPÉRER VOS CLIENTS LIVRAISON & COMPTOIR",
@@ -4212,6 +4239,8 @@
       },
       {
         id: "missions-coffres",
+        accent: "#65e6b5",
+        accentSoft: "#e4fbf2",
         emoji: "🗝️",
         title: "Missions & coffres",
         surtitre: "MODULE 12 · PROGRESSION & QUÊTES AUTOMATIQUES",
@@ -4307,6 +4336,14 @@
       const mod = getModById(modId);
       currentModId = mod.id;
       motionStepIdx = 0;
+
+      modulesShowcaseEl.style.setProperty("--mod-accent", mod.accent || "#ffd93d");
+      modulesShowcaseEl.style.setProperty("--mod-accent-soft", mod.accentSoft || "#fff4cc");
+
+      const socialLogosBar = $("#mod-social-logos", modulesShowcaseEl);
+      if (socialLogosBar) {
+        socialLogosBar.hidden = !mod.showSocialLogos;
+      }
 
       navButtons.forEach((b) => b.classList.toggle("active", b.dataset.moduleId === mod.id));
       if (mobileGrid) {
@@ -4468,5 +4505,163 @@
     } catch {
       renderModulePage("jeux-instantanes", false);
     }
+  }
+
+  /* ── 15. ANIMATION LUDIQUE & RÉACTIONS CARTOON AVIS GOOGLE / INSTAGRAM / TIKTOK ── */
+  const SOCIAL_REACTIONS = {
+    google: {
+      particles: ["⭐", "★", "✨", "💛"],
+      msg: "⭐ +1 Avis Google 5★ déposé en 1 tap !",
+      jpMsg: "⭐ +1 Avis Google 5★ — déclenché juste au bon moment !",
+    },
+    instagram: {
+      particles: ["❤️", "📸", "✨", "💜"],
+      msg: "📸 +1 Nouvel abonné Instagram conquis !",
+      jpMsg: "📸 +1 Abonné Instagram conquis autour de votre jeu !",
+    },
+    tiktok: {
+      particles: ["🎵", "🔥", "⚡", "✨"],
+      msg: "🎵 +1 Nouveau follower TikTok engagé !",
+      jpMsg: "🎵 +1 Follower TikTok embarqué dans votre communauté !",
+    },
+  };
+
+  const spawnSocialBurst = (layer, type) => {
+    if (!layer) return;
+    const cfg = SOCIAL_REACTIONS[type] || SOCIAL_REACTIONS.google;
+    for (let i = 0; i < 8; i++) {
+      const p = document.createElement("span");
+      p.className = "lc-social-burst-particle";
+      p.textContent = cfg.particles[i % cfg.particles.length];
+      p.style.left = `${14 + Math.random() * 72}%`;
+      p.style.top = `${36 + Math.random() * 34}%`;
+      p.style.setProperty("--bx", `${(Math.random() - 0.5) * 90}px`);
+      p.style.setProperty("--by", `${-48 - Math.random() * 64}px`);
+      p.style.setProperty("--br", `${(Math.random() - 0.5) * 44}deg`);
+      p.style.animationDelay = `${i * 0.04}s`;
+      layer.appendChild(p);
+      setTimeout(() => p.remove(), 950);
+    }
+  };
+
+  const socialStage = $("#lc-social-stage");
+  if (socialStage) {
+    const phaseBtns = $$("[data-social-phase]", socialStage);
+    const phaseBefore = $("#lc-social-phase-before", socialStage);
+    const phaseAfter = $("#lc-social-phase-after", socialStage);
+    const pauseBtn = $("#lc-social-pause-btn", socialStage);
+    const continueBtn = $("#lc-social-continue-btn", socialStage);
+    const burstLayer = $("#lc-social-burst-layer", socialStage);
+    const statusPill = $("#lc-social-status-pill", socialStage);
+    const counts = { google: 128, instagram: 142, tiktok: 98 };
+    let currentPhase = "before";
+    let isPlaying = true;
+    let autoStep = 0;
+    let socialTimer = null;
+
+    const setSocialPhase = (phase) => {
+      currentPhase = phase === "after" ? "after" : "before";
+      phaseBtns.forEach((b) => b.classList.toggle("is-active", b.dataset.socialPhase === currentPhase));
+      if (phaseBefore) phaseBefore.classList.toggle("is-active", currentPhase === "before");
+      if (phaseAfter) phaseAfter.classList.toggle("is-active", currentPhase === "after");
+    };
+
+    const triggerSocialReaction = (type, increment = true) => {
+      const key = SOCIAL_REACTIONS[type] ? type : "google";
+      const cfg = SOCIAL_REACTIONS[key];
+
+      $$("[data-social-action]", socialStage).forEach((elItem) => {
+        elItem.classList.toggle("is-spotlight", elItem.dataset.socialAction === key);
+      });
+
+      if (increment) {
+        counts[key] += 1;
+        const countEl = $(`#lc-count-${key}`, socialStage);
+        if (countEl) countEl.textContent = String(counts[key]);
+        const counterPill = $(`.lc-counter-pill[data-counter="${key}"]`, socialStage);
+        if (counterPill) {
+          counterPill.classList.remove("is-bumped");
+          void counterPill.offsetWidth;
+          counterPill.classList.add("is-bumped");
+        }
+      }
+
+      if (statusPill) statusPill.textContent = cfg.msg;
+      spawnSocialBurst(burstLayer, key);
+    };
+
+    $$("[data-social-action]", socialStage).forEach((btn) => {
+      btn.addEventListener("click", () => {
+        triggerSocialReaction(btn.dataset.socialAction, true);
+      });
+    });
+
+    phaseBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setSocialPhase(btn.dataset.socialPhase);
+      });
+    });
+
+    if (continueBtn) {
+      continueBtn.addEventListener("click", () => {
+        setSocialPhase("after");
+        if (statusPill) statusPill.textContent = "🎁 Partie gagnée ! Rappel doux affiché au meilleur moment.";
+      });
+    }
+
+    const startSocialAutoLoop = () => {
+      if (socialTimer) clearInterval(socialTimer);
+      if (!isPlaying) return;
+      const sequence = [
+        { phase: "before", action: "google" },
+        { phase: "before", action: "instagram" },
+        { phase: "after", action: "tiktok" },
+        { phase: "after", action: "google" },
+      ];
+      socialTimer = setInterval(() => {
+        autoStep = (autoStep + 1) % sequence.length;
+        const item = sequence[autoStep];
+        setSocialPhase(item.phase);
+        triggerSocialReaction(item.action, false);
+      }, 3400);
+    };
+
+    if (pauseBtn) {
+      pauseBtn.addEventListener("click", () => {
+        isPlaying = !isPlaying;
+        pauseBtn.textContent = isPlaying ? "⏸️" : "▶️";
+        pauseBtn.setAttribute("aria-label", isPlaying ? "Mettre en pause l'animation réseaux" : "Relancer l'animation réseaux");
+        startSocialAutoLoop();
+      });
+    }
+
+    startSocialAutoLoop();
+  }
+
+  const jpSocialStage = $("#lc-jp-social-stage");
+  if (jpSocialStage) {
+    const jpBurst = $("#lc-jp-burst-layer", jpSocialStage);
+    const jpFeedback = $("#lc-jp-social-feedback", jpSocialStage);
+    const jpModePill = $("#lc-jp-mini-mode-pill", jpSocialStage);
+    const jpModes = ["Avant le jeu", "Après le gain"];
+    let jpStep = 0;
+
+    $$("[data-jp-social]", jpSocialStage).forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.jpSocial;
+        const cfg = SOCIAL_REACTIONS[key] || SOCIAL_REACTIONS.google;
+        $$("[data-jp-social]", jpSocialStage).forEach((b) => b.classList.toggle("is-spotlight", b === btn));
+        if (jpFeedback) jpFeedback.textContent = cfg.jpMsg;
+        spawnSocialBurst(jpBurst, key);
+      });
+    });
+
+    setInterval(() => {
+      jpStep = (jpStep + 1) % 3;
+      const keys = ["google", "instagram", "tiktok"];
+      const activeKey = keys[jpStep];
+      $$("[data-jp-social]", jpSocialStage).forEach((b) => b.classList.toggle("is-spotlight", b.dataset.jpSocial === activeKey));
+      if (jpModePill) jpModePill.textContent = jpModes[jpStep % 2];
+    }, 3200);
   }
 })();
