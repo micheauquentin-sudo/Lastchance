@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" fill="none">
+  <defs>
+    <linearGradient id="taPopGrad" x1="6" y1="6" x2="46" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4AEBA8" />
+      <stop offset="100%" stop-color="#00AF87" />
+    </linearGradient>
+  </defs>
+  <rect x="6" y="7" width="44" height="44" rx="14" fill="#161317" />
+  <rect x="3" y="4" width="44" height="44" rx="14" fill="url(#taPopGrad)" stroke="#161317" stroke-width="3" />
+  <path d="M9 11C13 7 23 7 31 8" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="2.4" stroke-linecap="round" />
+  <!-- Arc sourcils / oreilles hibou cartoon -->
+  <path d="M12.5 18.8C16.8 15.8 20.6 16.3 25 19.3C29.4 16.3 33.2 15.8 37.5 18.8" stroke="#161317" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M10.8 17.2L15 19.6M39.2 17.2L35 19.6" stroke="#161317" stroke-width="2.8" stroke-linecap="round" />
+  <!-- Grands yeux hibou -->
+  <circle cx="17.5" cy="28" r="7.4" fill="#FFFFFF" stroke="#161317" stroke-width="2.5" />
+  <circle cx="32.5" cy="28" r="7.4" fill="#FFFFFF" stroke="#161317" stroke-width="2.5" />
+  <circle cx="18.2" cy="28" r="3.4" fill="#161317" />
+  <circle cx="31.8" cy="28" r="3.4" fill="#161317" />
+  <circle cx="16.9" cy="26.5" r="1.2" fill="#FFFFFF" />
+  <circle cx="30.5" cy="26.5" r="1.2" fill="#FFFFFF" />
+  <!-- Bec doré -->
+  <path d="M22.2 33.5H27.8L25 39.2L22.2 33.5Z" fill="#FFD93D" stroke="#161317" stroke-width="2" stroke-linejoin="round" />
+</svg>
