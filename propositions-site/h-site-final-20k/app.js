@@ -638,8 +638,8 @@
       core: [
         { emoji: "🎡", name: "Jeux instantanés (15 jeux)" },
         {
-          emojiHtml: `<span class="plan-social-mini-logos" aria-hidden="true"><img src="img/logo-google-cartoon.svg" alt="" width="15" height="15" /><img src="img/logo-instagram-cartoon.svg" alt="" width="15" height="15" /><img src="img/logo-tiktok-cartoon.svg" alt="" width="15" height="15" /></span>`,
-          name: "Invitation Avis Google, Insta & TikTok",
+          emojiHtml: `<span class="plan-social-mini-logos" aria-hidden="true"><img src="img/logo-google-cartoon.svg" alt="" width="14" height="14" /><img src="img/logo-tripadvisor-cartoon.svg" alt="" width="14" height="14" /><img src="img/logo-instagram-cartoon.svg" alt="" width="14" height="14" /><img src="img/logo-facebook-cartoon.svg" alt="" width="14" height="14" /><img src="img/logo-tiktok-cartoon.svg" alt="" width="14" height="14" /></span>`,
+          name: "Avis Google, Tripadvisor & Réseaux",
         },
         { emoji: "🪞", name: "Duo Miroir & 👥 Portrait" },
         { emoji: "🎟️", name: "Ticket d’Or & 🗝️ Missions" },
@@ -2308,31 +2308,139 @@
     }
   }
 
-  /* ── 8B. FILTRAGE THÉMATIQUE DE LA FAQ (Kermesse Hub) ── */
-  const faqFilterPills = $$(".faq-filter-pill");
-  const faqItems = $$(".faq-item-pop");
-  if (faqFilterPills.length && faqItems.length) {
-    faqFilterPills.forEach((pill) => {
+  /* ── 8B. HUB FAQ ANIMÉ 2 COLONNES + FILTRES + TOUT DÉPLIER (Kermesse Hub) ── */
+  $$(".lc-faq-hub").forEach((hub) => {
+    const filterPills = $$(".faq-filter-pill", hub);
+    const items = $$(".faq-item-pop", hub);
+    const toggleAllBtn = $("[data-faq-toggle-all]", hub);
+    if (!items.length) return;
+
+    const getVisibleItems = () => items.filter((item) => !item.classList.contains("is-hidden"));
+
+    const setItemOpen = (item, open) => {
+      item.classList.toggle("is-open", open);
+      const btn = $(".faq-trigger", item);
+      if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+
+    const syncToggleAllBtn = () => {
+      if (!toggleAllBtn) return;
+      const visible = getVisibleItems();
+      const allOpen = visible.length > 0 && visible.every((item) => item.classList.contains("is-open"));
+      toggleAllBtn.setAttribute("aria-pressed", allOpen ? "true" : "false");
+      toggleAllBtn.textContent = allOpen ? "📁 Tout replier" : "📂 Tout déplier";
+    };
+
+    const syncGridSpan = () => {
+      const visible = getVisibleItems();
+      items.forEach((item) => item.classList.remove("is-span-full"));
+      if (visible.length % 2 === 1 && visible[0]) {
+        visible[0].classList.add("is-span-full");
+      }
+    };
+
+    items.forEach((item) => {
+      const trigger = $(".faq-trigger", item);
+      if (!trigger) return;
+      trigger.addEventListener("click", () => {
+        setItemOpen(item, !item.classList.contains("is-open"));
+        syncToggleAllBtn();
+      });
+    });
+
+    filterPills.forEach((pill) => {
       pill.addEventListener("click", () => {
-        const cat = pill.dataset.faqCat;
-        faqFilterPills.forEach((p) => {
+        const cat = pill.dataset.faqCat || "all";
+        filterPills.forEach((p) => {
           const isActive = p === pill;
           p.classList.toggle("active", isActive);
           p.setAttribute("aria-pressed", isActive ? "true" : "false");
         });
 
-        let firstOpened = false;
-        faqItems.forEach((item) => {
-          const itemCat = item.dataset.faqCat;
-          const match = cat === "all" || itemCat === cat;
+        let visibleIdx = 0;
+        items.forEach((item) => {
+          const match = cat === "all" || item.dataset.faqCat === cat;
           item.classList.toggle("is-hidden", !match);
-          if (match && !firstOpened) {
-            item.setAttribute("open", "");
-            firstOpened = true;
+          item.classList.remove("is-entering");
+          if (match) {
+            item.style.setProperty("--faq-i", String(visibleIdx));
+            setItemOpen(item, visibleIdx === 0);
+            visibleIdx += 1;
           } else {
-            item.removeAttribute("open");
+            setItemOpen(item, false);
           }
         });
+
+        syncGridSpan();
+        syncToggleAllBtn();
+        requestAnimationFrame(() => {
+          getVisibleItems().forEach((item) => item.classList.add("is-entering"));
+        });
+      });
+    });
+
+    if (toggleAllBtn) {
+      toggleAllBtn.addEventListener("click", () => {
+        const visible = getVisibleItems();
+        const shouldOpenAll = !visible.every((item) => item.classList.contains("is-open"));
+        visible.forEach((item) => setItemOpen(item, shouldOpenAll));
+        syncToggleAllBtn();
+      });
+    }
+
+    syncGridSpan();
+    syncToggleAllBtn();
+  });
+
+  /* ── 8C. SÉLECTEUR MÉTIER INTERACTIF (#cas-concrets) ── */
+  const scenariosSection = $("#cas-concrets");
+  if (scenariosSection) {
+    const scTabs = $$("[data-sc-tab]", scenariosSection);
+    const scPanels = $$("[data-sc-panel]", scenariosSection);
+    const scNavBtns = $$("[data-sc-nav]", scenariosSection);
+    const scKeys = scTabs.map((t) => t.dataset.scTab).filter(Boolean);
+
+    const activateScenario = (key) => {
+      if (!key) return;
+      scTabs.forEach((t) => {
+        const active = t.dataset.scTab === key;
+        t.classList.toggle("is-active", active);
+        t.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      scPanels.forEach((p) => {
+        const active = p.dataset.scPanel === key;
+        p.classList.toggle("is-active", active);
+        if (active) {
+          p.style.animation = "none";
+          void p.offsetWidth;
+          p.style.animation = "";
+        }
+      });
+    };
+
+    scTabs.forEach((tab) => {
+      tab.addEventListener("click", () => activateScenario(tab.dataset.scTab));
+      tab.addEventListener("keydown", (ev) => {
+        const idx = scKeys.indexOf(tab.dataset.scTab);
+        if (ev.key === "ArrowRight") {
+          ev.preventDefault();
+          const next = scTabs[(idx + 1) % scTabs.length];
+          if (next) { activateScenario(next.dataset.scTab); next.focus(); }
+        } else if (ev.key === "ArrowLeft") {
+          ev.preventDefault();
+          const prev = scTabs[(idx - 1 + scTabs.length) % scTabs.length];
+          if (prev) { activateScenario(prev.dataset.scTab); prev.focus(); }
+        }
+      });
+    });
+
+    scNavBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const currentKey = $(".lc-sc-tab-btn.is-active", scenariosSection)?.dataset.scTab || scKeys[0];
+        const idx = Math.max(0, scKeys.indexOf(currentKey));
+        const delta = btn.dataset.scNav === "prev" ? -1 : 1;
+        const targetKey = scKeys[(idx + delta + scKeys.length) % scKeys.length];
+        activateScenario(targetKey);
       });
     });
   }
@@ -3802,13 +3910,13 @@
         showSocialLogos: true,
         emoji: "🎡",
         title: "Jeux instantanés",
-        surtitre: "MODULE 01 · DÉCLIC AU COMPTOIR, AVIS GOOGLE & RETOUR EN CAISSE",
-        subtitle: "Un simple « -10 % » ne fait vibrer personne. 15 mini-jeux (hasard ou adresse) qui déclenchent un vrai sourire en 15 secondes, proposent l’avis Google / Instagram / TikTok au bon moment et créent une raison joyeuse de revenir.",
+        surtitre: "MODULE 01 · DÉCLIC AU COMPTOIR, AVIS & RETOUR EN CAISSE",
+        subtitle: "Un simple « -10 % » ne fait vibrer personne. 15 mini-jeux (hasard ou adresse) qui déclenchent un vrai sourire en 15 secondes, proposent l’avis Google / Tripadvisor ou vos réseaux (Instagram, Facebook, TikTok) et créent une raison joyeuse de revenir.",
         offerBadge: "✓ Inclus dès Coup d’envoi (29 €/mois)",
-        pitchLead: "Samedi matin, un client attend son tour au comptoir ou paie son addition. En scannant votre QR, une carte discrète lui propose d’abord de vous laisser un avis Google ou de vous suivre sur Instagram / TikTok — avant même de lancer sa roue ou d’ouvrir son coffre (toujours libre d’accès). Une douceur ou un café à quelques centimes déclenche l’émotion de la surprise et ancre votre adresse.",
+        pitchLead: "Samedi matin, un client attend son tour au comptoir ou paie son addition. En scannant votre QR, une carte discrète lui propose d’abord de vous laisser un avis Google / Tripadvisor ou de vous suivre sur Instagram, Facebook ou TikTok — avant même de lancer sa roue ou d’ouvrir son coffre (toujours libre d’accès). Une douceur ou un café à quelques centimes déclenche l’émotion de la surprise et ancre votre adresse.",
         kpis: [
           { val: "15 mécaniques", lbl: "9 tirages hasard + 6 défis d’adresse" },
-          { val: "Avis & Réseaux", lbl: "Invitation Google, Insta & TikTok avant/après jeu" },
+          { val: "Avis & Réseaux", lbl: "Google, Tripadvisor, Insta, FB & TikTok" },
           { val: "Budget protégé", lbl: "Stock, quotas & probabilités réglés" },
         ],
         emulateMode: "jeux",
@@ -3817,21 +3925,21 @@
         detailLabel: "📖 Explorer les 15 jeux",
         steps: [
           { t: "1 · Posez votre QR partout", d: "En vitrine, sur le comptoir, sur table ou imprimé dans notre éditeur d’affiche A4 intégré." },
-          { t: "2 · Invitation avis + 15 s d’émotion", d: "Un écran optionnel propose Google, Instagram ou TikTok sans bloquer, puis place au jeu (roue, coffre, jauge…)." },
+          { t: "2 · Invitation avis & réseaux + 15 s d’émotion", d: "Un écran optionnel propose Google, Tripadvisor, Instagram, Facebook ou TikTok sans bloquer, puis place au jeu." },
           { t: "3 · Validation en 1 clic en caisse", d: "Le code unique est validé sur votre écran Caisse Lastchance — zéro fraude, zéro matériel." },
         ],
         psyLever: "Récompense variable, réciprocité & temps d’attente inversé",
         psyText: "Trois minutes d’attente semblent longues quand on ne fait rien ; avec une roue ou un défi, elles passent sans friction. En recevant une attention gratuite avant même d’avoir donné son avis ou de revenir, le client ressent naturellement l’envie de rendre la pareille.",
         cases: [
-          { biz: "☕ Boulangerie · Samedi 10 h 15", setup: "Posez le chevalet A4 au comptoir, activez l’invitation Google / Insta libre d’accès et réglez 1 chouquette ou -10 % avec un stock journalier plafond.", outcome: "Le client sourit au lieu de s’impatienter dans la file, découvre vos réseaux naturellement et revient valider son code en caisse sous 15 jours." },
-          { biz: "💇 Salon & Institut · Fin de soin", setup: "Collez le QR devant le miroir ou le comptoir d’encaissement avec une roue ou un coffre aux couleurs exactes de votre institut.", outcome: "Moment d’enthousiasme juste après la coupe ou le soin : le client pense naturellement à vous noter sur Google et repart avec un privilège pour son prochain rendez-vous." },
+          { biz: "☕ Boulangerie · Samedi 10 h 15", setup: "Posez le chevalet A4 au comptoir, activez l’invitation Google / Insta / Facebook libre d’accès et réglez 1 chouquette ou -10 % avec un stock journalier plafond.", outcome: "Le client sourit au lieu de s’impatienter dans la file, découvre vos réseaux naturellement et revient valider son code en caisse sous 15 jours." },
+          { biz: "💇 Salon & Institut · Fin de soin", setup: "Collez le QR devant le miroir ou le comptoir d’encaissement avec une roue ou un coffre aux couleurs exactes de votre institut.", outcome: "Moment d’enthousiasme juste après la coupe ou le soin : le client pense naturellement à vous noter sur Google ou Tripadvisor et repart avec un privilège pour son prochain rendez-vous." },
         ],
         synergies: [
           { target: "ticket-dor", emoji: "🎟️", name: "Avec Ticket d’Or", why: "Après une première partie en salle, glissez un Ticket d’Or dans son sac pour sécuriser sa prochaine visite." },
           { target: "passeport-fidelite", emoji: "📔", name: "Avec Passeport fidélité", why: "Transformez un joueur d’un jour en habitué qui suit ses points et ses paliers sur téléphone." },
         ],
         motionScenes: [
-          { tag: "Scène 1 · Le Déclic & Avis", icon: "📷", title: "Scan au comptoir + invitation réseaux", text: "Posé au comptoir, votre QR invite librement sur Google / Instagram / TikTok sans bloquer, puis lance votre jeu.", chips: ["0 téléchargement", "Google · Insta · TikTok"] },
+          { tag: "Scène 1 · Le Déclic & Avis", icon: "📷", title: "Scan au comptoir + invitation avis & réseaux", text: "Posé au comptoir, votre QR invite librement sur Google, Tripadvisor, Instagram, Facebook ou TikTok sans bloquer, puis lance votre jeu.", chips: ["0 téléchargement", "5 plateformes intégrées"] },
           { tag: "Scène 2 · Le Frisson", icon: "🎡", title: "5 secondes de suspense joyeux", text: "La récompense variable marque bien plus la mémoire qu’une remise banale.", chips: ["Café offert", "-15 % prochain achat"] },
           { tag: "Scène 3 · En Caisse", icon: "🧾", title: "Le client revient consommer son lot", text: "Code unique validé en 1 seconde sur votre écran caisse, souvent accompagné d’un achat.", chips: ["Stock maîtrisé", "Anti-fraude serveur"] },
         ],
@@ -4524,17 +4632,27 @@
     }
   }
 
-  /* ── 15. ANIMATION LUDIQUE & RÉACTIONS CARTOON AVIS GOOGLE / INSTAGRAM / TIKTOK ── */
+  /* ── 15. ANIMATION LUDIQUE & RÉACTIONS CARTOON AVIS & RÉSEAUX (5 PLATEFORMES) ── */
   const SOCIAL_REACTIONS = {
     google: {
       particles: ["⭐", "★", "✨", "💛"],
       msg: "⭐ +1 Avis Google 5★ déposé en 1 tap !",
       jpMsg: "⭐ +1 Avis Google 5★ — déclenché juste au bon moment !",
     },
+    tripadvisor: {
+      particles: ["🦉", "🟢", "⭐", "✨"],
+      msg: "🦉 +1 Avis Tripadvisor publié après le passage !",
+      jpMsg: "🦉 +1 Avis Tripadvisor booste votre classement local !",
+    },
     instagram: {
       particles: ["❤️", "📸", "✨", "💜"],
       msg: "📸 +1 Nouvel abonné Instagram conquis !",
       jpMsg: "📸 +1 Abonné Instagram conquis autour de votre jeu !",
+    },
+    facebook: {
+      particles: ["👍", "💙", "✨", "🎉"],
+      msg: "👍 +1 Nouveau fan sur votre page Facebook !",
+      jpMsg: "👍 +1 Fan conquis sur votre page Facebook !",
     },
     tiktok: {
       particles: ["🎵", "🔥", "⚡", "✨"],
@@ -4563,6 +4681,7 @@
 
   const socialStage = $("#lc-social-stage");
   if (socialStage) {
+    const socialSection = $("#avis-reseaux") || socialStage;
     const phaseBtns = $$("[data-social-phase]", socialStage);
     const phaseBefore = $("#lc-social-phase-before", socialStage);
     const phaseAfter = $("#lc-social-phase-after", socialStage);
@@ -4570,7 +4689,7 @@
     const continueBtn = $("#lc-social-continue-btn", socialStage);
     const burstLayer = $("#lc-social-burst-layer", socialStage);
     const statusPill = $("#lc-social-status-pill", socialStage);
-    const counts = { google: 128, instagram: 142, tiktok: 98 };
+    const counts = { google: 128, tripadvisor: 84, instagram: 142, facebook: 165, tiktok: 98 };
     let currentPhase = "before";
     let isPlaying = true;
     let autoStep = 0;
@@ -4589,6 +4708,9 @@
 
       $$("[data-social-action]", socialStage).forEach((elItem) => {
         elItem.classList.toggle("is-spotlight", elItem.dataset.socialAction === key);
+      });
+      $$("[data-social-trigger]", socialSection).forEach((elBadge) => {
+        elBadge.classList.toggle("is-spotlight", elBadge.dataset.socialTrigger === key);
       });
 
       if (increment) {
@@ -4613,6 +4735,12 @@
       });
     });
 
+    $$("[data-social-trigger]", socialSection).forEach((badge) => {
+      badge.addEventListener("click", () => {
+        triggerSocialReaction(badge.dataset.socialTrigger, true);
+      });
+    });
+
     phaseBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
         setSocialPhase(btn.dataset.socialPhase);
@@ -4631,7 +4759,9 @@
       if (!isPlaying) return;
       const sequence = [
         { phase: "before", action: "google" },
+        { phase: "before", action: "tripadvisor" },
         { phase: "before", action: "instagram" },
+        { phase: "after", action: "facebook" },
         { phase: "after", action: "tiktok" },
         { phase: "after", action: "google" },
       ];
@@ -4640,7 +4770,7 @@
         const item = sequence[autoStep];
         setSocialPhase(item.phase);
         triggerSocialReaction(item.action, false);
-      }, 3400);
+      }, 3200);
     };
 
     if (pauseBtn) {
@@ -4661,6 +4791,7 @@
     const jpFeedback = $("#lc-jp-social-feedback", jpSocialStage);
     const jpModePill = $("#lc-jp-mini-mode-pill", jpSocialStage);
     const jpModes = ["Avant le jeu", "Après le gain"];
+    const keys = ["google", "tripadvisor", "instagram", "facebook", "tiktok"];
     let jpStep = 0;
 
     $$("[data-jp-social]", jpSocialStage).forEach((btn) => {
@@ -4674,8 +4805,7 @@
     });
 
     setInterval(() => {
-      jpStep = (jpStep + 1) % 3;
-      const keys = ["google", "instagram", "tiktok"];
+      jpStep = (jpStep + 1) % keys.length;
       const activeKey = keys[jpStep];
       $$("[data-jp-social]", jpSocialStage).forEach((b) => b.classList.toggle("is-spotlight", b.dataset.jpSocial === activeKey));
       if (jpModePill) jpModePill.textContent = jpModes[jpStep % 2];

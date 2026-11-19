@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" fill="none">
+  <defs>
+    <linearGradient id="fbPopGrad" x1="6" y1="6" x2="46" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B9BFF" />
+      <stop offset="100%" stop-color="#1877F2" />
+    </linearGradient>
+  </defs>
+  <rect x="6" y="7" width="44" height="44" rx="14" fill="#161317" />
+  <rect x="3" y="4" width="44" height="44" rx="14" fill="url(#fbPopGrad)" stroke="#161317" stroke-width="3" />
+  <path d="M9 11C13 7 23 7 31 8" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="2.4" stroke-linecap="round" />
+  <!-- Lettre f cartoon épaisse -->
+  <path d="M29.4 48V32.2H34.7L35.6 25.4H29.4V21.2C29.4 19.2 30.1 17.8 32.8 17.8H35.9V11.8C35.2 11.7 33 11.5 30.5 11.5C25.1 11.5 21.5 14.7 21.5 20.6V25.4H16.2V32.2H21.5V48H29.4Z" fill="#FFFFFF" stroke="#161317" stroke-width="2" stroke-linejoin="round" />
+  <!-- Étincelle dorée pop coin haut droit -->
+  <path d="M44.5 3.5L46.3 7.1L50.2 7.7L47.3 10.4L48 14.3L44.5 12.4L41 14.3L41.7 10.4L38.8 7.7L42.7 7.1L44.5 3.5Z" fill="#FFD93D" stroke="#161317" stroke-width="2" stroke-linejoin="round" />
+</svg>
