@@ -10,6 +10,19 @@ import {
 const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/poster"];
 const AUTH_PAGES = ["/login", "/signup"];
 
+const SHOWCASE_REWRITES: Record<string, string> = {
+  "/": "/h-site-final-20k/index.html",
+  "/vitrine-reservation": "/h-site-final-20k/vitrine-reservation.html",
+  "/modules": "/h-site-final-20k/modules.html",
+  "/modules.html": "/h-site-final-20k/modules.html",
+  "/jeux-pronostics": "/h-site-final-20k/jeux-pronostics.html",
+  "/fidelite-communaute": "/h-site-final-20k/fidelite-communaute.html",
+  "/abonnements": "/h-site-final-20k/abonnements.html",
+  "/studio": "/h-site-final-20k/studio.html",
+  "/jeu-roue": "/h-site-final-20k/jeu-roue.html",
+  "/jeu-roue.html": "/h-site-final-20k/jeu-roue.html",
+};
+
 /**
  * Le back-office `/admin` est un SITE À PART : servi uniquement sur le
  * domaine admin dédié, et totalement invisible (404) sur le domaine
@@ -50,19 +63,17 @@ export default async function proxy(request: NextRequest) {
     return new NextResponse("Not found", { status: 404 });
   }
 
+  // ── Vitrine statique sur domaine public ──
+  const showcaseTarget = !onAdminHost && Object.hasOwn(SHOWCASE_REWRITES, pathname)
+    ? SHOWCASE_REWRITES[pathname]
+    : undefined;
+  if (showcaseTarget) {
+    return NextResponse.rewrite(new URL(showcaseTarget, request.url));
+  }
+
   // ── Domaine admin : ne sert QUE le back-office ──
   // Tout ce qui n'est pas /admin (ni asset, déjà exclu par le matcher)
   // est renvoyé vers /admin. L'app commerçant n'apparaît pas ici.
-  if (!onAdminHost && pathname === "/") {
-    return NextResponse.rewrite(new URL("/h-site-final-20k/index.html", request.url));
-  }
-  if (!onAdminHost && pathname === "/vitrine-reservation") {
-    return NextResponse.rewrite(new URL("/h-site-final-20k/vitrine-reservation.html", request.url));
-  }
-  if (!onAdminHost && (pathname === "/modules" || pathname === "/modules.html")) {
-    return NextResponse.rewrite(new URL("/h-site-final-20k/modules.html", request.url));
-  }
-
   if (onAdminHost && !pathname.startsWith("/admin")) {
     const url = request.nextUrl.clone();
     url.pathname = "/admin";
