@@ -654,7 +654,7 @@
       ],
       place: [
         { emoji: "🎡", name: "Tout Coup d'envoi inclus" },
-        { emoji: "📖", name: "Vitrine & Tarifs QR (FR / EN)" },
+        { emoji: "📖", name: "Vitrine & Tarifs au QR" },
         { emoji: "📅", name: "Prise de RDV à 0 % commission" },
         { emoji: "⚡", name: "Moments, File d'accueil & Invendus" },
         { emoji: "❓", name: "Quiz interactifs à table" },
@@ -669,7 +669,7 @@
       full: [
         { emoji: "👑", name: "Les 12 modules d'animation" },
         { emoji: "📔", name: "Fidélité, Parrainage & Calendrier" },
-        { emoji: "📖", name: "Vitrine bilingue FR/EN au QR" },
+        { emoji: "📖", name: "Vitrine & carte digitale au QR" },
         { emoji: "📅", name: "Agenda RDV (0% com) & Moments" },
         { emoji: "🎤", name: "Écran géant live (250 pers.) & Jackpot" },
       ],
@@ -1214,10 +1214,19 @@
     }
   });
 
+  // Aperçus live cliquables dans le bloc #piliers
+  $$("[data-pillar-emulate]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.dataset.pillarEmulate;
+      if (mode && typeof window.LC_OPEN_EMULATOR === "function") {
+        window.LC_OPEN_EMULATOR(mode);
+      }
+    });
+  });
+
   /* ── 5. DÉMONSTRATEUR INTERACTIF DE LA PAGE VITRINE & RÉSERVATION (7 SECTEURS DU CODE SOURCE) ── */
   const vrSectorBtns = $$(".vr-sector-btn");
   const vrTabBtns = $$(".vr-tab-btn");
-  const vrLangBtn = $("#vr-lang-btn");
   const vrDemoTitle = $("#vr-demo-title");
   const vrPaletteBadge = $("#vr-demo-palette-badge");
   const vrPhoneShell = $("#vr-phone-shell");
@@ -1230,7 +1239,6 @@
   const vrOpenStudioBtn = $("#vr-open-studio-with-sector");
 
   let currentSector = "coiffeur";
-  let currentLang = "fr";
 
   const renderVrSimulator = () => {
     if (!vrVitrineList || !C) return;
@@ -1263,7 +1271,7 @@
         (it) => `
       <div class="vr-item-row" style="background:#ffffff;color:#211d16;border-color:#211d16;">
         <div>
-          <strong>${currentLang === "fr" ? it.nom : it.nom + " (EN)"}</strong>
+          <strong>${it.nom}</strong>
           <small style="color:#3d382f;">${it.description} ${
           it.badges && it.badges.length
             ? `· ${it.badges.map((b) => C.VITRINE_BADGES_FR[b] || b).join(" ")}`
@@ -1323,14 +1331,6 @@
       drafts.lastModule = "vitrine";
       C.saveDrafts(drafts);
       window.location.href = `studio.html?module=vitrine&sector=${encodeURIComponent(sec.key)}`;
-    });
-  }
-
-  if (vrLangBtn) {
-    vrLangBtn.addEventListener("click", () => {
-      currentLang = currentLang === "fr" ? "en" : "fr";
-      vrLangBtn.textContent = currentLang === "fr" ? "🇫🇷 FR ⇄ 🇬🇧 EN" : "🇬🇧 EN ⇄ 🇫🇷 FR";
-      renderVrSimulator();
     });
   }
 
@@ -4392,30 +4392,23 @@
 
       if (kpisRow) {
         kpisRow.innerHTML = mod.kpis
-          .map((k) => `<div class="k-dash-kpi-tile"><span class="k-dash-kpi-val">${k.val}</span><span class="k-dash-kpi-lbl">${k.lbl}</span></div>`)
+          .map((k) => `<div class="k-mod-metric-item"><strong class="k-mod-metric-val">${k.val}</strong><span class="k-mod-metric-lbl">${k.lbl}</span></div>`)
           .join("");
       }
 
       if (stepsGrid) {
         stepsGrid.innerHTML = mod.steps
-          .map((s, idx) => `<div class="k-dash-step-box"><span class="k-dash-step-num">ÉTAPE 0${idx + 1}</span><h3>${s.t}</h3><p>${s.d}</p></div>`)
+          .map((s, idx) => `<div class="k-mod-step-item"><span class="k-mod-step-dot">${idx + 1}</span><div><h3>${s.t.replace(/^\d+\s*·\s*/, "")}</h3><p>${s.d}</p></div></div>`)
           .join("");
       }
 
       if (casesGrid) {
         casesGrid.innerHTML = (mod.cases || [])
-          .map((c, idx) => `
-            <div class="lc-mod-case-card">
+          .map((c) => `
+            <div class="k-mod-case-item">
               <span class="lc-mod-case-biz">${c.biz}</span>
-              <div class="lc-mod-case-row">
-                <strong>⚙️ Réglage en 2 min :</strong>
-                <p>${c.setup}</p>
-              </div>
-              <div class="lc-mod-case-row lc-mod-case-outcome">
-                <strong>✅ Ce que vit le client &amp; ce que vous gagnez :</strong>
-                <p>${c.outcome}</p>
-              </div>
-              <span class="lc-mod-case-idx" aria-hidden="true">#0${idx + 1}</span>
+              <p class="k-mod-case-setup"><b>En pratique :</b> ${c.setup}</p>
+              <p class="k-mod-case-outcome"><b>✅ Résultat :</b> ${c.outcome}</p>
             </div>
           `)
           .join("");
@@ -4452,6 +4445,30 @@
         }
       }
     };
+
+    const modTabBtns = $$("[data-mod-tab]", modulesShowcaseEl);
+    const modTabPanels = {
+      steps: $("#mod-panel-steps", modulesShowcaseEl),
+      cases: $("#mod-panel-cases", modulesShowcaseEl),
+      synergies: $("#mod-panel-synergies", modulesShowcaseEl),
+    };
+    const setActiveModTab = (tabKey) => {
+      const targetKey = modTabPanels[tabKey] ? tabKey : "steps";
+      modTabBtns.forEach((tb) => {
+        const isOn = tb.dataset.modTab === targetKey;
+        tb.classList.toggle("active", isOn);
+        tb.setAttribute("aria-selected", String(isOn));
+      });
+      Object.entries(modTabPanels).forEach(([k, panel]) => {
+        if (!panel) return;
+        const isOn = k === targetKey;
+        panel.hidden = !isOn;
+        panel.classList.toggle("active", isOn);
+      });
+    };
+    modTabBtns.forEach((tb) => {
+      tb.addEventListener("click", () => setActiveModTab(tb.dataset.modTab));
+    });
 
     navButtons.forEach((b) => {
       b.addEventListener("click", () => renderModulePage(b.dataset.moduleId, true));
