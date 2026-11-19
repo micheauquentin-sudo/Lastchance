@@ -122,7 +122,6 @@
   };
 
   let currentStepIndex = 0;
-  let previewLang = "fr";
 
   /* ── MISE À JOUR DE L'ÉTAT ET ENREGISTREMENT LOCAL ── */
   function triggerAutoSave() {
@@ -1382,7 +1381,6 @@ $$("[data-bind]", container).forEach((inp) => {
   function buildVitrinePreviewHTML() {
     const v = drafts.vitrine;
     const sec = CB.VITRINE_SECTEURS[v.secteur] || CB.VITRINE_SECTEURS.commerce;
-    const isEn = previewLang === "en";
 
     let motifCss = "";
     if (v.motif === "diagonales") {
@@ -1399,7 +1397,7 @@ $$("[data-bind]", container).forEach((inp) => {
           <strong>${escapeHtml(f.nom)}</strong>
           ${f.description ? `<small>${escapeHtml(f.description)}</small>` : ""}
           ${f.badge && CB.VITRINE_BADGES_FR[f.badge] ? `<span class="kp-v-badge">${CB.VITRINE_BADGES_FR[f.badge]}</span>` : ""}
-          ${f.action === "reserver" ? `<span class="kp-v-action" style="background:${v.primary};color:#fff;">📅 ${isEn ? "Book a slot" : "Réserver"}</span>` : ""}
+          ${f.action === "reserver" ? `<span class="kp-v-action" style="background:${v.primary};color:#fff;">📅 Réserver</span>` : ""}
         </div>
         <b class="kp-v-prix" style="background:${v.stylePrix === "pastille" ? v.primary : "transparent"};color:${v.stylePrix === "pastille" ? "#fff" : v.primary};">${escapeHtml(f.prix)}</b>
       </div>
@@ -1435,7 +1433,7 @@ $$("[data-bind]", container).forEach((inp) => {
         <div class="kp-vitrine-body">
           ${v.blocs.includes("histoire") && v.histoire ? `
             <div class="kp-v-section">
-              <span class="kp-v-kicker" style="color:${v.primary}">${isEn ? "OUR STORY" : "NOTRE HISTOIRE"}</span>
+              <span class="kp-v-kicker" style="color:${v.primary}">NOTRE HISTOIRE</span>
               <p style="font-size:0.78rem;margin:0.2rem 0 0;">${escapeHtml(v.histoire)}</p>
             </div>
           ` : ""}
@@ -1452,8 +1450,8 @@ $$("[data-bind]", container).forEach((inp) => {
 
           ${v.blocs.includes("reserver") ? `
             <div class="kp-v-section kp-v-door" style="border-color:${v.primary}">
-              <strong>📅 ${isEn ? "Book an appointment or Moment" : "Prendre rendez-vous & Moments"}</strong>
-              <small>${isEn ? "0% commission · Instant calendar add" : "Créneaux en direct · Ajout calendrier 1 clic"}</small>
+              <strong>📅 Prendre rendez-vous & Moments</strong>
+              <small>Créneaux en direct · Ajout calendrier 1 clic</small>
             </div>
           ` : ""}
 
@@ -1466,7 +1464,7 @@ $$("[data-bind]", container).forEach((inp) => {
 
           ${v.blocs.includes("horaires") ? `
             <div class="kp-v-section">
-              <span class="kp-v-kicker" style="color:${v.primary}">${isEn ? "OPENING HOURS" : "HORAIRES"}</span>
+              <span class="kp-v-kicker" style="color:${v.primary}">HORAIRES</span>
               <small style="display:block;font-size:0.76rem;">${escapeHtml(v.horairesTexte)}</small>
             </div>
           ` : ""}
@@ -1475,8 +1473,8 @@ $$("[data-bind]", container).forEach((inp) => {
         ${v.barreBasse !== "masquee" ? `
           <div class="kp-v-bottom-bar" style="background:${v.primary};color:#ffffff;">
             <span>📖 ${sec.motCartes}</span>
-            <span>📅 ${isEn ? "Book" : "Réserver"}</span>
-            <span>🎰 ${isEn ? "Play" : "Jouer"}</span>
+            <span>📅 Réserver</span>
+            <span>🎰 Jouer</span>
           </div>
         ` : ""}
       </div>
