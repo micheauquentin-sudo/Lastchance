@@ -15,7 +15,7 @@ test.describe("accueil", () => {
     page,
   }, testInfo) => {
     await page.goto("/");
-    await expect(page).toHaveTitle(/LastChance/);
+    await expect(page).toHaveTitle(/Simple comme QR/);
     await expect(
       page.getByRole("heading", { level: 1, name: /roue de la fortune/i }),
     ).toBeVisible();
@@ -105,8 +105,8 @@ test.describe("contact", () => {
     // Le même email apparaît aussi dans le pied de page ; celui de la
     // carte "Par email" est le premier de la page.
     await expect(
-      page.getByRole("link", { name: "contact@lastchance.app" }).first(),
-    ).toHaveAttribute("href", /^mailto:contact@lastchance\.app/);
+      page.getByRole("link", { name: "contact@simplecommeqr.fr" }).first(),
+    ).toHaveAttribute("href", /^mailto:contact@simplecommeqr\.fr/);
 
     // "FAQ" apparaît deux fois (nav + lien de bas de page) : le second,
     // au fil du texte, est celui que ce parcours vérifie.
