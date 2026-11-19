@@ -1,26 +1,22 @@
 # Transmission Codex -> Claude Code
 
-## Recherche de nom de marque — reprise du 2026-10-14
+## Marque retenue : Simple comme QR — mise à jour du 2026-11-19
 
-La recherche est ouverte : aucune décision de remplacement de « LastChance »
-n'est prise. Le périmètre de la marque ombrelle couvre désormais la Vitrine,
-la réservation, les expériences en commerce et la fidélité ; un nom limité à
-la roue ou au hasard serait donc trop étroit. Les pistes ci-dessous sont une
-exploration créative uniquement : disponibilité domaine, marques déposées,
-prononciation internationale et conflits SEO restent à vérifier avant toute
-sélection.
+La marque **Simple comme QR** (`simplecommeqr.fr`) est retenue pour la vitrine
+(`public/h-site-final-20k/`) et l'application (`src/`).
 
-Première sélection à évaluer avec l'utilisateur : **Complice**, **Élan**,
-**Éclat**, **Rituel**, **Pépite**, **Sésame**, **Lumo** et **Nolio**.
-
-Critères retenus : promesse positive et immédiatement compréhensible, mémorable
-en français, prononçable en anglais, crédible pour un commerçant, chaleureuse
-pour un joueur, et extensible aux modules Vitrine / Réserver / Expériences.
-
-Prochaine décision : choisir deux ou trois territoires de ton (relation,
-moment, découverte, énergie ou nom inventé), puis effectuer une recherche de
-disponibilité et de risques sur une shortlist courte. Aucun code, domaine,
-configuration ou texte public n'est modifié à ce stade.
+- **Rebranding applicatif appliqué** : `src/app/layout.tsx`, pages auth
+  (`login`, `signup`, `invite`), dashboard commerçant, admin, pieds de page
+  joueur (`propulsé par Simple comme QR`), pages légales (`/legal`, `/privacy`,
+  `/terms`, `src/components/legal-page.tsx`), support (`src/lib/support.ts`) et
+  emails Resend (`src/lib/resend.ts`).
+- **Routage vitrine nettoyé** : liens internes de `public/h-site-final-20k/*.html`
+  et `app.js` passés en chemins propres (`/`, `/modules`, `/abonnements`,
+  `/studio`, etc.) ; `src/proxy.ts` aligné sur les 10 rewrites de
+  `next.config.ts` ; redirections legacy (`/attirer`, `/jeux-instantanes`,
+  `/fideliser`, `/passeport-fidelite`, `/tarifs`) orientées vers les nouvelles
+  pages.
+- **Reste hors code / à trancher** : `site/` rebrandé en `Simple comme QR` (`typecheck` et `lint` verts) et miroir `propositions-site/h-site-final-20k/` resynchronisé (9 fichiers) ; `.agents/hooks.json` ajusté (`verrou-tests` désactivé). Reste côté propriétaire : DNS domaine, expéditeur `RESEND_FROM_EMAIL`, `LEGAL_ENTITY_NAME`, `LEGAL_POSTAL_ADDRESS`, Stripe Live, Vercel Pro.
 
 Document de reprise opérationnelle. L'historique détaillé vit dans
 `docs/journal.md`; les décisions durables vivent dans `docs/decisions.md`.
