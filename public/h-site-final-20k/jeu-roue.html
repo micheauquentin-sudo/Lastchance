@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <base href="/h-site-final-20k/" />
-  <title>Roue de la Fortune — Lastchance</title>
+  <title>Roue de la Fortune — Simple comme QR</title>
   <meta name="description" content="Tournez la roue sans installer d'application et remportez votre lot au comptoir." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -308,7 +308,7 @@
     <p class="rule-note">1 chance par client · Lot vérifié en caisse avec code unique</p>
   </main>
 
-  <a class="back-home" href="index.html">← Découvrir la plateforme Lastchance</a>
+  <a class="back-home" href="index.html">← Découvrir Simple comme QR</a>
 
   <footer style="position:relative;z-index:3;margin-top:1rem;display:flex;gap:0.85rem;flex-wrap:wrap;justify-content:center;font:700 0.78rem 'Manrope',sans-serif;">
     <a href="/legal" style="color:#161317;background:rgba(255,255,255,0.92);padding:0.35em 0.75em;border-radius:999px;border:1.5px solid #161317;text-decoration:none;">Mentions légales</a>
@@ -329,7 +329,7 @@
 
       <div class="caisse-code-row">
         <span>Présentez ce code en caisse :</span>
-        <strong class="caisse-code" id="win-lot-code">LC-8F42</strong>
+        <strong class="caisse-code" id="win-lot-code">QR-8F42</strong>
       </div>
       
       <p style="font-size:0.8rem;color:#655b76">Votre commerçant vérifiera ce code unique pour vous remettre votre cadeau immédiatement.</p>
@@ -442,7 +442,7 @@
         btnShare.addEventListener("click", () => {
           if (navigator.share) {
             navigator.share({
-              title: "Tentez votre chance sur la Roue Lastchance !",
+              title: "Tentez votre chance sur la Roue Simple comme QR !",
               text: "Je viens de remporter un cadeau au comptoir ! Tentez votre chance aussi :",
               url: window.location.href
             }).catch(() => {});
