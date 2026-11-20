@@ -2658,7 +2658,15 @@
           checkoutBtn.setAttribute("href", `/signup?${urlParams.toString()}`);
           checkoutBtn.textContent = `Démarrer mon essai gratuit de 7 jours (${planInfo.nom}) →`;
         } else {
-          checkoutBtn.setAttribute("href", "/signup?from=options&next=" + encodeURIComponent("/dashboard/settings/modules"));
+          const urlParams = new URLSearchParams({
+            from: "options",
+            next: "/dashboard/settings/modules",
+          });
+          if (allSelectedAddons.length > 0) {
+            urlParams.set("plan", "none");
+            urlParams.set("addons", allSelectedAddons.join(","));
+          }
+          checkoutBtn.setAttribute("href", `/signup?${urlParams.toString()}`);
           checkoutBtn.textContent = totalMonthly > 0 || onetimeAddonsCost > 0
             ? `Configurer mes options à la carte (${totalMonthly} €/m) →`
             : "Choisir mes options dans mon espace →";
