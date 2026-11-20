@@ -21,6 +21,7 @@
          1. HERO AZUR PIXAR 4K (SANS BULLES) + TITRE FUN & QR 3D RAPPROCHÉS
          ========================================================== -->
     <section class="hero-master-pixar" id="top">
+      <canvas class="lc-three-bg" data-three-scene="hero" data-three-theme="pixar" aria-hidden="true"></canvas>
       <!-- Navigation épurée, claire et simple -->
       <header class="header-nav">
         <a class="brand-logo" href="/#top"><span class="brand-simple">Simple</span><span class="logo-club">comme</span><span class="brand-qr-badge">QR</span></a>
@@ -915,6 +916,24 @@
         </div>
       </div>
 
+      <!-- Atelier Roue de la Fortune 3D Interactive (Three.js) -->
+      <div class="lc-three-wheel-showcase reveal" id="atelier-3d">
+        <div class="lc-three-wheel-copy">
+          <span class="k-badge k-badge-pink">✨ ANIMATION 3D TEMPS RÉEL</span>
+          <h3>Faites tourner la Roue en vraie 3D !</h3>
+          <p>
+            Cliquez sur la roue ou appuyez sur le bouton pour tester la physique 3D, les chevilles dorées et le jaillissement de confettis en direct.
+          </p>
+          <div class="lc-three-wheel-actions">
+            <button type="button" class="ticket-btn pop-btn-yellow" id="lc-three-wheel-spin">🎡 Lancer la roue 3D</button>
+            <span class="lc-three-wheel-result" id="lc-three-wheel-result" aria-live="polite">👆 Cliquez pour tenter votre chance</span>
+          </div>
+        </div>
+        <div class="lc-three-wheel-stage">
+          <canvas class="lc-three-wheel-canvas" data-three-scene="wheel" aria-label="Roue de la fortune 3D interactive"></canvas>
+        </div>
+      </div>
+
       <!-- Ruban Forain Défilant de Tickets Inclinés -->
       <div class="carnival-ribbon-wrap" aria-label="Ruban des expériences">
         <div class="carnival-ribbon-track" id="carnival-ribbon"></div>
@@ -1171,6 +1190,7 @@
 
     <!-- BANNIÈRE FINALE -->
     <section class="grand-finale">
+      <canvas class="lc-three-bg" data-three-scene="finale" aria-hidden="true"></canvas>
       <h2>LE JEU DE MOTS EST FACILE.<br />FAIRE REVENIR VOS CLIENTS AUSSI.</h2>
       <p>Configurez votre jeu, votre passeport, votre calendrier surprise ou votre vitrine gratuitement en 5 minutes dans le Studio.</p>
       <p class="hero-wink-note" style="margin:0.4rem auto 1.1rem;display:inline-block;">💬 On a cherché un nom compliqué en anglais. Finalement : <b>Simple comme QR</b>.</p>
@@ -1270,5 +1290,6 @@
   <script src="../shared/codebase-themes.js"></script>
   <script src="../shared/games-engine.js"></script>
   <script src="app.js"></script>
+  <script type="module" src="../shared/three-animations.js"></script>
 </body>
 </html>
