@@ -194,7 +194,7 @@ const CATEGORIES: ComparisonCategory[] = [
 
 function columnHeaderAccent(tier: ComparisonTierColumn): string {
   if (tier.isAlreadyCovered) {
-    return "bg-zinc-100 text-zinc-400";
+    return "bg-zinc-100 text-k-muted";
   }
   if (tier.id === "engagement") {
     return "bg-amber-50 text-amber-950";
@@ -207,7 +207,7 @@ function columnHeaderAccent(tier: ComparisonTierColumn): string {
 
 function columnCellStyle(tier: ComparisonTierColumn): string {
   if (tier.isAlreadyCovered) {
-    return "bg-zinc-50/80 text-zinc-400";
+    return "bg-zinc-50/80 text-k-muted";
   }
   if (tier.id === "engagement") {
     return "bg-amber-50/35";
@@ -278,7 +278,7 @@ export function SubscriptionComparisonTable({
                     <span className="text-base font-bold">{tier.name}</span>
                     <span
                       className={`text-lg font-extrabold ${
-                        tier.isAlreadyCovered ? "text-zinc-400" : "text-k-ink"
+                        tier.isAlreadyCovered ? "text-k-muted" : "text-k-ink"
                       }`}
                     >
                       {tier.priceMonthly} €
@@ -327,7 +327,7 @@ export function SubscriptionComparisonTable({
                         Formule actuelle
                       </span>
                     ) : tier.isAlreadyCovered ? (
-                      <span className="inline-block rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-400">
+                      <span className="inline-block rounded-lg bg-zinc-100 px-3 py-2 text-xs font-medium text-k-muted">
                         Déjà couvert
                       </span>
                     ) : hasLiveSubscription || !tier.purchasable ? (
@@ -442,18 +442,18 @@ function FragmentCategory({
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                         muted
-                          ? "bg-zinc-200/70 text-zinc-400"
+                          ? "bg-zinc-200/70 text-k-muted"
                           : "bg-emerald-100 text-emerald-800"
                       }`}
                     >
                       ✓ Inclus
                     </span>
                   ) : val === false ? (
-                    <span className="text-zinc-300">—</span>
+                    <span className="text-k-muted">—</span>
                   ) : (
                     <span
                       className={`text-xs font-semibold ${
-                        muted ? "text-zinc-400" : "text-zinc-700"
+                        muted ? "text-k-muted" : "text-zinc-700"
                       }`}
                     >
                       {val}
