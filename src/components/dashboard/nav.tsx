@@ -30,6 +30,7 @@ type IconKey =
   | "duo"
   | "bande"
   | "ticket"
+  | "subscription"
   | "discover";
 
 interface DashboardLink {
@@ -189,6 +190,7 @@ const OWNER_ONLY_LINKS: DashboardLink[] = [
   { href: "/dashboard/participations", label: "Participations", icon: "list" },
   { href: "/dashboard/customers", label: "Clients", icon: "users" },
   { href: "/dashboard/newsletter", label: "Newsletter", icon: "mail" },
+  { href: "/dashboard/subscription", label: "Abonnement", icon: "subscription" },
   { href: "/dashboard/settings", label: "Réglages", icon: "settings" },
   { href: "/dashboard/team", label: "Équipe", icon: "team" },
 ];
@@ -233,6 +235,7 @@ const EMOJIS: Record<IconKey, string> = {
   duo: "🪞",
   bande: "👥",
   ticket: "🎟️",
+  subscription: "💳",
   discover: "🧭",
   qr: "📱",
   list: "📋",

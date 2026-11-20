@@ -1833,7 +1833,7 @@ $$("[data-bind]", container).forEach((inp) => {
             <div class="k-onboard-num">2</div>
             <div class="k-onboard-body">
               <strong>Activez la formule adaptée à votre établissement</strong>
-              <p>Profitez de 7 jours d'essai gratuit sans engagement pour générer vos planches de QR codes prêtes à poser et commencer à accueillir vos premiers scans.</p>
+              <p>Créez votre compte gratuitement sans carte bancaire pour sauvegarder vos créations, générer vos planches de QR codes et publier dès que vous êtes prêt.</p>
             </div>
           </div>
         </div>

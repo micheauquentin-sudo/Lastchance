@@ -472,8 +472,7 @@
     } catch {
       // Ignore localStorage errors
     }
-    const addonsParam = addonsList && addonsList.length ? `&addons=${encodeURIComponent(addonsList.join(","))}` : "";
-    window.location.href = `/signup?plan=${encodeURIComponent(plan.id)}${addonsParam}`;
+    window.location.href = "/signup";
   };
 
   const getPlanJaugeDetails = (f) => {
@@ -563,7 +562,7 @@
     if (cfgPlanTagline) cfgPlanTagline.textContent = plan.tagline;
     if (cfgJauge) {
       const jDetails = getPlanJaugeDetails(plan);
-      cfgJauge.innerHTML = `<strong>${jDetails.full}</strong> · <em>7 jours d'essai gratuit</em>`;
+      cfgJauge.innerHTML = `<strong>${jDetails.full}</strong> · <em>Compte gratuit, payez pour publier</em>`;
     }
     if (cfgChips) {
       cfgChips.innerHTML = [...allRights].map((d) => `<span>✓ ${O.label(d)}</span>`).join("");
@@ -732,7 +731,7 @@
         <div style="margin-top:auto;display:grid;gap:0.55rem">
           <div class="plan-capacity-pill">${meta.cap}</div>
           <button type="button" class="ticket-btn pop-btn-ink choose-plan-signup-btn" style="text-align:center;width:100%;cursor:pointer;">
-            Choisir ${f.nom} (7j offerts) →
+            Créer un compte gratuit →
           </button>
           <a href="/abonnements#grand-comparatif" style="text-align:center;font-size:0.78rem;font-weight:800;color:#161317;text-decoration:underline;">
             📊 Voir sur la page Abonnements →
@@ -840,16 +839,6 @@
   const C = window.LC_CODEBASE;
 
   /* ── 4B. MODALE EXPÉRIENCE JOUEUR /PLAY AU CLIC SUR LE QR CODE DU HÉRO (18 THÈMES DU CODE SOURCE) ── */
-  const heroTrialCta = $("#hero-trial-cta");
-  if (heroTrialCta) {
-    heroTrialCta.addEventListener("click", (e) => {
-      e.preventDefault();
-      const target = document.getElementById("formules") || document.getElementById("configurateur");
-      if (target) {
-        target.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    });
-  }
 
   const heroQrBtn = $("#hero-qr-play-btn");
   const heroOpenPlayCta = $("#hero-open-play-cta");
@@ -2649,28 +2638,8 @@
 
       // Mise à jour du CTA d'inscription
       if (checkoutBtn) {
-        const allSelectedAddons = [...selectedRecurringKeys, ...selectedOnetimeKeys];
-        if (selectedPlanKey !== "none") {
-          const urlParams = new URLSearchParams({ plan: selectedPlanKey });
-          if (allSelectedAddons.length > 0) {
-            urlParams.set("addons", allSelectedAddons.join(","));
-          }
-          checkoutBtn.setAttribute("href", `/signup?${urlParams.toString()}`);
-          checkoutBtn.textContent = `Démarrer mon essai gratuit de 7 jours (${planInfo.nom}) →`;
-        } else {
-          const urlParams = new URLSearchParams({
-            from: "options",
-            next: "/dashboard/settings/modules",
-          });
-          if (allSelectedAddons.length > 0) {
-            urlParams.set("plan", "none");
-            urlParams.set("addons", allSelectedAddons.join(","));
-          }
-          checkoutBtn.setAttribute("href", `/signup?${urlParams.toString()}`);
-          checkoutBtn.textContent = totalMonthly > 0 || onetimeAddonsCost > 0
-            ? `Configurer mes options à la carte (${totalMonthly} €/m) →`
-            : "Choisir mes options dans mon espace →";
-        }
+        checkoutBtn.setAttribute("href", "/signup");
+        checkoutBtn.textContent = "Créer mon compte gratuit →";
       }
 
       // Sauvegarde du brouillon de commande en mémoire
