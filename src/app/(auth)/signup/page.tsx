@@ -10,13 +10,49 @@ import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = { title: "Créer un compte" };
 
+const PLAN_LABELS: Record<string, string> = {
+  none: "100 % À la carte",
+  core: "Coup d'envoi",
+  engagement: "Le Club",
+  place: "Sur Place",
+  live: "Le Grand Jeu",
+  full: "La Totale",
+};
+
+const ADDON_LABELS: Record<string, string> = {
+  vitrine: "Vitrine & Tarifs QR",
+  rdv: "Réservation Directe 0 %",
+  moments: "Moments, File & Invendus",
+  passport: "Passeport Fidélité & Lots",
+  referral: "Parrainage Ambassadeurs",
+  duo: "Duo Miroir",
+  bande: "Portrait de la Bande",
+  pass_hunt: "Pass Chasse au Trésor",
+  pass_advent: "Pass Calendrier Surprises",
+  pass_quiz: "Pass Quiz Express",
+  pass_pot: "Pass Cagnotte & Jackpot",
+  pass_prono: "Pass Saison Pronostics",
+  pass_screen: "Pass Soirée Live (Écran TV)",
+  pass_screen_10: "Pass Soirée Live (10 joueurs)",
+  pass_screen_30: "Pass Soirée Live (30 joueurs)",
+  pass_screen_50: "Pass Soirée Live (50 joueurs)",
+};
+
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; plan?: string; from?: string; module?: string }>;
+  searchParams: Promise<{ next?: string; plan?: string; addons?: string; from?: string; module?: string }>;
 }) {
-  const { next, plan, from, module: mod } = await searchParams;
+  const { next, plan, addons, from, module: mod } = await searchParams;
   const targetNext = next || (plan ? "/dashboard/settings" : undefined);
+  const planLabel = plan ? (PLAN_LABELS[plan] ?? plan.replace(/_/g, " ")) : undefined;
+  const addonLabels = addons
+    ? addons
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean)
+        .map((k) => ADDON_LABELS[k] ?? k.replace(/_/g, " "))
+    : [];
 
   return (
     <Card>
@@ -25,13 +61,20 @@ export default async function SignupPage({
         Accédez à votre espace Simple comme QR et préparez vos animations.
       </p>
 
-      {plan && (
+      {(planLabel || addonLabels.length > 0) && (
         <div className="mb-5 p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-950 flex items-start gap-2.5">
           <span className="text-base">✨</span>
-          <div className="space-y-0.5">
-            <strong className="font-bold text-amber-900 block text-xs uppercase tracking-wide">
-              Formule sélectionnée : {plan.replace(/_/g, " ")}
-            </strong>
+          <div className="space-y-1">
+            {planLabel && (
+              <strong className="font-bold text-amber-900 block text-xs uppercase tracking-wide">
+                Formule sélectionnée : {planLabel}
+              </strong>
+            )}
+            {addonLabels.length > 0 && (
+              <p className="text-amber-900 font-medium">
+                Options &amp; Pass ajoutés : {addonLabels.join(" · ")}
+              </p>
+            )}
             <p className="text-amber-800 leading-relaxed">
               Vos choix et vos 7 jours d&apos;essai gratuit sans engagement seront rattachés à votre compte.
             </p>

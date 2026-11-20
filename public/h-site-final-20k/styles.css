@@ -8595,11 +8595,15 @@ header, main, section, footer { position: relative; z-index: 2; }
   border-radius: 26px !important;
   overflow: hidden !important;
 }
+.k-preview-phone .kp-play-surface {
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
 .kp-play-inner {
   padding: 0.9rem 0.9rem 1.4rem !important;
 }
 .lc-modal-phone-screen {
-  border-radius: 24px !important;
+  border-radius: 22px !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
   padding-bottom: 0.8rem !important;
@@ -8659,6 +8663,10 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 
 @media (max-height: 820px) and (min-width: 821px) {
+  .k-preview-phone {
+    max-height: calc(100dvh - 215px);
+    min-height: 320px;
+  }
   .lc-game-modal-window {
     padding: 1.05rem 1.3rem;
     gap: 1.2rem;
@@ -8666,8 +8674,8 @@ header, main, section, footer { position: relative; z-index: 2; }
     overflow-y: auto;
   }
   .lc-modal-phone-frame {
-    padding: 0.45rem;
-    border-radius: 26px;
+    padding: 0.5rem;
+    border-radius: 28px;
   }
   .lc-modal-phone-notch {
     height: 10px;
@@ -8676,6 +8684,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   .lc-modal-phone-screen {
     min-height: 0;
     max-height: calc(94vh - 3.6rem);
+    border-radius: 20px !important;
   }
   .lc-modal-aside {
     gap: 0.55rem;
