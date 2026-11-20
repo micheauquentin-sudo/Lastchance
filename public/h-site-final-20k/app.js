@@ -197,7 +197,7 @@
       title: "Calendrier à Surprises & Rituel Quotidien",
       cat: "Revenir dans leur tête chaque matin",
       color: "#ffd93d",
-      desc: "Avent, anniversaire de votre commerce, soldes ou rentrée : chaque matin, une nouvelle case s'illumine sur le téléphone de vos clients. L'envie de ne pas rater la surprise du jour remplit même vos mardis et mercredis calmes !",
+      desc: "Avent, anniversaire de votre commerce, soldes ou animation interne : chaque matin, une nouvelle case s'illumine sur le téléphone de vos clients (ou de vos salariés pour une entreprise ou un CE). Disponible à l'unité sans abonnement.",
       usage: "📅 Jusqu'à 31 jours de surprises · Horloge serveur anti-triche",
       visual: `
         <div class="jb-anim-scene">
@@ -294,7 +294,7 @@
       title: "Saisons de Pronostics Sportifs & Culturels",
       cat: "Devenir le QG officiel des grands matchs",
       color: "#ffd93d",
-      desc: "Ligue des champions, Top 14, Coupe du monde ou Eurovision : vos habitués déposent leurs scores avant le coup d'envoi, se chambrent autour du classement affiché en salle et reviennent vibrer chez vous toute la saison.",
+      desc: "Ligue des champions, Top 14, Coupe du monde, Eurovision ou challenge interne : vos habitués — ou vos salariés en entreprise / CE — déposent leurs pronostics avant le coup d'envoi et se chambrent autour du classement. Disponible à l'unité.",
       usage: "🏆 Verrouillage auto au coup d'envoi · Affichage TV en salle",
       visual: `
         <div class="jb-anim-scene">
@@ -3994,7 +3994,7 @@
         surtitre: "MODULE 03 · SIMPLE COMME CALENDRIER SURPRISE",
         subtitle: "Restez dans la tête de vos clients tous les matins sans jamais les harceler de pubs : une case mystère à ouvrir chaque jour (Avent, anniversaire, soldes).",
         offerBadge: "✓ Inclus Le Club (59 €) & La Totale · Pass 29 € / 31j",
-        pitchLead: "Comment faire penser à votre commerce un mardi matin pluvieux ? En créant un petit rituel qu’ils attendent eux-mêmes. Pendant 7, 14 ou 31 jours, vos clients ouvrent leur case du jour sur leur téléphone. Vous choisissez librement chaque surprise — douceur offerte, remise ciblée sur vos jours creux ou tour de roue — et un super-lot d’assiduité récompense les plus fidèles.",
+        pitchLead: "Comment faire penser à votre commerce — ou animer vos équipes en entreprise / CE — sans jamais harceler ? En créant un petit rituel qu’ils attendent eux-mêmes. Pendant 7, 14 ou 31 jours, vos clients ou salariés ouvrent leur case du jour sur leur téléphone. Vous choisissez librement chaque surprise (disponible à l'unité à 29 €).",
         kpis: [
           { val: "1 à 31 jours", lbl: "Avent, mois anniversaire, soldes, rentrée" },
           { val: "Horloge serveur", lbl: "1 ouverture par jour, anti-triche garanti" },
@@ -4074,7 +4074,7 @@
         surtitre: "MODULE 05 · SIMPLE COMME PRONOSTICS",
         subtitle: "Devenez le QG officiel des grands matchs : vos clients pronostiquent sur votre ligue privée, se chambrent au classement et reviennent toute la saison.",
         offerBadge: "✓ Inclus Le Grand Jeu (89 €) & La Totale · Pass 39 € / compétition",
-        pitchLead: "Pendant la Ligue des champions, le Top 14, la Coupe du monde ou même Top Chef et l’Eurovision, vos clients parlent déjà des résultats. En créant votre ligue privée maison, vous leur donnez une raison concrète de revenir chaque semaine vérifier leur place au classement affiché sur votre TV et défendre leur podium entre collègues ou amis.",
+        pitchLead: "Pendant la Ligue des champions, le Top 14, la Coupe du monde, Top Chef ou l’Eurovision, vos clients ou collaborateurs parlent déjà des résultats. En créant votre ligue privée maison (disponible à l'unité pour commerces, entreprises et CE pour leurs salariés), vous leur donnez une raison concrète de revenir chaque semaine vérifier leur place au classement.",
         kpis: [
           { val: "Pass 39 € unique", lbl: "Couvre toute une compétition (jusqu’à 12 mois)" },
           { val: "Verrouillage auto", lbl: "Scores figés à la seconde du coup d’envoi" },

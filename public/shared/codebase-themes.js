@@ -847,16 +847,16 @@
   ];
 
   const EVENT_KINDS = [
-    { key: "football", label: "Sport (Calendrier officiel)", icon: "🏅", usesCompetition: true, hint: "Football, rugby, tennis… Matchs à pronostiquer sur le score." },
-    { key: "ceremony", label: "Cérémonie (César, Oscars…)", icon: "🏆", usesCompetition: false, hint: "Vos clients parient sur les lauréats d'une grande cérémonie.", prompt: "Qui remporte le prix principal ?" },
-    { key: "eurovision", label: "Eurovision", icon: "🎤", usesCompetition: false, hint: "Soirée Eurovision : le pays vainqueur et le score final.", prompt: "Quel pays remporte l'Eurovision ?" },
-    { key: "emission", label: "Finale d'une émission (Top Chef…)", icon: "📺", usesCompetition: false, hint: "Finale d'une émission TV : le gagnant et l'audience.", prompt: "Qui remporte la grande finale ?" },
-    { key: "culinaire", label: "Concours culinaire", icon: "🍽️", usesCompetition: false, hint: "Concours de cuisine : le meilleur plat et la note du vainqueur.", prompt: "Quel plat remporte le concours ?" },
-    { key: "tournoi", label: "Tournoi local / E-sport", icon: "🏓", usesCompetition: false, hint: "Tournoi du quartier, club ou compétition E-sport.", prompt: "Quel sera le podium du tournoi ?" },
-    { key: "entreprise", label: "Compétition d'entreprise", icon: "🏢", usesCompetition: false, hint: "Challenge entre équipes ou services : podium final.", prompt: "Quelle équipe remporte l'épreuve reine ?" },
-    { key: "course", label: "Course", icon: "🏁", usesCompetition: false, hint: "Résultat d'une course : l'ordre d'arrivée sur le podium.", prompt: "Qui franchit la ligne d'arrivée en premier ?" },
-    { key: "remise_prix", label: "Remise de prix", icon: "🎖️", usesCompetition: false, hint: "Vos clients désignent le lauréat avant l'annonce.", prompt: "Qui reçoit le prix du public ?" },
-    { key: "election", label: "Élection associative / locale", icon: "🗳️", usesCompetition: false, hint: "Qui sera élu et avec quelle participation.", prompt: "Qui sera élu ?" },
+    { key: "football", label: "Sport (Calendrier officiel)", icon: "🏅", usesCompetition: true, hint: "Football, rugby, tennis… Matchs à pronostiquer sur le score.", defaultSub: "Combien de buts seront marqués au total sur cette journée ?" },
+    { key: "ceremony", label: "Cérémonie (César, Oscars…)", icon: "🏆", usesCompetition: false, hint: "Vos clients parient sur les lauréats d'une grande cérémonie.", prompt: "Qui remporte le prix principal ?", defaultChoices: "Film A, Film B, Film C", defaultSub: "Combien de récompenses remportera le grand gagnant ?" },
+    { key: "eurovision", label: "Eurovision", icon: "🎤", usesCompetition: false, hint: "Soirée Eurovision : le pays vainqueur et le score final.", prompt: "Quel pays remporte l'Eurovision ?", defaultChoices: "France, Suède, Italie", defaultSub: "Quel score total obtiendra le pays vainqueur ?" },
+    { key: "emission", label: "Finale d'une émission (Top Chef…)", icon: "📺", usesCompetition: false, hint: "Finale d'une émission TV : le gagnant et l'audience.", prompt: "Qui remporte la grande finale ?", defaultChoices: "Finaliste 1, Finaliste 2, Finaliste 3", defaultSub: "Quel pourcentage des voix obtiendra le vainqueur ?" },
+    { key: "culinaire", label: "Concours culinaire", icon: "🍽️", usesCompetition: false, hint: "Concours de cuisine : le meilleur plat et la note du vainqueur.", prompt: "Quel plat remporte le concours ?", defaultChoices: "Plat Signature, Création Végétale, Dessert Étoilé", defaultSub: "Quelle note sur 20 obtiendra le plat gagnant ?" },
+    { key: "tournoi", label: "Tournoi local / E-sport", icon: "🏓", usesCompetition: false, hint: "Tournoi du quartier, club ou compétition E-sport.", prompt: "Quel sera le podium du tournoi ?", defaultChoices: "Équipe Alpha, Équipe Nova, Équipe Phoenix", defaultSub: "Combien de points marquera le vainqueur en finale ?" },
+    { key: "entreprise", label: "Compétition d'entreprise / CE", icon: "🏢", usesCompetition: false, hint: "Challenge entre équipes ou services (entreprise & CE) : podium final.", prompt: "Quelle équipe remporte l'épreuve reine ?", defaultChoices: "Équipe Produit, Équipe Commerce, Équipe Support", defaultSub: "Combien de points sépareront le 1er du 2e au classement ?" },
+    { key: "course", label: "Course", icon: "🏁", usesCompetition: false, hint: "Résultat d'une course : l'ordre d'arrivée sur le podium.", prompt: "Qui franchit la ligne d'arrivée en premier ?", defaultChoices: "Coureur #1, Coureur #2, Coureur #3", defaultSub: "Quel sera le temps exact du vainqueur (en secondes) ?" },
+    { key: "remise_prix", label: "Remise de prix", icon: "🎖️", usesCompetition: false, hint: "Vos clients désignent le lauréat avant l'annonce.", prompt: "Qui reçoit le prix du public ?", defaultChoices: "Nommé 1, Nommé 2, Nommé 3", defaultSub: "Quel pourcentage des votes obtiendra le lauréat ?" },
+    { key: "election", label: "Élection associative / locale", icon: "🗳️", usesCompetition: false, hint: "Qui sera élu et avec quelle participation.", prompt: "Qui sera élu ?", defaultChoices: "Liste A, Liste B, Liste C", defaultSub: "Quel sera le taux de participation (%) ?" },
   ];
 
   /* ── 7. GESTIONNAIRE DE CACHE LOCAL & TUNNEL DE CONVERSION (canExplore / canEditDraft / canPublish) ── */

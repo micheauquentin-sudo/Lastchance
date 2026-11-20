@@ -871,10 +871,43 @@
     }
 
     if (cle === "matchs") {
+      const ek = CB.EVENT_KINDS.find((e) => e.key === p.eventKind) || CB.EVENT_KINDS[0];
+      if (p.eventKind === "football") {
+        const comp = CB.COMPETITIONS.find((c) => c.key === p.competition) || CB.COMPETITIONS[0];
+        return `
+          <div class="k-field-group">
+            <label class="k-label">Rencontres synchronisées (${escapeHtml(comp.label)})</label>
+            <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.85rem;">
+              ${comp.matches.map((m) => `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.45rem 0.7rem;background:#fff;border:1.5px solid var(--k-ink);border-radius:10px;font-size:0.82rem;">
+                  <span>${m.flag1} <b>${escapeHtml(m.t1)}</b></span>
+                  <span style="font-weight:800;color:#6b5f79;">vs</span>
+                  <span><b>${escapeHtml(m.t2)}</b> ${m.flag2}</span>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+          <div class="k-field-group">
+            <label class="k-label" for="p-sub">Question subsidiaire (départage les ex æquo)</label>
+            <input id="p-sub" type="text" class="k-input" value="${escapeAttr(p.subsidiaryQuestion || ek.defaultSub || "")}" data-bind="pronostics.subsidiaryQuestion" />
+          </div>
+        `;
+      }
+      const qVal = p.customQuestion || ek.prompt || "Qui remporte l'événement ?";
+      const choicesVal = p.customChoices || ek.defaultChoices || "Choix 1, Choix 2, Choix 3";
+      const subVal = p.subsidiaryQuestion || ek.defaultSub || "";
       return `
         <div class="k-field-group">
+          <label class="k-label" for="p-main-q">Question principale (${escapeHtml(ek.label)})</label>
+          <input id="p-main-q" type="text" class="k-input" value="${escapeAttr(qVal)}" data-bind="pronostics.customQuestion" />
+        </div>
+        <div class="k-field-group">
+          <label class="k-label" for="p-choices">Choix proposés (séparés par une virgule)</label>
+          <input id="p-choices" type="text" class="k-input" value="${escapeAttr(choicesVal)}" data-bind="pronostics.customChoices" />
+        </div>
+        <div class="k-field-group">
           <label class="k-label" for="p-sub">Question subsidiaire (départage les ex æquo)</label>
-          <input id="p-sub" type="text" class="k-input" value="${escapeAttr(p.subsidiaryQuestion)}" data-bind="pronostics.subsidiaryQuestion" />
+          <input id="p-sub" type="text" class="k-input" value="${escapeAttr(subVal)}" data-bind="pronostics.subsidiaryQuestion" />
         </div>
       `;
     }
@@ -1223,6 +1256,19 @@ $$("[data-bind]", container).forEach((inp) => {
         } else if (act === "set-field") {
           const [mod, key] = el.dataset.path.split(".");
           drafts[mod][key] = el.dataset.val;
+          if (mod === "pronostics" && key === "eventKind") {
+            const newEk = CB.EVENT_KINDS.find((e) => e.key === el.dataset.val) || CB.EVENT_KINDS[0];
+            drafts.pronostics.customQuestion = newEk.prompt || "";
+            drafts.pronostics.customChoices = newEk.defaultChoices || "Choix 1, Choix 2, Choix 3";
+            drafts.pronostics.subsidiaryQuestion = newEk.defaultSub || "";
+            if (el.dataset.val !== "football" && drafts.pronostics.theme === "football") {
+              drafts.pronostics.theme = "neutre";
+              drafts.pronostics.fond = "aucun";
+            } else if (el.dataset.val === "football" && drafts.pronostics.theme === "neutre") {
+              drafts.pronostics.theme = "football";
+              drafts.pronostics.fond = "football";
+            }
+          }
           triggerAutoSave();
           renderFormColumn();
           renderPreviewColumn();
@@ -1571,6 +1617,11 @@ $$("[data-bind]", container).forEach((inp) => {
       ? `background-image: linear-gradient(180deg, rgba(253,246,227,0.82), rgba(253,246,227,0.92)), url('fonds/${p.fond}-640.webp'); background-size: cover;`
       : `background-color: ${lavis};`;
 
+    const choicesList = (p.customChoices || ek.defaultChoices || "Choix 1, Choix 2, Choix 3")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     const matchesHtml = p.eventKind === "football"
       ? comp.matches.map((m) => `
           <div class="kp-prono-match">
@@ -1581,10 +1632,12 @@ $$("[data-bind]", container).forEach((inp) => {
         `).join("")
       : `
         <div class="kp-prono-match" style="flex-direction:column;align-items:flex-start;gap:0.35rem;">
-          <strong>${ek.icon} Question : ${escapeHtml(ek.prompt || "Qui remportera la finale ?")}</strong>
-          <small>Choix 1 · Choix 2 · Choix 3</small>
+          <strong>${ek.icon} Question : ${escapeHtml(p.customQuestion || ek.prompt || "Qui remportera la finale ?")}</strong>
+          <small>${escapeHtml(choicesList.join(" · "))}</small>
         </div>
       `;
+
+    const subText = p.subsidiaryQuestion || ek.defaultSub || "";
 
     return `
       <div class="kp-play-surface" style="${bgStyle};color:#211d16;">
@@ -1593,6 +1646,7 @@ $$("[data-bind]", container).forEach((inp) => {
           <span class="kp-play-mech-badge">${ek.icon} ${ek.label}</span>
           <h3 class="kp-play-title" style="color:#211d16">${escapeHtml(p.title)}</h3>
           <div class="kp-prono-list">${matchesHtml}</div>
+          ${subText ? `<div class="kp-prono-bareme" style="margin-top:0.35rem;">⚖️ <b>Question subsidiaire :</b> ${escapeHtml(subText)}</div>` : ""}
           <div class="kp-prono-bareme">
             🎯 Score exact : <b>+${p.exactScorePts} pts</b> · Bon résultat : <b>+${p.winnerPts} pts</b>
           </div>
@@ -1693,22 +1747,22 @@ $$("[data-bind]", container).forEach((inp) => {
     }
 
     return `
-      <div class="kp-play-surface" style="${bgStyle};color:${textColor};padding:0.75rem 0.65rem 1.25rem;">
-        <div class="k-stripe-bar" style="height:10px;margin-bottom:0.75rem;"></div>
-        <div class="kp-play-inner" style="padding:0;">
+      <div class="kp-play-surface" style="${bgStyle};color:${textColor};">
+        <div class="k-stripe-bar" style="height:10px;"></div>
+        <div class="kp-play-inner">
           <span class="kp-play-mech-badge">🗓️ Calendrier des Surprises · ${nb} jours</span>
           <h3 class="kp-play-title" style="color:${textColor};margin-bottom:0.35rem;">${escapeHtml(c.name)}</h3>
-          <p style="font-size:0.75rem;margin:0 0 0.75rem;opacity:0.9;">
-            ${c.qrDiffusion === "emport_livraison" ? "🛵 Disponible au comptoir &amp; dans vos sacs Uber Eats / Deliveroo" : "🏪 Scannez chaque jour au comptoir pour révéler votre cadeau !"}
+          <p style="font-size:0.74rem;margin:0 0 0.6rem;opacity:0.9;">
+            ${c.qrDiffusion === "emport_livraison" ? "🛵 Disponible au comptoir &amp; dans vos sacs Uber Eats / Deliveroo" : "🏪 Scannez chaque jour au comptoir ou en entreprise pour révéler votre cadeau !"}
           </p>
 
-          <div class="cs-mini-cal-grid" style="display:grid;grid-template-columns:repeat(3, 1fr);gap:0.45rem;margin-bottom:0.85rem;">
-            ${gridCards}
+          <div id="cs-today-reveal-banner" style="background:#e6f9ef;color:#161317;border:2px solid #161317;border-radius:12px;padding:0.45rem 0.65rem;text-align:center;font-size:0.75rem;font-weight:800;box-shadow:3px 3px 0 #161317;margin-bottom:0.7rem;">
+            🎁 Case du jour n°3 débloquée : <b>🍪 Douceur maison offerte</b>
+            <div style="font-size:0.68rem;font-weight:600;margin-top:0.15rem;">Code retrait : <code style="background:#ffd93d;padding:0.1rem 0.35rem;border-radius:4px;border:1px solid #161317;">CAL-3819</code></div>
           </div>
 
-          <div id="cs-today-reveal-banner" style="background:#e6f9ef;color:#161317;border:2px solid #161317;border-radius:12px;padding:0.5rem 0.7rem;text-align:center;font-size:0.78rem;font-weight:800;box-shadow:3px 3px 0 #161317;">
-            🎁 Case du jour n°3 débloquée : <b>🍪 Douceur maison offerte</b>
-            <div style="font-size:0.7rem;font-weight:600;margin-top:0.2rem;">Code retrait : <code style="background:#ffd93d;padding:0.1rem 0.35rem;border-radius:4px;border:1px solid #161317;">CAL-3819</code></div>
+          <div class="cs-mini-cal-grid" style="display:grid;grid-template-columns:repeat(4, 1fr);gap:0.38rem;">
+            ${gridCards}
           </div>
         </div>
       </div>
