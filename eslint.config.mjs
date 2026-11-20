@@ -99,7 +99,6 @@ const eslintConfig = defineConfig([
     // un bundle minifie sous l oeil du linter produit des centaines de
     // diagnostics sur du code que personne n ecrira jamais.
     "public/**",
-    "propositions-site/shared/vendor/**",
     "supabase/.temp/**",
     "supabase/.branches/**",
     // Outillage de poste de travail, hors des deux arbres Next et ignoré par
