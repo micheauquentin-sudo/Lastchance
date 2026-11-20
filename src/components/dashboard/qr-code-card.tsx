@@ -30,6 +30,7 @@ export function QrCodeCard({
   posterHref,
   posterConfigured = false,
   testHref,
+  isPublished = true,
 }: {
   id: string;
   slug: string;
@@ -44,6 +45,8 @@ export function QrCodeCard({
   posterConfigured?: boolean;
   /** Planche imprimable couvrant tous les styles à scanner physiquement. */
   testHref?: string;
+  /** Faux tant que la campagne liée n'est pas publiée : évite d'imprimer un QR mort. */
+  isPublished?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [style, setStyle] = useState<QrStyle>(initialStyle);
@@ -102,9 +105,23 @@ export function QrCodeCard({
   async function handleDownload() {
     const canvas = document.createElement("canvas");
     await renderQr(canvas, url, style, 1024);
+    if (!isPublished) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.save();
+        ctx.fillStyle = "rgba(180, 83, 9, 0.9)";
+        ctx.fillRect(0, canvas.height / 2 - 64, canvas.width, 128);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 52px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("BROUILLON — NON ACTIF", canvas.width / 2, canvas.height / 2);
+        ctx.restore();
+      }
+    }
     const a = document.createElement("a");
     a.href = canvas.toDataURL("image/png");
-    a.download = `qr-${slug}.png`;
+    a.download = isPublished ? `qr-${slug}.png` : `qr-${slug}-brouillon.png`;
     a.click();
   }
 
@@ -132,7 +149,9 @@ export function QrCodeCard({
             onClick={handleDownload}
             className="k-btn-sm w-full rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/30"
           >
-            Télécharger le QR (PNG)
+            {isPublished
+              ? "Télécharger le QR (PNG)"
+              : "Télécharger aperçu (filigrane)"}
           </button>
           <button
             type="button"
@@ -153,7 +172,14 @@ export function QrCodeCard({
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-2">
-          <p className="truncate font-black text-k-ink">{label || "Sans libellé"}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate font-black text-k-ink">{label || "Sans libellé"}</p>
+            {!isPublished && (
+              <span className="inline-block rounded-full border border-k-ink bg-k-yellow/70 px-2.5 py-0.5 text-[11px] font-black text-k-ink">
+                Brouillon — scan bloqué tant que non publié
+              </span>
+            )}
+          </div>
           <p className="truncate text-xs font-bold text-k-body">{campaignName}</p>
           <code className="block rounded-lg bg-zinc-100 px-3 py-2 text-sm text-k-ink break-all">
             {url}

@@ -278,6 +278,8 @@ export default async function CalendarDetailPage({
         <CalendarStatusControls
           calendar={c}
           hrefJeu={c.status === "active" ? publicUrl : null}
+          canPublish={capacites.canPublish}
+          peutAcheter={capacites.peutAcheter}
         />
       </CarteRepliable>
 

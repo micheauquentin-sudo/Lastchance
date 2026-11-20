@@ -336,6 +336,7 @@ export default async function VitrineDashboardPage({
                   settings={settings}
                   appUrl={APP_URL}
                   peutPublier={capacites.canPublish}
+                  peutAcheter={capacites.peutAcheter}
                 />
               ) : (
                 <Card className="py-8 text-center">

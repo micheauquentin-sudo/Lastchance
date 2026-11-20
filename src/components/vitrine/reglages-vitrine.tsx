@@ -35,6 +35,7 @@ import {
   unpublishVitrine,
 } from "@/actions/vitrine";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { PhotoChamp } from "@/components/vitrine/photo-champ";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -659,10 +660,12 @@ export function PublicationCard({
   settings,
   appUrl,
   peutPublier,
+  peutAcheter = true,
 }: {
   settings: VitrineSettingsView;
   appUrl: string;
   peutPublier: boolean;
+  peutAcheter?: boolean;
 }) {
   const publier = useActionForm(publierAction, {
     networkError: "Publication impossible, réessayez.",
@@ -723,9 +726,14 @@ export function PublicationCard({
           </form>
         ) : (
           <form onSubmit={publier.onSubmit}>
-            <Button type="submit" disabled={!peutPublier || publier.pending}>
-              {publier.pending ? "Publication…" : "Publier la vitrine"}
-            </Button>
+            <PublishActionButton
+              canPublish={peutPublier}
+              peutAcheter={peutAcheter}
+              entitlement="vitrine"
+              pending={publier.pending}
+              label="Publier la vitrine"
+              pendingLabel="Publication…"
+            />
           </form>
         )}
       </div>

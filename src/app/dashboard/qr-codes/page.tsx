@@ -557,6 +557,7 @@ export default async function QrCodesPage({
                   posterHref={`/poster/${ligne.qr_id}`}
                   posterConfigured={campaignPosterIds.has(ligne.qr_id)}
                   testHref={`/poster/${ligne.qr_id}/qr-test`}
+                  isPublished={ligne.etat === "actif"}
                 />
               </li>
             ) : (

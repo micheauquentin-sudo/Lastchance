@@ -337,6 +337,8 @@ export default async function LoyaltyDetailPage({
               program={p}
               milestoneCount={milestones.length}
               hrefJeu={p.status === "active" ? publicUrl : null}
+              canPublish={capacites.canPublish}
+              peutAcheter={capacites.peutAcheter}
             />
           </CarteRepliable>
 

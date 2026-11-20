@@ -9,6 +9,7 @@ import {
   updateCalendarDay,
 } from "@/actions/calendar";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { Card } from "@/components/ui/card";
 import { caseVide, casesIncompletes } from "@/lib/activation/calendar";
 import {
@@ -1105,10 +1106,14 @@ const PHRASE_ETAT: Record<CalendarStatus, string> = {
 export function CalendarStatusControls({
   calendar,
   hrefJeu = null,
+  canPublish = true,
+  peutAcheter = true,
 }: {
   calendar: Calendar;
   /** Page publique du calendrier, `null` tant qu'il n'est pas ouvert. */
   hrefJeu?: string | null;
+  canPublish?: boolean;
+  peutAcheter?: boolean;
 }) {
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
@@ -1151,9 +1156,13 @@ export function CalendarStatusControls({
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={calendar.id} />
             <input type="hidden" name="status" value="active" />
-            <Button type="submit" disabled={statusPending}>
-              {statusPending ? "…" : "Ouvrir aux joueurs"}
-            </Button>
+            <PublishActionButton
+              canPublish={canPublish}
+              peutAcheter={peutAcheter}
+              entitlement="calendar"
+              pending={statusPending}
+              label="Ouvrir aux joueurs"
+            />
           </form>
         ) : (
           <form onSubmit={statusSubmit}>

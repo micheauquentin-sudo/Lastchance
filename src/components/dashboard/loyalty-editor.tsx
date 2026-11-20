@@ -17,6 +17,7 @@ import { SelecteurFond } from "@/components/dashboard/selecteur-fond";
 import { resolveLoyaltyStyle } from "@/lib/loyalty-style";
 import type { FondKey } from "@/lib/fonds-ecran";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { Card } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
@@ -1677,11 +1678,15 @@ export function LoyaltyStatusControls({
   program,
   milestoneCount,
   hrefJeu = null,
+  canPublish = true,
+  peutAcheter = true,
 }: {
   program: LoyaltyProgram;
   milestoneCount: number;
   /** Page publique du passeport, `null` tant qu'il n'est pas ouvert. */
   hrefJeu?: string | null;
+  canPublish?: boolean;
+  peutAcheter?: boolean;
 }) {
   // Les deux formulaires de statut sont MUTUELLEMENT EXCLUSIFS (« Ouvrir aux joueurs » ou
   // « Clôturer », jamais les deux montés ensemble) : un seul jeu d'état suffit.
@@ -1721,9 +1726,14 @@ export function LoyaltyStatusControls({
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={program.id} />
             <input type="hidden" name="status" value="active" />
-            <Button type="submit" disabled={statusPending || !canActivate}>
-              {statusPending ? "…" : "Ouvrir aux joueurs"}
-            </Button>
+            <PublishActionButton
+              canPublish={canPublish}
+              peutAcheter={peutAcheter}
+              entitlement="loyalty"
+              pending={statusPending || !canActivate}
+              pendingLabel={statusPending ? "…" : "Ouvrir aux joueurs"}
+              label="Ouvrir aux joueurs"
+            />
           </form>
         ) : (
           <form onSubmit={statusSubmit}>
