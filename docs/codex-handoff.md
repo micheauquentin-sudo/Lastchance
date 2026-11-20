@@ -1,5 +1,15 @@
 # Transmission Codex -> Claude Code
 
+## Vitrine 13", Studio Pronostics/Calendrier & Cohérence `/signup` — mise à jour du 2026-11-20
+
+- **Lot et objectif** : corriger les débordements et aperçus téléphone sur écran 13 pouces (accueil, modale 15 jeux, Studio), synchroniser les questions hors-sport et l'aperçu en direct du Studio Pronostics, ajuster l'aperçu Calendrier Surprise, intégrer les mentions Entreprise / CE d'entreprise, ajuster le héro et aligner les noms de formules/add-ons sur `/signup`.
+- **Branche / commits** : `main` — PR #425 (`1234a810`) et PR #426 (`abd9c217`), fusionnées et alignées sur `origin/main`.
+- **État** : livré sur `main`, CI complète verte.
+- **Faits et fichiers** : `public/h-site-final-20k/` (`styles.css`, `studio.js`, `index.html`, `abonnements.html`, `jeux-pronostics.html`, `app.js`), `public/shared/codebase-themes.js`, miroir `propositions-site/h-site-final-20k/` resynchronisé, et `src/app/(auth)/signup/page.tsx` (mapping `PLAN_LABELS` + `ADDON_LABELS`).
+- **Validations réellement exécutées** : `node --check` (JS vitrine), `npm run typecheck`, `npx eslint "src/app/(auth)/signup/page.tsx"`, et CI GitHub complète verte sur PR #425 et PR #426 (`Typecheck · Lint · Tests · Build`, `E2E Playwright (Chromium · WebKit)`, `PostgreSQL · ACL · RLS · Intégrité`, `Site vitrine · E2E · axe`, `CodeQL`, `npm audit`, `Vercel`).
+- **Risque / blocage** : aucun connu côté dépôt ; `docs/codex-handoff.md` mis à jour localement (non commité tant que non demandé).
+- **Prochaine action** : vérifier visuellement en production après déploiement Vercel.
+
 ## Marque retenue : Simple comme QR — mise à jour du 2026-11-19
 
 La marque **Simple comme QR** (`simplecommeqr.fr`) est retenue pour la vitrine
