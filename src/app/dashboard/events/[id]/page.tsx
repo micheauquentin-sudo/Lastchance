@@ -304,10 +304,9 @@ export default async function EventGamePage({
               gameId={game.id}
               status={status}
               hrefJeu={salleVisitable?.publicUrl ?? null}
-              // Les DEUX portes d'atelier de cette carte suivent l'entrée
-              // principale : masquée pour l'une, redirigée vers le studio pour
-              // l'autre, au-delà de `lg`. Voir l'en-tête de la prop.
               hrefStudio={`/studio/soiree/${game.id}`}
+              canPublish={capacites.canPublish}
+              peutAcheter={capacites.peutAcheter}
             />
           </CarteRepliable>
 

@@ -13,6 +13,7 @@ import {
 } from "@/actions/hunts";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { Card, TITRE_CARTE } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
@@ -777,11 +778,15 @@ export function HuntStatusControls({
   hunt,
   stepCount,
   hrefJeu = null,
+  canPublish = true,
+  peutAcheter = true,
 }: {
   hunt: Hunt;
   stepCount: number;
   /** QR de la première étape — ce que le joueur scanne en premier ; `null` sans étape. */
   hrefJeu?: string | null;
+  canPublish?: boolean;
+  peutAcheter?: boolean;
 }) {
   const {
     state: statusState,
@@ -819,9 +824,14 @@ export function HuntStatusControls({
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={hunt.id} />
             <input type="hidden" name="status" value="active" />
-            <Button type="submit" disabled={statusPending || !canActivate}>
-              {statusPending ? "…" : "Ouvrir aux joueurs"}
-            </Button>
+            <PublishActionButton
+              canPublish={canPublish}
+              peutAcheter={peutAcheter}
+              entitlement="hunts"
+              pending={statusPending || !canActivate}
+              pendingLabel={statusPending ? "…" : "Ouvrir aux joueurs"}
+              label="Ouvrir aux joueurs"
+            />
           </form>
         ) : (
           <form onSubmit={statusSubmit}>

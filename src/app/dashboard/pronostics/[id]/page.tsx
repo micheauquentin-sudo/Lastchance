@@ -531,6 +531,8 @@ export default async function ContestDetailPage({
             <ContestStatusControls
               contest={c}
               hrefJeu={c.status !== "draft" ? publicUrl : null}
+              canPublish={capacites.canPublish}
+              peutAcheter={capacites.peutAcheter}
             />
           </CarteRepliable>
 

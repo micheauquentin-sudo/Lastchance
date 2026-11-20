@@ -417,6 +417,8 @@ export default async function QuizDetailPage({
         <QuizStatusControls
           quiz={quiz}
           hrefJeu={quiz.status === "active" ? publicUrl : null}
+          canPublish={capacites.canPublish}
+          peutAcheter={capacites.peutAcheter}
         />
       </CarteRepliable>
 

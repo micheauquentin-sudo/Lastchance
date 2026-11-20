@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PublishPaywallTrigger } from "@/components/dashboard/publish-paywall-trigger";
 import { cheapestTierFor, formatMonthlyPrice } from "@/lib/plans";
 import { getSupportEmail } from "@/lib/support";
 import type { Entitlement } from "@/platform/experiences/contract";
@@ -35,12 +36,18 @@ export function PlanUpsell({
         <p className="text-xs text-zinc-500 mt-0.5">{children}</p>
       </div>
       {canManageBilling ? (
-        <Link
-          href="/dashboard/settings#subscription"
-          className="inline-block border border-zinc-300 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-zinc-50 transition-colors"
-        >
-          Voir les offres
-        </Link>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <PublishPaywallTrigger
+            entitlement={entitlement}
+            peutAcheter={canManageBilling}
+          />
+          <Link
+            href="/dashboard/settings#subscription"
+            className="inline-block border border-zinc-300 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-zinc-50 transition-colors"
+          >
+            Voir les offres
+          </Link>
+        </div>
       ) : (
         <p className="text-sm text-zinc-500">
           Demandez au propriétaire du compte d&apos;activer cette offre, ou

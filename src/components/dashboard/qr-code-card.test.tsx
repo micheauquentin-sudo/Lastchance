@@ -101,4 +101,24 @@ describe("QrCodeCard", () => {
     );
     expect(screen.queryByText("Chargement des gains…")).toBeNull();
   });
+
+  it("indique le mode brouillon et bascule le téléchargement en aperçu filigrané si non publié", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ rewardCount: 0 }), { status: 200 })));
+
+    render(
+      <QrCodeCard
+        id={QR_ID}
+        slug="roue-brouillon"
+        label="Chevalet table 1"
+        campaignName="Campagne brouillon"
+        url="https://app.lastchance.test/play/roue-brouillon"
+        scanCount={0}
+        initialStyle={QR_STYLE}
+        isPublished={false}
+      />,
+    );
+
+    expect(screen.getByText("Brouillon — scan bloqué tant que non publié")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Télécharger aperçu (filigrane)" })).toBeTruthy();
+  });
 });

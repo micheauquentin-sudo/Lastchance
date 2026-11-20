@@ -260,6 +260,8 @@ export default async function CampaignDetailPage({
         <CampaignStatusControls
           campaign={c}
           wheelId={roueVisee?.id ?? null}
+          canPublish={capacites.canPublish}
+          peutAcheter={capacites.peutAcheter}
           // Une campagne n'a pas d'URL publique à elle : le joueur entre par un
           // QR. On ouvre donc le PREMIER de la liste déjà chargée (la plus
           // récente d'abord, même ordre que le bloc QR ci-dessous) ; sans QR,
