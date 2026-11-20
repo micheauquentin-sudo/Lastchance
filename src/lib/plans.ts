@@ -143,7 +143,7 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "Lancer une animation : le jeu qui fait revenir vos clients, en libre-service.",
     priceMonthly: 29,
     currency: "EUR",
-    trialDays: 7,
+    trialDays: 0,
     /**
      * LES DEUX SALONS SONT DU SOCLE (2026-08-22), ET C'EST UN CHANGEMENT DE
      * NATURE, PAS DE PÉRIMÈTRE.
@@ -175,7 +175,7 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "Fidéliser : installer l'habitude — fidélité, rendez-vous, bouche-à-oreille.",
     priceMonthly: 59,
     currency: "EUR",
-    trialDays: 7,
+    trialDays: 0,
     entitlements: ["core", "duo", "bande", "loyalty", "calendar", "referral", "hunts", "quiz"],
     limits: { eventParticipants: 100 },
     highlights: [
@@ -203,7 +203,7 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "Se faire lire et réserver : votre carte au QR code et votre agenda, dans un seul abonnement.",
     priceMonthly: 79,
     currency: "EUR",
-    trialDays: 7,
+    trialDays: 0,
     /**
      * `quiz` EST ICI, ET CE N'EST PAS UNE GÉNÉROSITÉ.
      *
@@ -246,7 +246,7 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "Animer régulièrement : soirées, compétitions, temps réel dans votre salle.",
     priceMonthly: 89,
     currency: "EUR",
-    trialDays: 7,
+    trialDays: 0,
     entitlements: ["core", "duo", "bande", "events", "pronostics", "jackpot", "quiz"],
     // VEN-2 : 250 et non 500 — la jauge vendue redescend sous la capacité
     // MESURÉE, dérivation complète sur `PlanLimits`.
@@ -270,7 +270,7 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "Réunir toutes les briques : toute la plateforme, sans arbitrage entre modules.",
     priceMonthly: 129,
     currency: "EUR",
-    trialDays: 7,
+    trialDays: 0,
     entitlements: [
       "core",
       "duo",

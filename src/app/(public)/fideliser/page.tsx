@@ -289,7 +289,7 @@ export default function FideliserPage() {
               Prêt à fidéliser vos clients pour de bon ?
             </h2>
             <p className="mx-auto mt-2 max-w-xl text-sm sm:text-base font-bold text-k-ink/90">
-              Activez votre passeport fidélité dès aujourd&apos;hui avec 7 jours d&apos;essai offerts.
+              Créez votre passeport fidélité gratuitement et payez uniquement au moment de publier.
             </p>
             <div className="mt-6 flex flex-wrap justify-center items-center gap-3">
               <Magnetic>
@@ -297,7 +297,7 @@ export default function FideliserPage() {
                   href="/signup"
                   className="k-btn-light inline-block rounded-full border-[2.5px] border-k-ink bg-k-yellow px-8 py-3.5 text-base font-black text-k-ink shadow-[0_4px_0_var(--color-k-ink)] hover:bg-[#ffe359] transition-colors"
                 >
-                  Démarrer mon essai gratuit →
+                  Créer mon espace gratuit →
                 </Link>
               </Magnetic>
               <Link

@@ -573,7 +573,7 @@ export default function PasseportFidelitePage() {
               Votre passeport fidélité dans le mobile dès ce soir.
             </h2>
             <p className="mx-auto mt-4 max-w-lg text-base sm:text-lg leading-relaxed text-white/90 font-bold">
-              Créez votre compte en 2 minutes, paramétrez vos récompenses et vos paliers. 7 jours d&apos;essai offerts avec vos vrais clients.
+              Créez votre compte en 2 minutes, paramétrez vos récompenses et vos paliers. Créez votre compte gratuitement, sans carte bancaire. Vous ne payez que pour publier.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Magnetic>
@@ -581,7 +581,7 @@ export default function PasseportFidelitePage() {
                   href="/signup"
                   className="inline-flex items-center justify-center gap-2 rounded-full border-[3px] border-[#181512] bg-white px-9 py-4 text-base sm:text-lg font-black text-[#FF6B35] shadow-[0_6px_0_#181512] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_0_#181512] active:translate-y-1"
                 >
-                  Démarrer mon essai gratuit →
+                  Créer mon espace gratuit →
                 </Link>
               </Magnetic>
               <Link

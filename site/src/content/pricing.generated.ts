@@ -67,7 +67,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
     "tagline": "Lancer une animation : le jeu qui fait revenir vos clients, en libre-service.",
     "priceMonthly": 29,
     "priceLabel": "29 €/mois",
-    "trialDays": 7,
+    "trialDays": 0,
     "experiences": [
       "Jeux instantanés",
       "Duo Miroir",
@@ -88,7 +88,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
     "tagline": "Fidéliser : installer l'habitude — fidélité, rendez-vous, bouche-à-oreille.",
     "priceMonthly": 59,
     "priceLabel": "59 €/mois",
-    "trialDays": 7,
+    "trialDays": 0,
     "experiences": [
       "Jeux instantanés",
       "Parrainage",
@@ -114,7 +114,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
     "tagline": "Se faire lire et réserver : votre carte au QR code et votre agenda, dans un seul abonnement.",
     "priceMonthly": 79,
     "priceLabel": "79 €/mois",
-    "trialDays": 7,
+    "trialDays": 0,
     "experiences": [
       "Jeux instantanés",
       "Quiz",
@@ -139,7 +139,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
     "tagline": "Animer régulièrement : soirées, compétitions, temps réel dans votre salle.",
     "priceMonthly": 89,
     "priceLabel": "89 €/mois",
-    "trialDays": 7,
+    "trialDays": 0,
     "experiences": [
       "Jeux instantanés",
       "Événements live",
@@ -166,7 +166,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
     "tagline": "Réunir toutes les briques : toute la plateforme, sans arbitrage entre modules.",
     "priceMonthly": 129,
     "priceLabel": "129 €/mois",
-    "trialDays": 7,
+    "trialDays": 0,
     "experiences": [
       "Jeux instantanés",
       "Parrainage",

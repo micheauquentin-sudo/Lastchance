@@ -349,7 +349,7 @@ export default function TarifsPage() {
                   href="/signup"
                   className="rounded-full border-[3px] border-[#181512] bg-white px-9 py-4 text-base sm:text-lg font-black text-[#FF6B35] shadow-[0_6px_0_#181512] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_0_#181512]"
                 >
-                  Démarrer mon essai gratuit de 7 jours →
+                  Créer mon espace gratuit →
                 </Link>
               </Magnetic>
             </div>

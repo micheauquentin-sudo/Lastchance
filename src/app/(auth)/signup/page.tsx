@@ -44,7 +44,7 @@ export default async function SignupPage({
   searchParams: Promise<{ next?: string; plan?: string; addons?: string; from?: string; module?: string }>;
 }) {
   const { next, plan, addons, from, module: mod } = await searchParams;
-  const targetNext = next || (plan ? "/dashboard/settings" : undefined);
+  const targetNext = next || "/dashboard";
   const planLabel = plan ? (PLAN_LABELS[plan] ?? plan.replace(/_/g, " ")) : undefined;
   const addonLabels = addons
     ? addons
@@ -58,7 +58,8 @@ export default async function SignupPage({
     <Card>
       <h1 className="text-xl font-bold mb-1">Créer un compte</h1>
       <p className="text-sm text-zinc-500 mb-6">
-        Accédez à votre espace Simple comme QR et préparez vos animations.
+        Accédez gratuitement à votre espace Simple comme QR, sans carte bancaire.
+        Configurez tout en brouillon et ne payez que pour publier.
       </p>
 
       {(planLabel || addonLabels.length > 0) && (
@@ -67,7 +68,7 @@ export default async function SignupPage({
           <div className="space-y-1">
             {planLabel && (
               <strong className="font-bold text-amber-900 block text-xs uppercase tracking-wide">
-                Formule sélectionnée : {planLabel}
+                Formule choisie pour publier : {planLabel}
               </strong>
             )}
             {addonLabels.length > 0 && (
@@ -76,8 +77,16 @@ export default async function SignupPage({
               </p>
             )}
             <p className="text-amber-800 leading-relaxed">
-              Vos choix et vos 7 jours d&apos;essai gratuit sans engagement seront rattachés à votre compte.
+              Votre compte est créé gratuitement, sans paiement immédiat. Préparez
+              vos animations en brouillon, puis activez votre formule au moment de
+              publier.
             </p>
+            <Link
+              href="/signup"
+              className="inline-block font-bold text-amber-950 underline underline-offset-2 pt-0.5"
+            >
+              Ou créer un compte gratuit sans formule présélectionnée →
+            </Link>
           </div>
         </div>
       )}
