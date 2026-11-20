@@ -3,6 +3,7 @@
 import { useActionState, useRef } from "react";
 import { deleteCampaign, duplicateCampaign, updateCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -125,6 +126,8 @@ export function CampaignStatusControls({
   modele = null,
   performance = null,
   windowState = "open",
+  canPublish = true,
+  peutAcheter = true,
 }: {
   campaign: Campaign;
   /**
@@ -155,6 +158,8 @@ export function CampaignStatusControls({
    * (`campaign-window-coverage.test.ts`) exige que toute pastille la reçoive.
    */
   windowState?: CampaignWindowState;
+  canPublish?: boolean;
+  peutAcheter?: boolean;
 }) {
   const { status, setStatus } = useCampaignStatus();
   // ENREGISTREMENT AUTOMATIQUE — sur le RENOMMAGE SEUL, et délibérément :
@@ -226,19 +231,30 @@ export function CampaignStatusControls({
       titre="Statut de la campagne"
       badge={<CampaignStatusBadge status={status} windowState={windowState} />}
       phrase={PHRASE_ETAT[campaignDisplayStatus(status, windowState)]}
-      actions={transitions.map((t) => (
-        <form key={`${t.to}-${t.label}`} onSubmit={statusSubmit}>
-          <input type="hidden" name="id" value={campaign.id} />
-          <input type="hidden" name="status" value={t.to} />
-          <Button
-            type="submit"
-            variant={t.to === "active" ? "primary" : "secondary"}
-            disabled={statusPending}
-          >
-            {t.label}
-          </Button>
-        </form>
-      ))}
+      actions={transitions.map((t) =>
+        t.to === "active" && !canPublish ? (
+          <PublishActionButton
+            key={`${t.to}-${t.label}`}
+            canPublish={false}
+            peutAcheter={peutAcheter}
+            entitlement="core"
+            label={t.label}
+            variant="primary"
+          />
+        ) : (
+          <form key={`${t.to}-${t.label}`} onSubmit={statusSubmit}>
+            <input type="hidden" name="id" value={campaign.id} />
+            <input type="hidden" name="status" value={t.to} />
+            <Button
+              type="submit"
+              variant={t.to === "active" ? "primary" : "secondary"}
+              disabled={statusPending}
+            >
+              {t.label}
+            </Button>
+          </form>
+        ),
+      )}
       raccourcis={
         <>
           {/* L’ATELIER RESTE, POUR LE TÉLÉPHONE (VIT-46). Au-delà de `lg`, le

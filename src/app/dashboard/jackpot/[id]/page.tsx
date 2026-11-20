@@ -177,6 +177,8 @@ export default async function JackpotDetailPage({
             <JackpotStatusControls
               campaign={c}
               hrefJeu={c.status === "active" ? publicUrl : null}
+              canPublish={capacites.canPublish}
+              peutAcheter={capacites.peutAcheter}
             />
           </CarteRepliable>
 

@@ -17,6 +17,7 @@ import {
   updateEventSession,
 } from "@/actions/events";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { Card, TITRE_CARTE } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
@@ -170,27 +171,16 @@ export function EventGameStatusControls({
   status,
   hrefJeu = null,
   hrefStudio = null,
+  canPublish = true,
+  peutAcheter = true,
 }: {
   gameId: string;
   status: EventGameStatus;
   /** Salle la plus récente côté joueur, `null` si aucune session. */
   hrefJeu?: string | null;
-  /**
-   * LE STUDIO, QUAND IL Y EN A UN — et pourquoi cette prop existe (VIT-47).
-   *
-   * Cette carte porte DEUX portes vers l'atelier : le raccourci « Modifier dans
-   * l'atelier » et le lien « Voir ce qu'il manque » du paragraphe d'aide. Au-delà
-   * de `lg`, la carte d'entrée de l'atelier est remplacée par celle du studio :
-   * laisser ces deux-là intactes donnerait TROIS chemins vers deux écrans
-   * différents pour un seul travail, et le commerçant apprendrait à régler sa
-   * soirée dans celui qui n'a pas d'aperçu.
-   *
-   * Le raccourci est donc masqué au-delà de `lg`, et le lien d'aide CHANGE de
-   * destination plutôt que de disparaître — il annonce ce qu'il manque, et la
-   * phrase perdrait son sens sans lui. `null` (page de suivi d'un module non
-   * porté, tests) conserve exactement le comportement d'avant.
-   */
   hrefStudio?: string | null;
+  canPublish?: boolean;
+  peutAcheter?: boolean;
 }) {
   const {
     state: statusState,
@@ -213,9 +203,13 @@ export function EventGameStatusControls({
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={gameId} />
             <input type="hidden" name="status" value="active" />
-            <Button type="submit" disabled={statusPending}>
-              {statusPending ? "…" : "Ouvrir aux joueurs"}
-            </Button>
+            <PublishActionButton
+              canPublish={canPublish}
+              peutAcheter={peutAcheter}
+              entitlement="events"
+              pending={statusPending}
+              label="Ouvrir aux joueurs"
+            />
           </form>
         ) : (
           <form onSubmit={statusSubmit}>

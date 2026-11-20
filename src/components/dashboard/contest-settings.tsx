@@ -20,6 +20,7 @@ import type {
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
@@ -160,10 +161,14 @@ const PHRASE_ETAT: Record<ContestStatus, string> = {
 export function ContestStatusControls({
   contest,
   hrefJeu = null,
+  canPublish = true,
+  peutAcheter = true,
 }: {
   contest: Contest;
   /** Page publique du championnat, `null` tant qu'il est en brouillon. */
   hrefJeu?: string | null;
+  canPublish?: boolean;
+  peutAcheter?: boolean;
 }) {
   const { state: statusState, pending: statusPending, onSubmit: statusSubmit } =
     useActionForm(updateContest, {
@@ -190,24 +195,36 @@ export function ContestStatusControls({
       titre="Statut du championnat"
       badge={<ContestStatusBadge status={contest.status} />}
       phrase={PHRASE_ETAT[contest.status] ?? PHRASE_ETAT.draft}
-      actions={transitions.map((t) => (
-        <form key={t.to} onSubmit={statusSubmit} className="flex items-end gap-2">
-          <input type="hidden" name="id" value={contest.id} />
-          <input type="hidden" name="status" value={t.to} />
-          {t.needsReason && (
-            <div className="max-w-xs">
-              <ReasonInput id={`status-reason-${t.to}`} />
-            </div>
-          )}
-          <Button
-            type="submit"
-            variant={t.to === "active" ? "primary" : "secondary"}
-            disabled={statusPending}
-          >
-            {t.label}
-          </Button>
-        </form>
-      ))}
+      actions={transitions.map((t) =>
+        t.to === "active" && !canPublish ? (
+          <PublishActionButton
+            key={t.to}
+            canPublish={false}
+            peutAcheter={peutAcheter}
+            entitlement="pronostics"
+            ressource={{ id: contest.id, nom: contest.name }}
+            label={t.label}
+            variant="primary"
+          />
+        ) : (
+          <form key={t.to} onSubmit={statusSubmit} className="flex items-end gap-2">
+            <input type="hidden" name="id" value={contest.id} />
+            <input type="hidden" name="status" value={t.to} />
+            {t.needsReason && (
+              <div className="max-w-xs">
+                <ReasonInput id={`status-reason-${t.to}`} />
+              </div>
+            )}
+            <Button
+              type="submit"
+              variant={t.to === "active" ? "primary" : "secondary"}
+              disabled={statusPending}
+            >
+              {t.label}
+            </Button>
+          </form>
+        ),
+      )}
       raccourcis={
         <>
           <RaccourciAtelier href={hrefEtapeContest(contest.id, "championnat")} />

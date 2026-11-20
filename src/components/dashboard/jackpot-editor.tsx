@@ -9,6 +9,7 @@ import {
 import Link from "next/link";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { Card } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
@@ -518,10 +519,14 @@ const PHRASE_ETAT: Record<JackpotCampaignStatus, string> = {
 export function JackpotStatusControls({
   campaign,
   hrefJeu = null,
+  canPublish = true,
+  peutAcheter = true,
 }: {
   campaign: JackpotCampaign;
   /** Page publique de la cagnotte, `null` tant qu'elle n'est pas ouverte. */
   hrefJeu?: string | null;
+  canPublish?: boolean;
+  peutAcheter?: boolean;
 }) {
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
@@ -560,9 +565,13 @@ export function JackpotStatusControls({
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={campaign.id} />
             <input type="hidden" name="status" value="active" />
-            <Button type="submit" disabled={statusPending}>
-              {statusPending ? "…" : "Ouvrir aux joueurs"}
-            </Button>
+            <PublishActionButton
+              canPublish={canPublish}
+              peutAcheter={peutAcheter}
+              entitlement="jackpot"
+              pending={statusPending}
+              label="Ouvrir aux joueurs"
+            />
           </form>
         ) : (
           <form onSubmit={statusSubmit}>

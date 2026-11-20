@@ -45,11 +45,18 @@ export function ModuleCapabilityNotice({
   return (
     <Card className="mb-6 border-dashed">
       <div className="text-center py-6">
+        <span className="inline-block rounded-full border border-k-ink bg-k-yellow/70 px-3 py-0.5 text-xs font-black uppercase tracking-wide text-k-ink mb-3">
+          Mode brouillon gratuit
+        </span>
         {capacites.message ? (
-          <p className="text-sm font-semibold text-k-ink mb-4 max-w-xl mx-auto">
+          <p className="text-sm font-semibold text-k-ink mb-2 max-w-xl mx-auto">
             {capacites.message}
           </p>
         ) : null}
+        <p className="text-xs font-medium text-k-body mb-4 max-w-xl mx-auto">
+          Configurez et prévisualisez librement (1 brouillon par module, QR codes
+          illimités). Le scan public et la publication se débloquent au paiement.
+        </p>
         <PlanUpsell entitlement={entitlement} canManageBilling={capacites.peutAcheter}>
           {children}
         </PlanUpsell>

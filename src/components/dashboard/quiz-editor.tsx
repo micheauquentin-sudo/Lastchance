@@ -8,6 +8,7 @@ import {
   updateQuizShareInvite,
 } from "@/actions/quiz";
 import { Button } from "@/components/ui/button";
+import { PublishActionButton } from "@/components/dashboard/publish-paywall-trigger";
 import { Card } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
@@ -68,10 +69,14 @@ const PHRASE_ETAT: Record<QuizStatus, string> = {
 export function QuizStatusControls({
   quiz,
   hrefJeu = null,
+  canPublish = true,
+  peutAcheter = true,
 }: {
   quiz: DashboardQuiz;
   /** Page publique du quiz, `null` tant qu'il n'est pas ouvert aux joueurs. */
   hrefJeu?: string | null;
+  canPublish?: boolean;
+  peutAcheter?: boolean;
 }) {
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
@@ -108,9 +113,13 @@ export function QuizStatusControls({
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={quiz.id} />
             <input type="hidden" name="status" value="active" />
-            <Button type="submit" disabled={statusPending}>
-              {statusPending ? "…" : "Ouvrir aux joueurs"}
-            </Button>
+            <PublishActionButton
+              canPublish={canPublish}
+              peutAcheter={peutAcheter}
+              entitlement="quiz"
+              pending={statusPending}
+              label="Ouvrir aux joueurs"
+            />
           </form>
         ) : (
           <form onSubmit={statusSubmit}>

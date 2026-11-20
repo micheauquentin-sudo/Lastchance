@@ -261,6 +261,8 @@ export default async function HuntDetailPage({
               hunt={h}
               stepCount={steps.length}
               hrefJeu={posterSteps[0]?.url ?? null}
+              canPublish={capacites.canPublish}
+              peutAcheter={capacites.peutAcheter}
             />
           </CarteRepliable>
 

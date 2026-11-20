@@ -212,7 +212,7 @@ export default function FaqPage() {
               </div>
 
               <p className="mt-4 text-[11px] font-bold text-k-muted">
-                ✓ 0 € de frais de mise en service · 7 jours d&apos;essai offerts · Sans engagement
+                ✓ 0 € de frais de mise en service · Brouillon gratuit · Sans engagement
               </p>
             </div>
           </div>

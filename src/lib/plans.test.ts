@@ -131,9 +131,9 @@ describe("proposition tarifaire — valeurs figées", () => {
     }
   });
 
-  it("accorde le même essai partout", () => {
+  it("n'accorde aucun essai sur les offres (paiement uniquement à la publication)", () => {
     for (const plan of PLAN_TIERS) {
-      expect(plan.trialDays).toBe(7);
+      expect(plan.trialDays).toBe(0);
     }
   });
 });
@@ -698,11 +698,10 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
     expect(regles).toContain("benchmark de capacité live");
   });
 
-  it("n'accorde aucun essai sur les add-ons", () => {
+  it("n'accorde aucun essai sur les add-ons ni sur les offres", () => {
     expect(ADDON_TRIAL_DAYS).toBe(0);
-    // L'essai reste celui de l'offre principale.
     for (const plan of PLAN_TIERS) {
-      expect(plan.trialDays).toBeGreaterThan(ADDON_TRIAL_DAYS);
+      expect(plan.trialDays).toBe(ADDON_TRIAL_DAYS);
     }
   });
 

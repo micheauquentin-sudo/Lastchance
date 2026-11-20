@@ -16,7 +16,7 @@ export default async function SignupPage({
   searchParams: Promise<{ next?: string; from?: string; module?: string }>;
 }) {
   const { next, from, module: mod } = await searchParams;
-  const targetNext = next;
+  const targetNext = next || "/dashboard";
 
   return (
     <Card>

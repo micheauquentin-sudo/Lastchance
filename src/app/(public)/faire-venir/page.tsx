@@ -276,7 +276,7 @@ export default function FaireVenirPage() {
                   href="/signup"
                   className="k-btn-light inline-block rounded-full border-[2.5px] border-k-ink bg-k-yellow px-8 py-3.5 text-base font-black text-k-ink shadow-[0_4px_0_var(--color-k-ink)] hover:bg-[#ffe359] transition-colors"
                 >
-                  Démarrer mon essai gratuit →
+                  Créer mon espace gratuit →
                 </Link>
               </Magnetic>
               <Link

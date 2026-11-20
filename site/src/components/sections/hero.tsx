@@ -40,15 +40,16 @@ export function Hero() {
           </p>
           <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row lg:justify-start sm:justify-center">
             <ButtonLink href={SIGNUP_URL} external size="lg">
-              Essayer gratuitement
+              Créer mon espace gratuit
             </ButtonLink>
             <ButtonLink href="/tarifs" variant="secondary" size="lg">
               Voir les tarifs
             </ButtonLink>
           </div>
           <p className="mt-4 text-sm text-ink-faint">
-            {TRIAL_DAYS} jours d&apos;essai · sans carte bancaire · sans
-            engagement
+            {TRIAL_DAYS > 0
+              ? `${TRIAL_DAYS} jours d'essai · sans carte bancaire · sans engagement`
+              : "Studio gratuit · sans carte bancaire · payez uniquement à la publication"}
           </p>
         </div>
 
