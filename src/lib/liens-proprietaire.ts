@@ -45,6 +45,7 @@ export const CHEMINS_PROPRIETAIRE = [
   "/dashboard/participations",
   "/dashboard/settings",
   "/dashboard/settings/sms",
+  "/dashboard/subscription",
 ] as const;
 
 /*
