@@ -741,6 +741,7 @@ export function trialLine(input: {
   // l'essai : on n'en parle plus du tout, plutôt que d'écrire « Terminé » à
   // quelqu'un qui n'en a peut-être jamais eu.
   if (input.status !== "inactive") return null;
+  if (input.trialDays <= 0) return null;
   // `inactive` = aucun abonnement n'a jamais commencé : la promesse du
   // catalogue est encore vraie, et c'est le seul cas où elle l'est.
   return `${input.trialDays} jours`;

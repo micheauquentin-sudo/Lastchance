@@ -76,7 +76,9 @@ export function PlanCatalog({
               </p>
             )}
             <p className="mt-1 text-xs text-k-muted">
-              {tier.trialDays} jours d&apos;essai inclus
+              {tier.trialDays > 0
+                ? `${tier.trialDays} jours d'essai inclus`
+                : "Sans engagement · Paiement uniquement à la publication"}
             </p>
 
             <div className="mt-3">

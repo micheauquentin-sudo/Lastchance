@@ -608,7 +608,7 @@ function Pricing() {
           <div className="flex items-center gap-2 rounded-2xl border-2 border-[#181512] bg-white px-4 py-2.5 shadow-[0_3px_0_#181512]">
             <span className="text-xl">🎁</span>
             <div className="text-xs font-black text-[#181512] leading-tight">
-              <span>7 jours d&apos;essai offerts</span>
+              <span>Brouillon gratuit · Paiement à la publication</span>
               <span className="block text-[10px] text-[#181512]/60 font-bold">Sans carte bancaire</span>
             </div>
           </div>
@@ -793,7 +793,7 @@ function FinalCtaFooter() {
           </h2>
           <p className="mx-auto mt-3 max-w-lg text-sm sm:text-base leading-relaxed text-white/95 font-bold">
             Créez votre compte en 2 minutes, activez vos mécaniques préférées, imprimez votre affiche.
-            7 jours d&apos;essai offerts avec vos vrais clients.
+            Créez votre compte gratuitement, sans carte bancaire. Vous ne payez que pour publier.
           </p>
           <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Magnetic>
@@ -801,7 +801,7 @@ function FinalCtaFooter() {
                 href="/signup"
                 className="inline-flex items-center justify-center gap-2 rounded-full border-[3px] border-[#181512] bg-white px-8 py-3.5 text-base font-black text-[#FF6B35] shadow-[0_5px_0_#181512] transition-all hover:-translate-y-0.5 hover:shadow-[0_7px_0_#181512] active:translate-y-0.5 active:shadow-[0_2px_0_#181512]"
               >
-                Démarrer mon essai gratuit →
+                Créer mon espace gratuit →
               </Link>
             </Magnetic>
           </div>

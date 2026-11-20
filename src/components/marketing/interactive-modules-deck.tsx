@@ -506,7 +506,7 @@ export function InteractiveModulesDeck() {
             <span>📲</span> Aucun téléchargement pour vos clients
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full border-2 border-[#181512] bg-white px-3.5 py-1.5 shadow-[0_2px_0_#181512]">
-            <span>🎁</span> 7 jours d&apos;essai gratuit inclus
+            <span>🎁</span> Brouillon gratuit · Paiement à la publication
           </span>
         </div>
       </div>

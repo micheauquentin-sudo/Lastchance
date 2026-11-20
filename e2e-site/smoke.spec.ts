@@ -22,7 +22,7 @@ test.describe("accueil", () => {
 
     // CTA principal du hero : ouvre l'inscription de l'application.
     await expect(
-      page.getByRole("link", { name: "Essayer gratuitement" }),
+      page.getByRole("link", { name: "Créer mon espace gratuit" }),
     ).toHaveAttribute("href", /\/signup$/);
 
     // Second CTA du hero : reste sur le site vitrine.
