@@ -2050,7 +2050,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: var(--ink);
 }
 .caisse-mock-btn {
-  background: #10b981;
+  background: #047857;
   color: #ffffff;
   border: 2px solid var(--ink);
   border-radius: 9px;
