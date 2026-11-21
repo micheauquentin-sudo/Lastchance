@@ -715,6 +715,54 @@
     </section>
 
     <!-- ==========================================================
+         5. LE MANÈGE INTERACTIF DES 10 BRIQUES DE JEU & FIDÉLITÉ
+         (Suivi juste en dessous par les blocs dédiés Vitrine & Réservation,
+          Jeux & Pronostics, et Fidélité & Jackpot !)
+         ========================================================== -->
+    <section class="section games-jukebox-section" id="jeux">
+      <div class="center">
+        <p class="section-script">simple comme jeux, simple comme tickets, simple comme fidélité ↓</p>
+        <h2 class="section-title">LE MANÈGE DE VOS <mark class="pop-mark pop-mark-pink">10 UNIVERS DE JEU.</mark></h2>
+        <p class="jukebox-sub">
+          Un client attend sa table ? Une commande part en livraison ? Un mardi soir mérite plus d'ambiance ? Touchez un jeton pour voir comment créer l'étincelle sur leur téléphone.
+        </p>
+      </div>
+
+      <div class="jukebox-arena reveal">
+        <!-- Nuage organique de 10 Jetons-Pilules rebondissants -->
+        <div class="jukebox-tokens-cloud" id="jukebox-tokens" role="tablist" aria-label="Choisir une expérience"></div>
+
+        <!-- Scène Animée en Direct -->
+        <div class="jukebox-live-stage" id="jukebox-stage" aria-live="polite">
+          <div class="jukebox-stage-top">
+            <span class="jukebox-cat-pill" id="jb-cat">Acquérir &amp; Convertir</span>
+            <span class="jukebox-step-counter" id="jb-counter">Expérience 1 / 10</span>
+          </div>
+
+          <div class="jukebox-visual-box" id="jb-visual"></div>
+
+          <div class="jukebox-stage-info">
+            <h3 id="jb-title">15 Jeux Instantanés (Hasard &amp; Adresse)</h3>
+            <p id="jb-desc">Machine à sous, coffre mystère, bonneteau, jeu de réflexe, mot mystère, grattage ou roue : variez les plaisirs à chaque campagne.</p>
+            <div class="jukebox-stage-footer">
+              <span class="jukebox-usage-pill" id="jb-usage">🎮 9 jeux de hasard + 6 défis d'adresse inclus</span>
+              <a class="ticket-btn pop-btn-ink jb-module-shortcut" id="jb-module-link" href="/modules?m=jeux-instantanes" style="font-size:0.78rem;padding:0.45rem 0.9rem;">Voir le module 15 Jeux →</a>
+                <div class="jukebox-nav-arrows">
+                <button type="button" class="jb-arrow-btn" id="jb-prev" aria-label="Expérience précédente">←</button>
+                <button type="button" class="jb-arrow-btn" id="jb-next" aria-label="Expérience suivante">→</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ruban Forain Défilant de Tickets Inclinés -->
+      <div class="carnival-ribbon-wrap" aria-label="Ruban des expériences">
+        <div class="carnival-ribbon-track" id="carnival-ribbon"></div>
+      </div>
+    </section>
+
+    <!-- ==========================================================
          4 TER. PROJECTION MÉTIER COMPACTE : CONCRÈTEMENT, ÇA DONNE QUOI CHEZ VOUS ?
          ========================================================== -->
     <section class="lc-scenarios-section" id="cas-concrets" aria-labelledby="cas-concrets-title">
@@ -887,53 +935,6 @@
             </div>
           </article>
         </div>
-      </div>
-    </section>
-
-    <!-- ==========================================================
-         5. LE MANÈGE INTERACTIF DES 10 BRIQUES DE JEU & FIDÉLITÉ
-         (Suivi juste en dessous par les blocs dédiés Vitrine & Réservation,
-          Jeux & Pronostics, et Fidélité & Jackpot !)
-         ========================================================== -->
-    <section class="section games-jukebox-section" id="jeux">
-      <div class="center">
-        <p class="section-script">simple comme jeux, simple comme tickets, simple comme fidélité ↓</p>
-        <h2 class="section-title">LE MANÈGE DE VOS <mark class="pop-mark pop-mark-pink">10 UNIVERS DE JEU.</mark></h2>
-        <p class="jukebox-sub">
-          Un client attend sa table ? Une commande part en livraison ? Un mardi soir mérite plus d'ambiance ? Touchez un jeton pour voir comment créer l'étincelle sur leur téléphone.
-        </p>
-      </div>
-
-      <div class="jukebox-arena reveal">
-        <!-- Nuage organique de 10 Jetons-Pilules rebondissants -->
-        <div class="jukebox-tokens-cloud" id="jukebox-tokens" role="tablist" aria-label="Choisir une expérience"></div>
-
-        <!-- Scène Animée en Direct -->
-        <div class="jukebox-live-stage" id="jukebox-stage" aria-live="polite">
-          <div class="jukebox-stage-top">
-            <span class="jukebox-cat-pill" id="jb-cat">Acquérir &amp; Convertir</span>
-            <span class="jukebox-step-counter" id="jb-counter">Expérience 1 / 10</span>
-          </div>
-
-          <div class="jukebox-visual-box" id="jb-visual"></div>
-
-          <div class="jukebox-stage-info">
-            <h3 id="jb-title">15 Jeux Instantanés (Hasard &amp; Adresse)</h3>
-            <p id="jb-desc">Machine à sous, coffre mystère, bonneteau, jeu de réflexe, mot mystère, grattage ou roue : variez les plaisirs à chaque campagne.</p>
-            <div class="jukebox-stage-footer">
-              <span class="jukebox-usage-pill" id="jb-usage">🎮 9 jeux de hasard + 6 défis d'adresse inclus</span>
-              <div class="jukebox-nav-arrows">
-                <button type="button" class="jb-arrow-btn" id="jb-prev" aria-label="Expérience précédente">←</button>
-                <button type="button" class="jb-arrow-btn" id="jb-next" aria-label="Expérience suivante">→</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Ruban Forain Défilant de Tickets Inclinés -->
-      <div class="carnival-ribbon-wrap" aria-label="Ruban des expériences">
-        <div class="carnival-ribbon-track" id="carnival-ribbon"></div>
       </div>
     </section>
 

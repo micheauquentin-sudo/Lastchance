@@ -359,9 +359,23 @@
   const jbTitle = $("#jb-title");
   const jbDesc = $("#jb-desc");
   const jbUsage = $("#jb-usage");
+  const jbModuleLink = $("#jb-module-link");
   const jbPrev = $("#jb-prev");
   const jbNext = $("#jb-next");
   const carnivalRibbon = $("#carnival-ribbon");
+
+  const JUKEBOX_MODULE_LINKS = {
+    core: { href: "/modules?m=jeux-instantanes", label: "Voir le module 15 Jeux →" },
+    loyalty: { href: "/modules?m=passeport-fidelite", label: "Voir le module Fidélité →" },
+    calendar: { href: "/modules?m=calendrier", label: "Voir le module Calendrier →" },
+    referral: { href: "/fidelite-communaute#simulateur-trio", label: "Tester le Parrainage →" },
+    quiz: { href: "/modules?m=quiz", label: "Voir le module Quiz →" },
+    events: { href: "/modules?m=evenements-live", label: "Voir le module Événements →" },
+    jackpot: { href: "/modules?m=jackpot-collectif", label: "Voir le module Jackpot →" },
+    pronostics: { href: "/modules?m=pronostics", label: "Voir le module Pronostics →" },
+    hunts: { href: "/modules?m=chasse-au-qr", label: "Voir le module Chasse au QR →" },
+    duo_bande: { href: "/modules?m=duo-miroir", label: "Voir le module Duo & Bande →" },
+  };
 
   let activeGameIdx = 0;
 
@@ -375,6 +389,11 @@
     if (jbTitle) jbTitle.textContent = g.title;
     if (jbDesc) jbDesc.textContent = g.desc;
     if (jbUsage) jbUsage.textContent = g.usage;
+    if (jbModuleLink) {
+      const modLink = JUKEBOX_MODULE_LINKS[g.id] || { href: "/modules", label: "Voir les modules →" };
+      jbModuleLink.setAttribute("href", modLink.href);
+      jbModuleLink.textContent = modLink.label;
+    }
 
     if (jbTokensBox) {
       let activeBtn = null;
@@ -717,9 +736,9 @@
           ${meta.base ? `<div class="plan-included-banner">${meta.base}</div>` : ""}
           <ul class="plan-modules-list" style="list-style:none;padding:0;margin:0 0 0.6rem;display:grid;gap:0.35rem;">
             ${(FORMULE_MODULES[f.id] || []).map((m) => `
-              <li style="display:flex;align-items:center;gap:0.45rem;font-size:0.83rem;font-weight:700;color:var(--ink);">
+              <li style="display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem 0.45rem;font-size:0.83rem;font-weight:700;color:var(--ink);">
                 ${m.emojiHtml || `<span aria-hidden="true" style="font-size:1.05rem;flex-shrink:0;">${m.emoji}</span>`}
-                <span>${m.name}</span>
+                <span style="min-width:0;">${m.name}</span>
               </li>
             `).join("")}
           </ul>
