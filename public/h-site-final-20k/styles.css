@@ -1991,6 +1991,94 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: #463c57;
 }
 
+.caisse-reassurance-card {
+  width: min(var(--max), 92vw);
+  margin: 2.1rem auto 0;
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  border-radius: 22px;
+  box-shadow: 6px 6px 0 var(--ink);
+  padding: 1.35rem 1.55rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr);
+  gap: 1.4rem;
+  align-items: center;
+}
+.caisse-reassurance-tag {
+  display: inline-flex;
+  align-items: center;
+  background: #ffd93d;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.22rem 0.68rem;
+  font: 800 0.68rem var(--body);
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
+.caisse-reassurance-copy h3 {
+  margin: 0 0 0.35rem;
+  font: 800 1.22rem/1.2 var(--fun-font);
+  color: var(--ink);
+}
+.caisse-reassurance-copy p {
+  margin: 0;
+  font: 600 0.88rem/1.45 var(--body);
+  color: #3d344d;
+}
+.caisse-reassurance-mock {
+  background: #faf6ec;
+  border: 2.5px solid var(--ink);
+  border-radius: 16px;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.65rem;
+}
+.caisse-mock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  background: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  padding: 0.42rem 0.45rem 0.42rem 0.85rem;
+}
+.caisse-mock-code {
+  font: 900 1.05rem monospace;
+  letter-spacing: 0.14em;
+  color: var(--ink);
+}
+.caisse-mock-btn {
+  background: #047857;
+  color: #ffffff;
+  border: 2px solid var(--ink);
+  border-radius: 9px;
+  padding: 0.42rem 0.8rem;
+  font: 800 0.78rem var(--body);
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.caisse-mock-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.caisse-mock-pills span {
+  background: #ffffff;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font: 800 0.7rem var(--body);
+  color: var(--ink);
+}
+@media (max-width: 860px) {
+  .caisse-reassurance-card {
+    grid-template-columns: 1fr;
+    padding: 1.1rem;
+  }
+}
+
 .games-jukebox-section {
   width: 100%;
   max-width: none;
