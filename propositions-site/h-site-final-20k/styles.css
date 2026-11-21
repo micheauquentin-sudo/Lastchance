@@ -1991,6 +1991,22 @@ header, main, section, footer { position: relative; z-index: 2; }
   color: #463c57;
 }
 
+.games-jukebox-section {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 3.4rem 0 2.6rem;
+  background:
+    radial-gradient(circle at 10% 18%, rgba(255, 255, 255, 0.52) 0, rgba(255, 255, 255, 0.52) 11%, transparent 12%),
+    radial-gradient(circle at 90% 80%, rgba(255, 126, 182, 0.22) 0, rgba(255, 126, 182, 0.22) 13%, transparent 14%),
+    linear-gradient(135deg, #f3e8ff 0%, #e4d2ff 55%, #ede0ff 100%);
+}
+.games-jukebox-section > .center,
+.games-jukebox-section > .jukebox-arena {
+  width: min(var(--max), 92vw);
+  margin-left: auto;
+  margin-right: auto;
+}
 .jukebox-arena {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
