@@ -942,33 +942,66 @@ header, main, section, footer { position: relative; z-index: 2; }
 .clog-stats-mint-bar {
   background: var(--mint);
   border-bottom: var(--border-thick);
-  padding: 1.35rem 1.5rem;
+  padding: 1.6rem 1.5rem;
 }
 .clog-stats-wrap {
   width: min(var(--max), 92vw);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1.15rem;
 }
 .clog-stat-pill {
   background: #ffffff;
   border: var(--border);
-  border-radius: 18px;
-  padding: 0.85rem 0.9rem;
-  text-align: center;
+  border-radius: 20px;
+  padding: 1.05rem 1.1rem;
+  text-align: left;
   box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
 }
+.clog-stat-pill:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+.clog-stat-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.15rem;
+}
+.clog-stat-emoji {
+  font-size: 1.45rem;
+  line-height: 1;
+}
+.clog-stat-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.58rem;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  font: 800 0.64rem var(--body);
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: #ffd93d;
+  white-space: nowrap;
+}
+.clog-stat-pill.is-pink .clog-stat-tag { background: #ffadd2; }
+.clog-stat-pill.is-lilac .clog-stat-tag { background: #d6c2ff; }
+.clog-stat-pill.is-sky .clog-stat-tag { background: #9ce6ff; }
 .clog-stat-pill b {
   display: block;
-  font: 700 1.3rem var(--fun-font);
+  font: 800 1.12rem/1.2 var(--fun-font);
   color: var(--ink);
-  margin-bottom: 0.12rem;
 }
-.clog-stat-pill span {
-  font: 800 0.68rem var(--body);
-  letter-spacing: 0.04em;
-  color: #463c57;
+.clog-stat-pill p {
+  margin: 0;
+  font: 600 0.84rem/1.42 var(--body);
+  color: #3d344d;
 }
 
 /* ==========================================================
@@ -7146,21 +7179,30 @@ header, main, section, footer { position: relative; z-index: 2; }
 
   /* 2. Barre Menthe 4 Piliers en 2x2 */
   .clog-stats-mint-bar {
-    padding: 0.85rem 0.75rem;
+    padding: 0.95rem 0.75rem;
   }
   .clog-stats-wrap {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.55rem;
+    gap: 0.65rem;
   }
   .clog-stat-pill {
-    padding: 0.6rem 0.5rem;
-    border-radius: 14px;
+    padding: 0.78rem 0.75rem;
+    border-radius: 16px;
+    gap: 0.3rem;
+  }
+  .clog-stat-emoji {
+    font-size: 1.15rem;
+  }
+  .clog-stat-tag {
+    font-size: 0.55rem;
+    padding: 0.16rem 0.42rem;
   }
   .clog-stat-pill b {
-    font-size: 1.02rem;
+    font-size: 0.96rem;
   }
-  .clog-stat-pill span {
-    font-size: 0.62rem;
+  .clog-stat-pill p {
+    font-size: 0.74rem;
+    line-height: 1.35;
   }
 
   /* 3. Héros Pages Annexes */
