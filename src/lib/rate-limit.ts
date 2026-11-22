@@ -793,6 +793,16 @@ export const RATE_LIMITS = {
    *  CLE NON PUBLIQUE, motif vitrineSlug : la saturer ne gene que ses propres
    *  collegues, d ou failClosed legitime. */
   ticketOrEmission: { limit: 200, windowSeconds: 3600 },
+  /** PRESSION du tirage public d'un Ticket d'Or par IP — compteur
+   *  d'OBSERVABILITÉ, fail-OPEN, jamais un refus (motif `huntStepIp` /
+   *  ADR-032). Une boutique entière partage souvent un même Wi-Fi / CGNAT ;
+   *  le dépassement alerte la supervision sur un balayage d'URLs. */
+  ticketOrTirageIp: { limit: 200, windowSeconds: 600 },
+  /** PLAFOND anti-flood du tirage Ticket d'Or par IP mesurée — fail-OPEN
+   *  (motif `spinIpPlafond`, 600/min = 10 req/s soutenues). Jamais atteint
+   *  par un commerce réel, coupe une rafale de couples (code, nonce) qui
+   *  forcerait des transactions `FOR UPDATE` en `service_role`. */
+  ticketOrTirageIpPlafond: { limit: 600, windowSeconds: 60 },
   /** COMPTEURS AGRÉGÉS d'une vitrine, par IP — failClosed, 30 par minute.
    *
    *  Motif `pageOpenIp` : plafond posé sur l'IP SEULE, avant toute lecture du

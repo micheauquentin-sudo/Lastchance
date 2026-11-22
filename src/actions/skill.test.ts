@@ -243,35 +243,53 @@ describe("submitSkillChallenge — le défi pilote le tirage", () => {
   });
 });
 
-describe("submitSkillChallenge — réflexe non autoritaire", () => {
-  it.each([true, false])(
-    "déclenche le même tirage pondéré quand succeeded=%s",
-    async (succeeded) => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-09-10T10:00:00.000Z"));
-      vi.mocked(loadPlayContext).mockResolvedValue(
-        // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
-        reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
-      );
-      const token = await issueToken();
-      state.reset();
-      vi.mocked(loadPlayContext).mockResolvedValue(
-        // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
-        reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
-      );
-      vi.advanceTimersByTime(1_400);
+describe("submitSkillChallenge — réflexe vérifié côté serveur", () => {
+  it("déclenche un tirage pondéré sur réussite valide et force la perte sur échec ou valeur incohérente", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-10T10:00:00.000Z"));
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
+      reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+    const token = await issueToken();
+    state.reset();
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
+      reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+    // Délai max d'armement (3500 ms) + réaction valide (250 ms) : passe toujours.
+    vi.advanceTimersByTime(3_800);
 
-      const res = await submitSkillChallenge({
-        slug: SLUG,
-        challengeToken: token,
-        attempt: { succeeded },
-      });
+    const okRes = await submitSkillChallenge({
+      slug: SLUG,
+      challengeToken: token,
+      attempt: { succeeded: true, reactionMs: 250, falseStart: false },
+    });
 
-      expect(res.ok).toBe(true);
-      const spin = state.rpcCalls.find((call) => call.name === "perform_atomic_spin");
-      expect(spin?.args.p_force_losing).toBe(false);
-    },
-  );
+    expect(okRes.ok).toBe(true);
+    const okSpin = state.rpcCalls.find((call) => call.name === "perform_atomic_spin");
+    expect(okSpin?.args.p_force_losing).toBe(false);
+
+    // Deuxième défi avec échec (réaction hors délai) -> p_force_losing=true.
+    state.reset();
+    const token2 = await issueToken();
+    state.reset();
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
+      reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+    vi.advanceTimersByTime(4_500);
+
+    const failRes = await submitSkillChallenge({
+      slug: SLUG,
+      challengeToken: token2,
+      attempt: { succeeded: true, reactionMs: 900, falseStart: false },
+    });
+
+    expect(failRes.ok).toBe(true);
+    const failSpin = state.rpcCalls.find((call) => call.name === "perform_atomic_spin");
+    expect(failSpin?.args.p_force_losing).toBe(true);
+  });
 
   it("refuse au démarrage une ancienne configuration Réflexe illimitée", async () => {
     vi.mocked(loadPlayContext).mockResolvedValue(
@@ -307,7 +325,7 @@ describe("submitSkillChallenge — réflexe non autoritaire", () => {
     const res = await submitSkillChallenge({
       slug: SLUG,
       challengeToken: token,
-      attempt: { succeeded: true },
+      attempt: { succeeded: true, reactionMs: 250, falseStart: false },
     });
 
     expect(res.ok).toBe(false);

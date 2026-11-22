@@ -523,8 +523,11 @@ export async function updateCampaignPrejeuInvitation(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const { id, prejeu_invitation } = parsed.data;
   const supabase = await createClient();
@@ -583,8 +586,11 @@ export async function updateCampaignShareInvite(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const { id, share_enabled } = parsed.data;
   const supabase = await createClient();
@@ -630,8 +636,11 @@ export async function updateCampaignClaim(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const { id, ...fields } = parsed.data;
   const supabase = await createClient();
@@ -952,8 +961,11 @@ export async function duplicateCampaign(
     return { ok: false, error: "Données invalides" };
   }
 
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
 
   const supabase = await createClient();
 

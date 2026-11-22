@@ -548,6 +548,20 @@ describe("duplicateCampaign — le plafond de dépense suit la copie", () => {
     return call!.payload as Record<string, unknown>;
   }
 
+  it("refuse un rôle cashier avant toute lecture ou duplication", async () => {
+    getUserAndOrgMock.mockResolvedValue({
+      user: { id: "user-1" },
+      organization: org(),
+      role: "cashier",
+    });
+    seedSource();
+
+    const result = await duplicateCampaign(null, form());
+
+    expect(result).toEqual({ ok: false, error: "Action non autorisée" });
+    expect(callsTo("campaigns")).toEqual([]);
+  });
+
   it("recopie budget_cents", async () => {
     getUserAndOrgMock.mockResolvedValue(session(org()));
     seedSource();

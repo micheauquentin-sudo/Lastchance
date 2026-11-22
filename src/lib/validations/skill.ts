@@ -273,8 +273,14 @@ export function parseSkillConfig(
 /** Tentative du joueur, discriminée par gameType (produite après le token). */
 export type SkillAttempt =
   | { gameType: "rps"; move: RpsMove }
-  | { gameType: "reflex"; succeeded: boolean }
-  | { gameType: "gauge"; succeeded: boolean }
+  | { gameType: "reflex"; succeeded: boolean; reactionMs: number; falseStart?: boolean }
+  | {
+      gameType: "gauge";
+      succeeded: boolean;
+      stoppedPct: number;
+      elapsedMs: number;
+      reducedMotion?: boolean;
+    }
   | { gameType: "puzzle"; order: number[] }
   | { gameType: "mystery_word"; guess: string }
   | { gameType: "estimate"; value: number };
@@ -283,21 +289,49 @@ const rpsAttemptSchema = z
   .object({ move: z.enum(RPS_MOVES) })
   .transform((a) => ({ gameType: "rps" as const, move: a.move }));
 
-// reflex / gauge : succès NON vérifiable serveur → RAPPORTÉ par le client
-// (booléen), et forgeable par construction — ces jeux n'ont aucun secret, le
-// joueur doit voir tout l'état pour jouer. Deux bornes le contiennent : le
-// tirage sur succès reste plafonné par les poids/stocks configurés
-// (perform_atomic_spin) — un client qui « réussit » toujours ne dépasse jamais
-// les probabilités de la roue — et `play_limit = unlimited` leur est INTERDIT à
-// l'écriture (CLIENT_REPORTED_SKILL_GAME_TYPES), pour que le nombre de « réussi »
-// annonçables reste borné.
+// reflex / gauge : les valeurs mesurées côté client (temps de réaction,
+// position/temps de balayage) sont vérifiées côté serveur contre la config et
+// l'horloge signée du jeton. `play_limit = unlimited` reste interdit à
+// l'écriture (CLIENT_REPORTED_SKILL_GAME_TYPES) pour borner les essais.
 const reflexAttemptSchema = z
-  .object({ succeeded: z.coerce.boolean() })
-  .transform((a) => ({ gameType: "reflex" as const, succeeded: a.succeeded }));
+  .object({
+    succeeded: z.coerce.boolean(),
+    reactionMs: z.coerce
+      .number()
+      .finite("Temps de réaction invalide")
+      .min(0, "Temps de réaction invalide")
+      .max(600_000, "Temps de réaction hors bornes"),
+    falseStart: z.coerce.boolean().optional().default(false),
+  })
+  .transform((a) => ({
+    gameType: "reflex" as const,
+    succeeded: a.succeeded,
+    reactionMs: a.reactionMs,
+    falseStart: a.falseStart,
+  }));
 
 const gaugeAttemptSchema = z
-  .object({ succeeded: z.coerce.boolean() })
-  .transform((a) => ({ gameType: "gauge" as const, succeeded: a.succeeded }));
+  .object({
+    succeeded: z.coerce.boolean(),
+    stoppedPct: z.coerce
+      .number()
+      .finite("Position invalide")
+      .min(0, "Position hors bornes")
+      .max(100, "Position hors bornes"),
+    elapsedMs: z.coerce
+      .number()
+      .finite("Durée invalide")
+      .min(0, "Durée invalide")
+      .max(600_000, "Durée hors bornes"),
+    reducedMotion: z.coerce.boolean().optional().default(false),
+  })
+  .transform((a) => ({
+    gameType: "gauge" as const,
+    succeeded: a.succeeded,
+    stoppedPct: a.stoppedPct,
+    elapsedMs: a.elapsedMs,
+    reducedMotion: a.reducedMotion,
+  }));
 
 const puzzleAttemptSchema = z
   .object({

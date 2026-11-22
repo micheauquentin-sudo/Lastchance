@@ -126,7 +126,7 @@ export function TeamMembersList({
 export function PendingInvitationsList({
   invitations,
 }: {
-  invitations: TeamInvitation[];
+  invitations: Pick<TeamInvitation, "id" | "email" | "role" | "expires_at">[];
 }) {
   const { state, pending, onSubmit } = useActionForm(revokeInvitation, {
     networkError: "Annulation impossible, réessayez.",

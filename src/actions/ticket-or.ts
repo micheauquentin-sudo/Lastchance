@@ -1,10 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { z } from "zod";
 
 import { reportError } from "@/lib/monitoring";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import {
+  clientIpFromHeaders,
+  IP_CLIENT_INCONNUE,
+  observerPressionIp,
+} from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -12,6 +18,7 @@ import {
   TICKET_PAS_LE_ROLE,
 } from "@/lib/ticket-or-context";
 import {
+  estCodeTicket,
   mapTirage,
   TICKET_JOURS_DEFAUT,
   TICKET_JOURS_MAX,
@@ -152,13 +159,35 @@ export async function emettreTicketOr(
  */
 export async function tirerTicketOr(code: string, nonce: string): Promise<EtatTirage> {
   const nonceValide = nonceTirageSchema.safeParse(nonce);
-  if (!nonceValide.success) return { state: "introuvable" };
+  if (!estCodeTicket(code) || !nonceValide.success) {
+    return { state: "introuvable" };
+  }
+
+  const ip = clientIpFromHeaders(await headers());
+  const pressionIp = observerPressionIp(
+    ["ticket-or:tirage:ip"],
+    ip,
+    RATE_LIMITS.ticketOrTirageIp,
+    "ticket_or_tirage_ip_pressure",
+  );
+  const sousPlafondIp =
+    ip === IP_CLIENT_INCONNUE
+      ? true
+      : await rateLimit(
+          rateLimitBucket("ticket-or:tirage:ip:plafond", ip),
+          RATE_LIMITS.ticketOrTirageIpPlafond,
+        );
+  if (!sousPlafondIp) {
+    await pressionIp;
+    return { state: "introuvable" };
+  }
 
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("tirer_ticket_or", {
     p_code: code,
     p_nonce: nonceValide.data,
   });
+  await pressionIp;
   if (error) {
     reportError("ticket-or.tirage", error.message);
     // Une erreur RPC n'est PAS un verdict métier. La transaction peut avoir
