@@ -4,9 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { SkillAttempt, SkillChallengePublic } from "@/lib/skill";
 import { playText } from "../play-theme";
 
-/** Délai aléatoire avant l'allumage de la cible (bornes en ms). */
-const ARM_DELAY_MIN_MS = 1500;
-const ARM_DELAY_MAX_MS = 3500;
 /** Répit après l'armement : un double-tap du départ n'est PAS un faux départ. */
 const FALSE_START_GRACE_MS = 300;
 
@@ -59,13 +56,13 @@ export function ReflexChallenge({
   );
 
   const finish = useCallback(
-    (succeeded: boolean) => {
+    (succeeded: boolean, reactionMs: number, falseStart = false) => {
       if (doneRef.current) return;
       doneRef.current = true;
       timersRef.current.forEach((t) => window.clearTimeout(t));
       timersRef.current = [];
       setStage("done");
-      onSubmit({ gameType: "reflex", succeeded });
+      onSubmit({ gameType: "reflex", succeeded, reactionMs, falseStart });
     },
     [onSubmit],
   );
@@ -74,8 +71,7 @@ export function ReflexChallenge({
     setStage("waiting");
     setStatus("Attendez le signal…");
     armedAtRef.current = performance.now();
-    const delay =
-      ARM_DELAY_MIN_MS + Math.random() * (ARM_DELAY_MAX_MS - ARM_DELAY_MIN_MS);
+    const delay = challenge.armDelayMs;
     timersRef.current.push(
       window.setTimeout(() => {
         goAtRef.current = performance.now();
@@ -85,7 +81,7 @@ export function ReflexChallenge({
         timersRef.current.push(
           window.setTimeout(() => {
             setStatus("Trop tard…");
-            finish(false);
+            finish(false, challenge.durationMs + 1, false);
           }, challenge.durationMs),
         );
       }, delay),
@@ -102,12 +98,12 @@ export function ReflexChallenge({
       // Grâce anti double-tap juste après le départ.
       if (performance.now() - armedAtRef.current < FALSE_START_GRACE_MS) return;
       setStatus("Trop tôt ! Faux départ…");
-      finish(false);
+      finish(false, 0, true);
       return;
     }
     if (stage === "go") {
-      const reactionMs = performance.now() - goAtRef.current;
-      finish(reactionMs <= challenge.durationMs);
+      const reactionMs = Math.max(0, Math.round(performance.now() - goAtRef.current));
+      finish(reactionMs <= challenge.durationMs, reactionMs, false);
     }
   }
 

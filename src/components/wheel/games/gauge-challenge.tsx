@@ -57,6 +57,7 @@ export function GaugeChallenge({
   const [stoppedPct, setStoppedPct] = useState(0);
   // Position courante du curseur (0–100), lue au moment de l'arrêt.
   const posRef = useRef(0);
+  const startedAtRef = useRef(0);
   const cursorRef = useRef<HTMLDivElement | null>(null);
   const locked = pending || stopped;
 
@@ -66,6 +67,7 @@ export function GaugeChallenge({
     const sweep = reducedMotion ? SWEEP_REDUCED_MS : SWEEP_MS;
     let raf = 0;
     const startedAt = performance.now();
+    startedAtRef.current = startedAt;
     const tick = (now: number) => {
       const phase = ((now - startedAt) % (2 * sweep)) / sweep;
       const pct = phase <= 1 ? phase * 100 : (2 - phase) * 100;
@@ -79,12 +81,16 @@ export function GaugeChallenge({
 
   function stop() {
     if (locked) return;
-    const pct = posRef.current;
+    const pct = Number(posRef.current.toFixed(2));
+    const elapsedMs = Math.max(0, Math.round(performance.now() - startedAtRef.current));
     setStopped(true);
     setStoppedPct(pct);
     onSubmit({
       gameType: "gauge",
       succeeded: Math.abs(pct - 50) <= challenge.tolerancePct,
+      stoppedPct: pct,
+      elapsedMs,
+      reducedMotion,
     });
   }
 

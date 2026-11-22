@@ -169,7 +169,11 @@ async function startInner(
     });
 
     // La vue publique n'expose AUCUN secret (garant structurel de non-fuite).
-    const challenge = toPublicChallenge(gameType, configResult.config);
+    const challenge = toPublicChallenge(
+      gameType,
+      configResult.config,
+      resolveSkillSeed(seed),
+    );
     return { ok: true, data: { challenge, challengeToken } };
   } catch (err) {
     reportError("skill.start", err);
@@ -317,6 +321,8 @@ async function submitInner(
       attemptResult.attempt,
       configResult.config,
       payload.iat,
+      Date.now(),
+      resolvedSeed,
     );
     if (!timingPlausible) {
       reportSecurityEvent("skill_impossible_timing", {

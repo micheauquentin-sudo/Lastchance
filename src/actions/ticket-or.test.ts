@@ -1,11 +1,18 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { state, createClientMock, createAdminClientMock, rateLimitMock } = vi.hoisted(() => {
+const {
+  state,
+  createClientMock,
+  createAdminClientMock,
+  rateLimitMock,
+  observerPressionIpMock,
+} = vi.hoisted(() => {
   const state = {
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     rpcData: null as unknown,
     rpcError: null as { message: string } | null,
+    clientIp: "203.0.113.10",
   };
   const rpc = async (name: string, args: Record<string, unknown>) => {
     state.rpcCalls.push({ name, args });
@@ -20,17 +27,28 @@ const { state, createClientMock, createAdminClientMock, rateLimitMock } = vi.hoi
     createClientMock: vi.fn(async () => sessionClient),
     createAdminClientMock: vi.fn(() => adminClient),
     rateLimitMock: vi.fn(async () => true),
+    observerPressionIpMock: vi.fn(async () => {}),
   };
 });
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({
-  RATE_LIMITS: { ticketOrEmission: { limit: 10, windowSeconds: 60 } },
+  RATE_LIMITS: {
+    ticketOrEmission: { limit: 10, windowSeconds: 60 },
+    ticketOrTirageIp: { limit: 200, windowSeconds: 600 },
+    ticketOrTirageIpPlafond: { limit: 600, windowSeconds: 60 },
+  },
   rateLimit: rateLimitMock,
   rateLimitBucket: (...parts: string[]) => parts.join(":"),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: createClientMock }));
+vi.mock("@/lib/request-ip", () => ({
+  IP_CLIENT_INCONNUE: "unknown",
+  clientIpFromHeaders: () => state.clientIp,
+  observerPressionIp: observerPressionIpMock,
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: createAdminClientMock }));
 vi.mock("@/lib/ticket-or-context", () => ({
   gardeTicketOr: async () => ({
@@ -54,7 +72,9 @@ beforeEach(() => {
     expire_le: "2026-09-24T12:00:00.000Z",
   };
   state.rpcError = null;
+  state.clientIp = "203.0.113.10";
   vi.clearAllMocks();
+  rateLimitMock.mockResolvedValue(true);
 });
 
 describe("emettreTicketOr", () => {
@@ -131,6 +151,40 @@ describe("tirerTicketOr", () => {
       expect(state.rpcCalls).toEqual([]);
     },
   );
+
+  it.each(["", "trop-court", "10-CHARS!!", "OOOOOOOOOO"])(
+    "refuse un code malformé sans appeler la base (%s)",
+    async (code) => {
+      expect(await tirerTicketOr(code, NONCE)).toEqual({
+        state: "introuvable",
+      });
+      expect(state.rpcCalls).toEqual([]);
+      expect(rateLimitMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("observe la pression IP et coupe un flood au-delà du plafond sans appeler la base", async () => {
+    rateLimitMock.mockResolvedValueOnce(false);
+
+    expect(await tirerTicketOr("ABCDEFGHJK", NONCE)).toEqual({
+      state: "introuvable",
+    });
+    expect(observerPressionIpMock).toHaveBeenCalledOnce();
+    expect(rateLimitMock).toHaveBeenCalledOnce();
+    expect(state.rpcCalls).toEqual([]);
+  });
+
+  it("ignore le plafond IP quand l'IP client est inconnue", async () => {
+    state.clientIp = "unknown";
+    state.rpcData = { state: "introuvable" };
+
+    expect(await tirerTicketOr("ABCDEFGHJK", NONCE)).toEqual({
+      state: "introuvable",
+    });
+    expect(observerPressionIpMock).toHaveBeenCalledOnce();
+    expect(rateLimitMock).not.toHaveBeenCalled();
+    expect(state.rpcCalls).toHaveLength(1);
+  });
 
   it("conserve une issue indéterminée quand la RPC échoue après un commit possible", async () => {
     state.rpcError = { message: "réponse perdue après commit" };

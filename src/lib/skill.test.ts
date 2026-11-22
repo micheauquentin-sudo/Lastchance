@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  computeGaugePositionPct,
+  deriveReflexArmDelayMs,
   deriveRpsServerMove,
   evaluateSkill,
   hashPlayerKey,
@@ -123,54 +125,135 @@ describe("evaluateSkill · puzzle", () => {
   });
 });
 
-describe("evaluateSkill · reflex / gauge (interaction non autoritaire)", () => {
-  it("ignore le booléen rapporté par le client", () => {
+describe("evaluateSkill · reflex / gauge (vérification serveur des valeurs)", () => {
+  const seed = resolveSkillSeed("seed-reflex-gauge-test");
+
+  it("reflex : valide la réussite uniquement si reactionMs est dans [0, durationMs] sans faux départ", () => {
     expect(
-      evaluateSkill("reflex", { gameType: "reflex", succeeded: true }, { durationMs: 800 }, "")
-        .succeeded,
+      evaluateSkill(
+        "reflex",
+        { gameType: "reflex", succeeded: true, reactionMs: 320, falseStart: false },
+        { durationMs: 800 },
+        seed,
+      ).succeeded,
     ).toBe(true);
     expect(
-      evaluateSkill("reflex", { gameType: "reflex", succeeded: false }, { durationMs: 800 }, "")
-        .succeeded,
+      evaluateSkill(
+        "reflex",
+        { gameType: "reflex", succeeded: true, reactionMs: 801, falseStart: false },
+        { durationMs: 800 },
+        seed,
+      ).succeeded,
+    ).toBe(false);
+    expect(
+      evaluateSkill(
+        "reflex",
+        { gameType: "reflex", succeeded: true, reactionMs: 120, falseStart: true },
+        { durationMs: 800 },
+        seed,
+      ).succeeded,
+    ).toBe(false);
+    expect(
+      evaluateSkill(
+        "reflex",
+        { gameType: "reflex", succeeded: false, reactionMs: 300, falseStart: false },
+        { durationMs: 800 },
+        seed,
+      ).succeeded,
+    ).toBe(false);
+  });
+
+  it("gauge : recalcule la position attendue depuis elapsedMs et vérifie la zone cible", () => {
+    expect(computeGaugePositionPct(700, false)).toBe(50);
+    expect(
+      evaluateSkill(
+        "gauge",
+        { gameType: "gauge", succeeded: true, stoppedPct: 50, elapsedMs: 700, reducedMotion: false },
+        { tolerancePct: 10 },
+        seed,
+      ).succeeded,
     ).toBe(true);
     expect(
-      evaluateSkill("gauge", { gameType: "gauge", succeeded: true }, { tolerancePct: 10 }, "")
-        .succeeded,
-    ).toBe(true);
+      evaluateSkill(
+        "gauge",
+        { gameType: "gauge", succeeded: true, stoppedPct: 50, elapsedMs: 0, reducedMotion: false },
+        { tolerancePct: 10 },
+        seed,
+      ).succeeded,
+    ).toBe(false);
+    expect(
+      evaluateSkill(
+        "gauge",
+        { gameType: "gauge", succeeded: true, stoppedPct: 25, elapsedMs: 350, reducedMotion: false },
+        { tolerancePct: 10 },
+        seed,
+      ).succeeded,
+    ).toBe(false);
   });
 });
 
 describe("temps minimal signé · reflex / gauge", () => {
-  it("refuse un succès réflexe avant que le signal puisse apparaître", () => {
-    const attempt = { gameType: "reflex" as const, succeeded: true };
+  it("refuse un succès réflexe avant armDelayMs + reactionMs", () => {
+    const seed = resolveSkillSeed("seed-reflex-timing");
+    const armDelayMs = deriveReflexArmDelayMs(seed);
+    const attempt = {
+      gameType: "reflex" as const,
+      succeeded: true,
+      reactionMs: 250,
+      falseStart: false,
+    };
     const config = { durationMs: 800 };
     expect(minimumSkillSuccessElapsedMs("reflex", config)).toBe(1_400);
+    expect(armDelayMs).toBeGreaterThanOrEqual(1_500);
+    expect(armDelayMs).toBeLessThanOrEqual(3_500);
     expect(
-      isSkillAttemptTimingPlausible("reflex", attempt, config, 10_000, 11_399),
+      isSkillAttemptTimingPlausible(
+        "reflex",
+        attempt,
+        config,
+        10_000,
+        10_000 + armDelayMs + 250 - 101,
+        seed,
+      ),
     ).toBe(false);
     expect(
-      isSkillAttemptTimingPlausible("reflex", attempt, config, 10_000, 11_400),
+      isSkillAttemptTimingPlausible(
+        "reflex",
+        attempt,
+        config,
+        10_000,
+        10_000 + armDelayMs + 250 - 100,
+        seed,
+      ),
     ).toBe(true);
   });
 
-  it("dérive la première position atteignable de la jauge", () => {
-    const attempt = { gameType: "gauge" as const, succeeded: true };
+  it("dérive la première position atteignable de la jauge et vérifie elapsedMs", () => {
+    const attempt = {
+      gameType: "gauge" as const,
+      succeeded: true,
+      stoppedPct: 45,
+      elapsedMs: 630,
+      reducedMotion: false,
+    };
     const config = { tolerancePct: 10 };
     expect(minimumSkillSuccessElapsedMs("gauge", config)).toBe(460);
     expect(
-      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_459),
+      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_529),
     ).toBe(false);
     expect(
-      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_460),
+      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_530),
     ).toBe(true);
   });
 
   it("une tolérance large ne ramène JAMAIS le plancher à zéro", () => {
-    // Régression fermée ici (SEC-2) : à tolerancePct = 50 la cible est
-    // atteignable dès 0 % du balayage, la borne dérivée tombait donc à 0 ms —
-    // un script pouvait déclarer « réussi » dans la milliseconde suivant
-    // l'émission du jeton. Le plancher absolu (300 ms) reprend la main.
-    const attempt = { gameType: "gauge" as const, succeeded: true };
+    const attempt = {
+      gameType: "gauge" as const,
+      succeeded: true,
+      stoppedPct: 21,
+      elapsedMs: 300,
+      reducedMotion: false,
+    };
     const config = { tolerancePct: 50 };
     expect(minimumSkillSuccessElapsedMs("gauge", config)).toBe(300);
     expect(
@@ -182,35 +265,19 @@ describe("temps minimal signé · reflex / gauge", () => {
   });
 
   it("le plancher absolu ne mord pas sur les bornes dérivées plus hautes", () => {
-    // Non-régression : dès que la tolérance laisse la borne au-dessus de
-    // 300 ms, c'est la valeur DÉRIVÉE du balayage qui s'applique, inchangée.
-    //
-    // 389 et non 390 : 0,35 × 1 400 vaut 489,999… en binaire, et le `floor`
-    // retient 489. La milliseconde perdue est sans effet (la marge humaine en
-    // absorbe cent), mais elle est ÉPINGLÉE ici pour que le chiffre attendu
-    // reste celui que la fonction rend vraiment.
     expect(minimumSkillSuccessElapsedMs("gauge", { tolerancePct: 15 })).toBe(389);
     expect(minimumSkillSuccessElapsedMs("gauge", { tolerancePct: 10 })).toBe(460);
     expect(minimumSkillSuccessElapsedMs("reflex", { durationMs: 800 })).toBe(1_400);
   });
 
-  it("applique le même délai quand le client rapporte un échec", () => {
+  it("laisse passer un échec rapporté (déjà pénalisé en spin perdant)", () => {
     expect(
       isSkillAttemptTimingPlausible(
         "reflex",
-        { gameType: "reflex", succeeded: false },
+        { gameType: "reflex", succeeded: false, reactionMs: 0, falseStart: true },
         { durationMs: 800 },
         10_000,
-        10_001,
-      ),
-    ).toBe(false);
-    expect(
-      isSkillAttemptTimingPlausible(
-        "reflex",
-        { gameType: "reflex", succeeded: false },
-        { durationMs: 800 },
-        10_000,
-        11_400,
+        10_400,
       ),
     ).toBe(true);
   });
@@ -426,5 +493,16 @@ describe("parseSkillAttempt", () => {
 
   it("rejette un coup rps inconnu", () => {
     expect(parseSkillAttempt("rps", { move: "spock" }).ok).toBe(false);
+  });
+
+  it("exige les valeurs mesurées pour reflex et gauge", () => {
+    expect(parseSkillAttempt("reflex", { succeeded: true }).ok).toBe(false);
+    expect(parseSkillAttempt("gauge", { succeeded: true }).ok).toBe(false);
+    expect(
+      parseSkillAttempt("reflex", { succeeded: true, reactionMs: 250 }).ok,
+    ).toBe(true);
+    expect(
+      parseSkillAttempt("gauge", { succeeded: true, stoppedPct: 50, elapsedMs: 700 }).ok,
+    ).toBe(true);
   });
 });

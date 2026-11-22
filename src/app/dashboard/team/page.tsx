@@ -34,7 +34,7 @@ export default async function TeamPage() {
     supabase.rpc("org_team_members", { p_organization_id: organization!.id }),
     supabase
       .from("team_invitations")
-      .select("*")
+      .select("id, email, role, expires_at")
       .eq("organization_id", organization!.id)
       .is("accepted_at", null)
       .is("revoked_at", null)
@@ -43,7 +43,10 @@ export default async function TeamPage() {
   ]);
 
   const members = (membersData ?? []) as TeamMemberRow[];
-  const invitations = (invitationsData ?? []) as TeamInvitation[];
+  const invitations = (invitationsData ?? []) as Pick<
+    TeamInvitation,
+    "id" | "email" | "role" | "expires_at"
+  >[];
 
   return (
     <div>

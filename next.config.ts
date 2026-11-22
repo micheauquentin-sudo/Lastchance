@@ -108,6 +108,7 @@ const nextConfig: NextConfig = {
   // Uniquement les hôtes de boucle locale : une IP de réseau local est propre à
   // la machine qui l'a écrite, et n'a donc rien à faire dans le dépôt.
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  poweredByHeader: false,
 
   // ── LES BINAIRES DE `sharp` DOIVENT SUIVRE LA FONCTION ──
   //
@@ -365,7 +366,12 @@ export default withSentryConfig(nextConfig, {
 
   // L'upload des source maps (stack traces lisibles dans Sentry) ne se
   // fait que si un token est fourni — le build local/CI reste autonome.
-  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+  // Suppression explicite après upload pour ne jamais exposer de `.map`
+  // publiquement en production.
+  sourcemaps: {
+    disable: !process.env.SENTRY_AUTH_TOKEN,
+    deleteSourcemapsAfterUpload: true,
+  },
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   authToken: process.env.SENTRY_AUTH_TOKEN,

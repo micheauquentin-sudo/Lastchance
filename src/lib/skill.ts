@@ -45,6 +45,8 @@ export interface SkillEvaluation {
 
 /** Aller le plus rapide de la jauge visible (0 → 100 %) côté client. */
 const GAUGE_FASTEST_SWEEP_MS = 1_400;
+const GAUGE_REDUCED_SWEEP_MS = 3_600;
+const GAUGE_POSITION_TOLERANCE_PCT = 3;
 /**
  * Plancher ABSOLU d'une réussite de jauge, quelle que soit la tolérance : plus
  * rapide qu'un arrêt humain intentionnel sur un balayage de 1 400 ms. Ferme le
@@ -57,6 +59,7 @@ const GAUGE_MIN_SUCCESS_MS = 300;
 const HUMAN_TIMING_MARGIN_MS = 100;
 /** Le signal réflexe ne peut apparaître avant 1,5 s dans l'UI signée. */
 const REFLEX_ARM_DELAY_MIN_MS = 1_500;
+const REFLEX_ARM_DELAY_MAX_MS = 3_500;
 
 /**
  * Vue PUBLIQUE du défi servie au client — SANS aucun secret. Discriminée par
@@ -65,11 +68,25 @@ const REFLEX_ARM_DELAY_MIN_MS = 1_500;
  */
 export type SkillChallengePublic =
   | { gameType: "rps" }
-  | { gameType: "reflex"; durationMs: number }
+  | { gameType: "reflex"; durationMs: number; armDelayMs: number }
   | { gameType: "gauge"; tolerancePct: number }
   | { gameType: "puzzle"; fragments: string[] }
   | { gameType: "mystery_word"; length: number; hint: string | null }
   | { gameType: "estimate"; question: string | null; unit: string | null; imageUrl: string | null };
+
+/** Délai d'allumage réflexe déterministe dérivé du seed résolu (1500–3500 ms). */
+export function deriveReflexArmDelayMs(resolvedSeed: string): number {
+  const buf = Buffer.from(resolvedSeed, "base64url");
+  const sample = buf.length >= 2 ? buf.readUInt16BE(0) : 0;
+  return REFLEX_ARM_DELAY_MIN_MS + (sample % (REFLEX_ARM_DELAY_MAX_MS - REFLEX_ARM_DELAY_MIN_MS + 1));
+}
+
+/** Position attendue (%) du curseur de jauge pour un `elapsedMs` donné. */
+export function computeGaugePositionPct(elapsedMs: number, reducedMotion: boolean): number {
+  const sweep = reducedMotion ? GAUGE_REDUCED_SWEEP_MS : GAUGE_FASTEST_SWEEP_MS;
+  const phase = (elapsedMs % (2 * sweep)) / sweep;
+  return phase <= 1 ? phase * 100 : (2 - phase) * 100;
+}
 
 // ────────────────────────────────────────────────────────────
 // Pierre-feuille-ciseaux : coup serveur DÉTERMINISTE, non calculable par le
@@ -145,14 +162,36 @@ export function evaluateSkill(
       if (attempt.gameType !== "rps") return { succeeded: false };
       return { succeeded: rpsBeats(attempt.move, deriveRpsServerMove(serverSeed)) };
     }
-    case "reflex":
+    case "reflex": {
+      if (attempt.gameType !== "reflex") return { succeeded: false };
+      const c = config as ReflexConfig;
+      const valid =
+        attempt.succeeded === true &&
+        attempt.falseStart !== true &&
+        Number.isFinite(attempt.reactionMs) &&
+        attempt.reactionMs >= 0 &&
+        attempt.reactionMs <= c.durationMs;
+      return { succeeded: valid };
+    }
     case "gauge": {
-      // Interaction non autoritaire (voir en-tête) : seule la cohérence du type
-      // est vérifiée ici. Le délai signé est contrôlé séparément.
-      if (attempt.gameType !== "reflex" && attempt.gameType !== "gauge") {
+      if (attempt.gameType !== "gauge") return { succeeded: false };
+      const c = config as GaugeConfig;
+      if (
+        attempt.succeeded !== true ||
+        !Number.isFinite(attempt.stoppedPct) ||
+        !Number.isFinite(attempt.elapsedMs) ||
+        attempt.elapsedMs < 0
+      ) {
         return { succeeded: false };
       }
-      return { succeeded: true };
+      const expectedPct = computeGaugePositionPct(
+        attempt.elapsedMs,
+        attempt.reducedMotion ?? false,
+      );
+      const inTargetZone = Math.abs(attempt.stoppedPct - 50) <= c.tolerancePct;
+      const consistentWithSweep =
+        Math.abs(attempt.stoppedPct - expectedPct) <= GAUGE_POSITION_TOLERANCE_PCT;
+      return { succeeded: inTargetZone && consistentWithSweep };
     }
     case "puzzle": {
       if (attempt.gameType !== "puzzle") return { succeeded: false };
@@ -213,15 +252,34 @@ export function isSkillAttemptTimingPlausible(
   config: SkillConfig,
   issuedAtMs: number,
   nowMs: number = Date.now(),
+  serverSeed: string = "",
 ): boolean {
   if (!Number.isSafeInteger(issuedAtMs) || !Number.isSafeInteger(nowMs)) {
     return false;
   }
   if (attempt.gameType !== gameType) return false;
-  if (gameType !== "reflex" && gameType !== "gauge") {
+  if (attempt.gameType !== "reflex" && attempt.gameType !== "gauge") {
     return true;
   }
-  return nowMs - issuedAtMs >= minimumSkillSuccessElapsedMs(gameType, config);
+  if (!attempt.succeeded) {
+    return true;
+  }
+  const elapsedServerMs = nowMs - issuedAtMs;
+  if (attempt.gameType === "reflex") {
+    const minMs = Math.max(
+      minimumSkillSuccessElapsedMs("reflex", config),
+      deriveReflexArmDelayMs(serverSeed) + attempt.reactionMs - HUMAN_TIMING_MARGIN_MS,
+    );
+    return elapsedServerMs >= minMs;
+  }
+  if (attempt.gameType === "gauge") {
+    const minMs = Math.max(
+      minimumSkillSuccessElapsedMs("gauge", config),
+      attempt.elapsedMs - HUMAN_TIMING_MARGIN_MS,
+    );
+    return elapsedServerMs >= minMs;
+  }
+  return true;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -232,12 +290,17 @@ export function isSkillAttemptTimingPlausible(
 export function toPublicChallenge(
   gameType: SkillGameType,
   config: SkillConfig,
+  serverSeed: string = "",
 ): SkillChallengePublic {
   switch (gameType) {
     case "rps":
       return { gameType: "rps" };
     case "reflex":
-      return { gameType: "reflex", durationMs: (config as ReflexConfig).durationMs };
+      return {
+        gameType: "reflex",
+        durationMs: (config as ReflexConfig).durationMs,
+        armDelayMs: deriveReflexArmDelayMs(serverSeed),
+      };
     case "gauge":
       return { gameType: "gauge", tolerancePct: (config as GaugeConfig).tolerancePct };
     case "puzzle":

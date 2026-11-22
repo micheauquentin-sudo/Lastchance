@@ -66,8 +66,9 @@ async function runSync(request: Request): Promise<NextResponse> {
   try {
     run = await startWorkerRun(admin, "sync-contests");
   } catch (error) {
+    reportError("cron.sync-contests.heartbeat", error);
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Heartbeat indisponible" },
+      { ok: false, error: "Heartbeat indisponible" },
       { status: 500, headers: { "cache-control": "no-store" } },
     );
   }
