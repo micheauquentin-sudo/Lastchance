@@ -276,11 +276,11 @@ export async function loadEventRemoteContext(
     }
     if (!sessionRow) return { ok: false, reason: "unavailable" };
 
-  // Questions + options du game (org-scopé RLS), + réponses existantes pour
-  // marquer les questions déjà jouées (une question ne se relance pas).
+  // Questions du game (org-scopé RLS), + réponses existantes pour marquer les
+  // questions déjà jouées (une question ne se relance pas), puis options
+  // bornées aux seules questions de ce jeu (évite le plafond PostgREST 1 000).
     const [
       { data: questionRows, error: questionError },
-      { data: optionRows, error: optionError },
       { data: answeredRows, error: answerError },
       { data: playerRows, error: playerError },
     ] = await Promise.all([
@@ -290,10 +290,6 @@ export async function loadEventRemoteContext(
         .eq("game_id", sessionRow.game_id)
         .eq("organization_id", organization.id)
         .order("position", { ascending: true }),
-      supabase
-        .from("event_question_options")
-        .select("id, question_id, position, label, is_correct")
-        .eq("organization_id", organization.id),
       supabase
         .from("event_answers")
         .select("question_id")
@@ -308,6 +304,15 @@ export async function loadEventRemoteContext(
         .eq("organization_id", organization.id)
         .order("joined_at", { ascending: true }),
     ]);
+
+    const questionIds = ((questionRows ?? []) as Array<{ id: string }>).map((q) => q.id);
+    const { data: optionRows, error: optionError } = questionIds.length > 0
+      ? await supabase
+          .from("event_question_options")
+          .select("id, question_id, position, label, is_correct")
+          .eq("organization_id", organization.id)
+          .in("question_id", questionIds)
+      : { data: [], error: null };
 
     const contextError = questionError ?? optionError ?? answerError ?? playerError;
     if (contextError) {

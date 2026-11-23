@@ -19,6 +19,10 @@ import { APP_URL } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
 import { clientIpFromHeaders } from "@/lib/request-ip";
 import { RAPPELS_COOKIE } from "@/lib/rappels";
+import {
+  parseStudioModule,
+  studioModuleDestination,
+} from "@/lib/studio-draft-import";
 
 /**
  * Redirection post-auth optionnelle (ex : accepter une invitation
@@ -223,5 +227,6 @@ export async function createOrganization(
     await setActiveOrganizationCookie(newOrgId);
   }
 
-  redirect("/dashboard");
+  const studioModule = parseStudioModule(formData.get("studioModule"));
+  redirect(studioModuleDestination(studioModule));
 }

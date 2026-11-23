@@ -17,6 +17,7 @@
     "sql:check": "node scripts/check-sql-parser-constructs.mjs",
     "test:sql": "node --test scripts/check-sql-parser-constructs.test.mjs",
     "casts:check": "node scripts/check-unsafe-casts.mjs",
+    "vitrine:sync": "node scripts/sync-vitrine-mirror.mjs",
     "test:casts": "node --test scripts/check-unsafe-casts.test.mjs",
     "test:production-health": "node --test scripts/verify-production-health.test.mjs",
     "production:health": "node scripts/verify-production-health.mjs",
