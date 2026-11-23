@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { getUserAndOrg } from "@/lib/auth";
+import { requireOrgEditor } from "@/lib/action-auth";
 import {
   COMPTAGE_INDISPONIBLE,
   verdictCodesEnAttente,
@@ -68,10 +67,8 @@ function lotBloquePourIdentiteFaible(lot: LotValorise): boolean {
 }
 
 async function requireEditorOrg() {
-  const { user, organization, role } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
-  if (role !== "owner" && role !== "editor") return null;
-  return organization;
+  const ctx = await requireOrgEditor();
+  return ctx?.organization ?? null;
 }
 
 export async function addPrize(
@@ -636,16 +633,8 @@ export async function deleteWheel(
   const parsed = deleteWheelSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
-  const { user, organization, role } = await getUserAndOrg();
-  if (!user || !organization) redirect("/login");
-  // Contrôle de rôle EXPLICITE, là où les autres actions de ce fichier s'en
-  // remettent encore à la seule policy `wheels: editors` (00019:71, `for all`).
-  // Ce qui rend la garde ci-dessous nécessaire ici et pas ailleurs : elle
-  // compte des `participations`, dont la lecture est OWNER-ONLY. Un `editor` a
-  // le droit de supprimer la roue, jamais celui de lire ce qu'elle emporte —
-  // le comptage passe donc par le client admin, et cette ligne redit qui a le
-  // droit d'arriver jusque-là plutôt que de le déduire d'une policy distante.
-  if (role !== "owner" && role !== "editor") {
+  const organization = await requireEditorOrg();
+  if (!organization) {
     return { ok: false, error: "Action non autorisée" };
   }
   const supabase = await createClient();

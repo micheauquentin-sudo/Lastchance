@@ -33,7 +33,7 @@ export default async function SignupPage({
               Aperçu Studio conservé sur cet appareil{mod ? ` (${mod})` : ""}
             </strong>
             <p className="text-purple-800 leading-relaxed">
-              Votre aperçu reste consultable sur ce navigateur pendant que vous créez votre espace. Vous pourrez ensuite configurer et publier vos modules depuis votre tableau de bord.
+              Votre nom d&apos;établissement et votre module choisi seront pré-remplis automatiquement à l&apos;étape suivante pour reprendre sans ressaisie.
             </p>
           </div>
         </div>
