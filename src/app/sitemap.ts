@@ -32,13 +32,33 @@ import { createAdminClient } from "@/lib/supabase/admin";
  */
 export const revalidate = 3600;
 
+const SHOWCASE_ROUTES: Array<{
+  path: string;
+  changeFrequency: "weekly" | "monthly";
+  priority: number;
+}> = [
+  { path: "", changeFrequency: "weekly", priority: 1.0 },
+  { path: "/modules", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/jeux-pronostics", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/fidelite-communaute", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/vitrine-reservation", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/abonnements", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/studio", changeFrequency: "monthly", priority: 0.8 },
+];
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const staticEntries: MetadataRoute.Sitemap = SHOWCASE_ROUTES.map((route) => ({
+    url: `${APP_URL}${route.path}`,
+    changeFrequency: route.changeFrequency,
+    priority: route.priority,
+  }));
+
   try {
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("vitrines_indexables");
-    if (error || !Array.isArray(data)) return [];
+    if (error || !Array.isArray(data)) return staticEntries;
 
-    return data.flatMap((ligne) => {
+    const vitrineEntries: MetadataRoute.Sitemap = data.flatMap((ligne) => {
       const slug = (ligne as { slug?: unknown }).slug;
       if (typeof slug !== "string" || !/^[a-z0-9-]{3,60}$/.test(slug)) return [];
       const maj = (ligne as { mise_a_jour?: unknown }).mise_a_jour;
@@ -63,7 +83,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         },
       ];
     });
+
+    return [...staticEntries, ...vitrineEntries];
   } catch {
-    return [];
+    return staticEntries;
   }
 }
