@@ -2,9 +2,8 @@
    IMMERSION VISUELLE — SIMPLE COMME QR (Page d'accueil uniquement)
    1. Parallaxe de perspective fluide sur le sol damier du Hero au scroll.
    2. Bascule 3D élastique à chaque changement d'univers dans le Manège (#jb-visual).
-   3. Reflet foil holographique / doré nettement lisible + micro-tilt 3D au
-      pointeur sur #jb-visual, .plan-ticket (#formules) et .clog-stat-pill
-      (calme au repos, vivant uniquement au geste du visiteur).
+   3. Reflet collector raffiné sur #jb-visual, et voile lumineux très discret
+      sur #formules (.plan-ticket) et .clog-stat-pill.
    ========================================================================== */
 (function () {
   const reducedMotion =
@@ -45,11 +44,11 @@
     update();
   }
 
-  /* ── 2. REFLET FOIL COLLECTOR & MICRO-TILT 3D AU POINTEUR ── */
-  function attachFoilInteractive(el, maxTiltDeg) {
+  /* ── 2. REFLET DIRECTIONNEL & MICRO-TILT 3D AU POINTEUR ── */
+  function attachFoilInteractive(el, maxTiltDeg, subtle = false) {
     if (!el || el.dataset.foilBound === "1") return;
     el.dataset.foilBound = "1";
-    el.classList.add("foil-interactive");
+    el.classList.add(subtle ? "foil-subtle" : "foil-interactive");
 
     const onMove = (e) => {
       const rect = el.getBoundingClientRect();
@@ -58,11 +57,10 @@
       const py = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
       const tiltY = ((px - 0.5) * 2 * maxTiltDeg).toFixed(2);
       const tiltX = ((0.5 - py) * 2 * maxTiltDeg).toFixed(2);
-      const angle = (105 + (px - 0.5) * 50).toFixed(1);
+      const angle = (105 + (px - 0.5) * 44).toFixed(1);
       el.style.setProperty("--mx", `${(px * 100).toFixed(1)}%`);
       el.style.setProperty("--my", `${(py * 100).toFixed(1)}%`);
       el.style.setProperty("--foil-angle", `${angle}deg`);
-      el.style.setProperty("--foil-pos", `${(px * 100).toFixed(1)}% ${(py * 100).toFixed(1)}%`);
       el.style.setProperty("--tilt-x", `${tiltX}deg`);
       el.style.setProperty("--tilt-y", `${tiltY}deg`);
       el.style.setProperty("--glare-opacity", "1");
@@ -86,7 +84,6 @@
 
     const mo = new MutationObserver(() => {
       jbVisual.classList.remove("is-jb-flipping");
-      // Force reflow pour rejouer proprement la bascule 3D à chaque onglet
       void jbVisual.offsetWidth;
       jbVisual.classList.add("is-jb-flipping");
     });
@@ -98,18 +95,19 @@
 
     const jbVisual = document.getElementById("jb-visual");
     if (jbVisual) {
-      attachFoilInteractive(jbVisual, 7.5);
+      attachFoilInteractive(jbVisual, 5.2, false);
     }
 
+    // Effet volontairement très discret sur les cartes tarifaires et pilules
     document.querySelectorAll(".clog-stat-pill").forEach((pill) => {
-      attachFoilInteractive(pill, 4.5);
+      attachFoilInteractive(pill, 1.4, true);
     });
 
     const plansDeck = document.getElementById("plans-deck");
     const bindPlans = () => {
       if (!plansDeck) return;
       plansDeck.querySelectorAll(".plan-ticket").forEach((card) => {
-        attachFoilInteractive(card, 6.0);
+        attachFoilInteractive(card, 1.2, true);
       });
     };
 
