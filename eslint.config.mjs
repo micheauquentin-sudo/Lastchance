@@ -100,7 +100,7 @@ const eslintConfig = defineConfig([
     // diagnostics sur du code que personne n ecrira jamais.
     "public/**",
     // Copie miroir du bundle Three.js minifié généré par `npm run vitrine:3d`.
-    "propositions-site/h-site-final-20k/hero-3d.js",
+    "propositions-site/h-site-final-20k/hero-3d.min.js",
     "supabase/.temp/**",
     "supabase/.branches/**",
     // Outillage de poste de travail, hors des deux arbres Next et ignoré par
