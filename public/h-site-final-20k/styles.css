@@ -9381,7 +9381,7 @@ header, main, section, footer { position: relative; z-index: 2; }
 }
 .m-slot-header {
   font: 900 0.85rem var(--fun-font);
-  background: #ff5e7e;
+  background: #c4184b;
   color: #ffffff;
   border: 2px solid var(--ink);
   border-radius: 999px;
@@ -9431,13 +9431,13 @@ header, main, section, footer { position: relative; z-index: 2; }
 .m-slot-spin-sparkles {
   font-size: 1.1rem;
   letter-spacing: 0.4em;
-  color: var(--yellow);
+  color: #7a4f00;
   text-shadow: 0 0 6px rgba(255, 217, 61, 0.8);
   animation: sparkleTwinkle 0.8s alternate infinite;
 }
 @keyframes sparkleTwinkle {
-  0% { opacity: 0.4; transform: scale(0.9); }
-  100% { opacity: 1; transform: scale(1.1); }
+  0% { opacity: 0.88; transform: scale(0.94); }
+  100% { opacity: 1; transform: scale(1.08); }
 }
 .m-slot-status {
   display: inline-flex;
@@ -13015,3 +13015,123 @@ button.lc-invit-continue-btn:hover {
 
 
 
+
+/* ==========================================================
+   IMMERSION 3D PIXAR (HERO PBR) · CONFETTIS · FOIL · DAMIER
+   Remplacements purs sans aucun bloc ajouté.
+   ========================================================== */
+.qr-cartoon-3d-block {
+  overflow: visible;
+}
+.hero-3d-stage {
+  position: absolute;
+  inset: -44px;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  display: block;
+}
+.hero-3d-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.qr-cartoon-3d-block.is-3d-ready {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.qr-cartoon-3d-block.is-3d-ready:hover {
+  transform: none;
+  box-shadow: none;
+}
+.qr-cartoon-3d-block.is-3d-ready .qr-cartoon-inner {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.32s ease;
+}
+.qr-cartoon-3d-block.is-3d-ready .hero-3d-stage {
+  opacity: 1;
+}
+.qr-floating-unit:has(.qr-cartoon-3d-block.is-3d-ready) {
+  animation: none;
+}
+.qr-cartoon-3d-block.is-3d-ready .qr-live-sticker {
+  top: -10px;
+  right: -4px;
+  z-index: 5;
+}
+@media (max-width: 640px) {
+  .hero-3d-stage {
+    inset: -30px;
+  }
+}
+
+/* Parallaxe de profondeur doux sur le sol damier du Hero */
+.checkerboard-surface {
+  background-position-y: var(--checker-shift, 0px);
+  transform: perspective(420px) rotateX(var(--checker-tilt, 52deg));
+  will-change: background-position, transform;
+}
+
+/* Confettis physiques dans l'étape 3 gagnante (#m-scene-3) */
+.motion-scene-win {
+  position: relative;
+}
+.motion-confetti-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* Reflet foil directionnel & micro-tilt 3D discret (Manège + Formules) */
+.foil-interactive {
+  --mx: 50%;
+  --my: 50%;
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --glare-opacity: 0;
+  transform-style: preserve-3d;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+}
+.foil-interactive:hover {
+  transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-5px);
+}
+.foil-interactive::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 3;
+  opacity: calc(var(--glare-opacity) * 0.42);
+  transition: opacity 0.28s ease;
+  background: radial-gradient(
+    360px circle at var(--mx) var(--my),
+    rgba(255, 250, 224, 0.72) 0%,
+    rgba(255, 217, 61, 0.22) 28%,
+    rgba(242, 150, 189, 0.14) 52%,
+    transparent 74%
+  );
+  mix-blend-mode: soft-light;
+}
+.jukebox-visual-box.foil-interactive:hover {
+  transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkerboard-surface {
+    background-position-y: 0px !important;
+    transform: perspective(420px) rotateX(52deg) !important;
+  }
+  .foil-interactive:hover {
+    transform: none;
+  }
+  .foil-interactive::before {
+    display: none;
+  }
+}
