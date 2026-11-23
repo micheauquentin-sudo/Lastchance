@@ -13057,6 +13057,9 @@ button.lc-invit-continue-btn:hover {
 .qr-floating-unit:has(.qr-cartoon-3d-block.is-3d-ready) {
   animation: none;
 }
+.qr-floating-unit:has(.qr-cartoon-3d-block.is-3d-ready) .qr-call-footer {
+  margin-top: 2.15rem;
+}
 .qr-cartoon-3d-block.is-3d-ready .qr-live-sticker {
   top: -12px;
   right: -8px;
@@ -13075,13 +13078,10 @@ button.lc-invit-continue-btn:hover {
   z-index: 4;
   opacity: 0;
   pointer-events: none;
-  background: radial-gradient(
-    circle at 50% 42%,
-    #fffdf7 0%,
-    #fdf3dc 56%,
-    #f6e5fb 100%
-  );
-  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  background:
+    radial-gradient(rgba(22, 19, 23, 0.065) 1.2px, transparent 1.2px) 0 0 / 18px 18px,
+    radial-gradient(circle at 50% 42%, #ffffff 0%, #fff8e6 68%, #f4e6ff 100%);
+  transition: opacity 0.36s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .parcours-3d-canvas {
   width: 100%;
