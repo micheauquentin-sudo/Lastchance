@@ -110,10 +110,10 @@
     const startMotionLoop = () => {
       stopMotionLoop();
       timerId = setInterval(() => {
-        if (isPlaying) {
+        if (isPlaying && isInViewport) {
           nextMotionStep();
         }
-      }, 3400);
+      }, 4500);
     };
 
     const stopMotionLoop = () => {
@@ -123,9 +123,14 @@
       }
     };
 
+    let isInViewport = false;
+    let hasEnteredOnce = false;
+
     stepBtns.forEach((b) => {
       b.addEventListener("click", () => {
         const step = Number(b.dataset.step);
+        isInViewport = true;
+        hasEnteredOnce = true;
         setMotionStep(step);
         startMotionLoop();
       });
@@ -135,11 +140,14 @@
       mPlayPauseBtn.addEventListener("click", () => {
         isPlaying = !isPlaying;
         mPlayPauseBtn.textContent = isPlaying ? "⏸️ Pause" : "▶ Lecture";
+        if (isPlaying && !timerId) startMotionLoop();
       });
     }
 
     if (storyTrigger) {
       storyTrigger.addEventListener("click", () => {
+        isInViewport = true;
+        hasEnteredOnce = true;
         setMotionStep(1);
         isPlaying = true;
         if (mPlayPauseBtn) mPlayPauseBtn.textContent = "⏸️ Pause";
@@ -147,9 +155,30 @@
       });
     }
 
-    // Démarrage initial
+    // Ne démarre l'animation qu'au moment où le visiteur arrive sur #parcours
     setMotionStep(1);
-    startMotionLoop();
+    if (typeof IntersectionObserver === "function") {
+      const motionIo = new IntersectionObserver(
+        (entries) => {
+          const visible = Boolean(entries[0]?.isIntersecting);
+          isInViewport = visible;
+          if (visible) {
+            if (!hasEnteredOnce) {
+              hasEnteredOnce = true;
+              setMotionStep(1);
+            }
+            if (isPlaying && !timerId) startMotionLoop();
+          } else {
+            stopMotionLoop();
+          }
+        },
+        { threshold: 0.32 },
+      );
+      motionIo.observe(motionStage);
+    } else {
+      isInViewport = true;
+      startMotionLoop();
+    }
   }
 
   /* ── 3. LE MANÈGE INTERACTIF DES 10 MÉCANIQUES DE JEU (Sans doublons Vitrine/RDV) ── */
