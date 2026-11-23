@@ -11,7 +11,11 @@ import {
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
+import {
+  clientIpFromHeaders,
+  IP_CLIENT_INCONNUE,
+  observerPressionIp,
+} from "@/lib/request-ip";
 import {
   evaluateSkill,
   generateSkillSeed,
@@ -284,7 +288,15 @@ async function submitInner(
       "spin_ip_pressure",
       { wheel_id: wheel.id },
       );
+    const plafondIp =
+      ip === IP_CLIENT_INCONNUE
+        ? Promise.resolve(true)
+        : rateLimit(
+            rateLimitBucket("spin:ip:plafond", wheel.id, ip),
+            RATE_LIMITS.spinIpPlafond,
+          );
     const allowed =
+      (await plafondIp) &&
       (await rateLimit(
         rateLimitBucket("spin:burst", wheel.id, deviceKey),
         RATE_LIMITS.spinBurst,

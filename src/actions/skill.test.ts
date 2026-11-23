@@ -87,6 +87,7 @@ vi.mock("@/lib/rate-limit", () => {
       spinBurst: { limit: 1, windowSeconds: 4 },
       spin: { limit: 8, windowSeconds: 60 },
       spinIp: { limit: 40, windowSeconds: 60 },
+      spinIpPlafond: { limit: 1500, windowSeconds: 60 },
     },
   };
 });

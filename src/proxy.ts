@@ -255,6 +255,6 @@ export const config = {
   // sortirait silencieusement du proxy, perdant session, redirection de
   // connexion et isolation du domaine admin (contre-revue L11).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|play|pronos|v(?:/|$)|lobby(?:/|$)|ocr(?:/|$)|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|play(?:/|$)|pronos(?:/|$)|v(?:/|$)|lobby(?:/|$)|ocr(?:/|$)|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

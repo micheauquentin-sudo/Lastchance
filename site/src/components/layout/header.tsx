@@ -32,7 +32,7 @@ export function Header() {
             Connexion
           </ButtonLink>
           <ButtonLink href={SIGNUP_URL} external>
-            Essai gratuit
+            Créer un compte
           </ButtonLink>
         </div>
       </Container>

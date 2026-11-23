@@ -1248,9 +1248,27 @@ describe("webhook Stripe — abonnement d'un add-on mensuel", () => {
         ["module", "loyalty"],
         ["kind", "recurring"],
         ["source", "stripe"],
+        ["resource_id", null],
         ["revoked_at", null],
-        ["ends_at", null],
       ]),
+    );
+  });
+
+  it("révoque aussi un octroi récurrent déjà doté d'une échéance past_due", async () => {
+    octrois.rows = [
+      octroiVivant({
+        resource_id: null,
+        ends_at: "2026-09-14T10:00:00.000Z",
+      }),
+    ];
+    abonnementDePass();
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(octrois.rows[0].revoked_at).not.toBeNull();
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.revoked" }),
     );
   });
 

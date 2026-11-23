@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { APP_URL } from "@/lib/env";
@@ -54,6 +54,7 @@ export default async function CampaignDetailPage({
 }) {
   const { id } = await params;
   const { organization, role } = await getUserAndOrg();
+  if (!organization) redirect("/onboarding");
   const supabase = await createClient();
   // Même règle que la barre latérale (`nav.tsx`) pour l'onglet « QR codes » :
   // le formulaire de création n'apparaît que pour qui y avait déjà accès.

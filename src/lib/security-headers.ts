@@ -109,7 +109,10 @@ export const PUBLIC_NONCE_PREFIXES = [
   "/hunt",
   "/jackpot",
   "/passeport",
+  "/portefeuille",
   "/quiz",
+  "/reserver",
+  "/ticket",
 ] as const;
 
 /** `true` si `pathname` est `prefix` ou une de ses sous-routes. */

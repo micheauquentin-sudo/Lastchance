@@ -18,8 +18,10 @@ export function FinalCta() {
           </h2>
           <p className="relative mx-auto mt-4 max-w-xl text-zinc-300 text-pretty">
             Créez votre campagne, imprimez votre affiche, et regardez vos
-            clients revenir. Essai gratuit de {TRIAL_DAYS} jours, sans carte
-            bancaire.
+            clients revenir.{" "}
+            {TRIAL_DAYS > 0
+              ? `Essai gratuit de ${TRIAL_DAYS} jours, sans carte bancaire.`
+              : "Création de compte gratuite, sans carte bancaire."}
           </p>
           <div className="relative mt-8">
             <ButtonLink href={SIGNUP_URL} external size="lg">

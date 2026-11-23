@@ -115,6 +115,7 @@ export async function uploadLogo(
 
   revalidatePath("/dashboard/settings");
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/vitrine-studio");
   // Le logo apparaît sur toutes les pages /play de l'établissement.
   await revalidatePlaySlugs(supabase, { organizationId: organization.id });
   return { ok: true, data: undefined };
@@ -139,6 +140,8 @@ export async function removeLogo(): Promise<ActionResult> {
   await removeStoredLogo(organization.logo_url);
 
   revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard", "layout");
+  revalidatePath("/vitrine-studio");
   await revalidatePlaySlugs(supabase, { organizationId: organization.id });
   return { ok: true, data: undefined };
 }

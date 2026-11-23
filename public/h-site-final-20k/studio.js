@@ -929,6 +929,26 @@
       `;
     }
 
+    if (cle === "lots") {
+      const prizes = Array.isArray(p.rankPrizes) ? p.rankPrizes : [];
+      const rows = prizes
+        .map(
+          (rp, idx) => `
+          <div class="k-field-group">
+            <label class="k-label" for="p-prize-${idx}">${escapeHtml(rp.rank || `Rang ${idx + 1}`)}</label>
+            <input id="p-prize-${idx}" type="text" class="k-input" value="${escapeAttr(rp.reward || "")}" data-bind-prono-prize="${idx}" />
+          </div>
+        `,
+        )
+        .join("");
+      return `
+        <div class="k-field-group">
+          <p class="k-help" style="margin-bottom:0.75rem;">Définissez les récompenses remportées par les meilleurs pronostiqueurs au classement final.</p>
+          ${rows}
+        </div>
+      `;
+    }
+
     return renderVerificationStepSummary("pronostics", "Votre Saison de Pronostics est prête à être publiée !");
   }
 
@@ -1180,7 +1200,16 @@
 
   /* ── LIAISON DES ÉVÉNEMENTS DU FORMULAIRE DE GAUCHE ── */
   function bindFormEvents(container) {
-        $$("[data-bind-surprise]", container).forEach((inp) => {
+    $$("[data-bind-prono-prize]", container).forEach((inp) => {
+      inp.addEventListener("input", () => {
+        const idx = Number(inp.dataset.bindPronoPrize);
+        if (Array.isArray(drafts.pronostics?.rankPrizes) && drafts.pronostics.rankPrizes[idx]) {
+          drafts.pronostics.rankPrizes[idx].reward = inp.value;
+          saveAndRefreshPreview();
+        }
+      });
+    });
+    $$("[data-bind-surprise]", container).forEach((inp) => {
       inp.addEventListener("input", () => {
         const idx = Number(inp.dataset.bindSurprise);
         if (drafts.calendrier && drafts.calendrier.surprises && drafts.calendrier.surprises[idx]) {
@@ -1417,7 +1446,7 @@ $$("[data-bind]", container).forEach((inp) => {
     } else if (currentModule === "calendrier") {
       const cName = drafts.calendrier?.name || "mon-calendrier";
       const slug = encodeURIComponent(cName.toLowerCase().replace(/[^a-z0-9]+/g, "-")).slice(0, 24);
-      if (urlPill) urlPill.textContent = `simplecommeqr.fr/cal/${slug}`;
+      if (urlPill) urlPill.textContent = `simplecommeqr.fr/calendar/${slug}`;
       if (tools) tools.innerHTML = `<span class="k-tool-pill">Cases : ${drafts.calendrier?.nbCases || 24}j · ${drafts.calendrier?.theme || "kermesse"}</span>`;
       phone.innerHTML = buildCalendrierPreviewHTML();
       bindCalendrierInteractive(phone);
@@ -1920,6 +1949,17 @@ $$("[data-bind]", container).forEach((inp) => {
   $("#k-cap-save-account-btn")?.addEventListener("click", () => openPublishModal());
   $("#k-close-publish-modal")?.addEventListener("click", () => {
     $("#k-modal-publish").hidden = true;
+  });
+  $("#k-modal-preview")?.addEventListener("click", (e) => {
+    if (e.target === $("#k-modal-preview")) $("#k-modal-preview").hidden = true;
+  });
+  $("#k-modal-publish")?.addEventListener("click", (e) => {
+    if (e.target === $("#k-modal-publish")) $("#k-modal-publish").hidden = true;
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if ($("#k-modal-preview") && !$("#k-modal-preview").hidden) $("#k-modal-preview").hidden = true;
+    if ($("#k-modal-publish") && !$("#k-modal-publish").hidden) $("#k-modal-publish").hidden = true;
   });
 
   updateHeaderAuthUI();

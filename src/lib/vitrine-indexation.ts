@@ -127,3 +127,19 @@ export function donneesStructureesVitrine(input: {
   if (input.image) document.image = input.image;
   return document;
 }
+
+/**
+ * Sérialise un objet JSON-LD pour une balise `<script type="application/ld+json">`.
+ *
+ * `JSON.stringify` n'échappe pas `<`, `>`, `&` ni les séparateurs de ligne
+ * Unicode : une chaîne contenant `</script><script>...` ferme la balise JSON-LD
+ * et exécute du JavaScript dans le navigateur (XSS stocké).
+ */
+export function serialiserJsonLdSur(document: Record<string, unknown>): string {
+  return JSON.stringify(document)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}

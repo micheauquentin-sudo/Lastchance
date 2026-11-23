@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   compterFiches,
   donneesStructureesVitrine,
+  serialiserJsonLdSur,
   etatIndexation,
   VITRINE_FICHES_MIN_INDEXATION,
 } from "@/lib/vitrine-indexation";
@@ -134,5 +135,25 @@ describe("donneesStructureesVitrine", () => {
     });
     expect(doc).not.toHaveProperty("description");
     expect(doc).not.toHaveProperty("image");
+  });
+});
+
+describe("serialiserJsonLdSur", () => {
+  it("neutralise </script> et les balises HTML pour éviter tout XSS stocké", () => {
+    const payload = serialiserJsonLdSur({
+      "@type": "LocalBusiness",
+      name: 'Café </script><script>alert("xss")</script>',
+      description: "A & B \u2028\u2029",
+    });
+
+    expect(payload).not.toContain("</script>");
+    expect(payload).not.toContain("<");
+    expect(payload).not.toContain(">");
+    expect(payload).not.toContain("&");
+    expect(JSON.parse(payload)).toEqual({
+      "@type": "LocalBusiness",
+      name: 'Café </script><script>alert("xss")</script>',
+      description: "A & B \u2028\u2029",
+    });
   });
 });

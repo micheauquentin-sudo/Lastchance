@@ -231,21 +231,26 @@ export async function runContestReminders(
 
       if (listeJoueurs.length === 0) continue;
 
-      const { data: pronos } = await admin
-        .from("contest_predictions")
-        .select("player_id, match_id")
-        .in(
-          "player_id",
-          listeJoueurs.map((j) => j.id),
-        );
+      const pronos: Array<{ player_id: string; match_id: string }> = [];
+      const TAILLE_LOT_JOUEURS = 100;
+      for (let i = 0; i < listeJoueurs.length; i += TAILLE_LOT_JOUEURS) {
+        const lotIds = listeJoueurs.slice(i, i + TAILLE_LOT_JOUEURS).map((j) => j.id);
+        const { data: lotPronos } = await admin
+          .from("contest_predictions")
+          .select("player_id, match_id")
+          .in("player_id", lotIds);
+        if (Array.isArray(lotPronos)) {
+          pronos.push(...(lotPronos as Array<{ player_id: string; match_id: string }>));
+        }
+      }
 
       const relances = joueursARelancer({
         joueurs: listeJoueurs,
         matchsAVenir: listeMatchs,
-        pronostics: ((pronos ?? []) as Array<{
-          player_id: string;
-          match_id: string;
-        }>).map((p) => ({ playerId: p.player_id, matchId: p.match_id })),
+        pronostics: pronos.map((p) => ({
+          playerId: p.player_id,
+          matchId: p.match_id,
+        })),
       });
 
       for (const relance of relances) {

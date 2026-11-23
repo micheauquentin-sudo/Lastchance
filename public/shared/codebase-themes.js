@@ -735,6 +735,35 @@
         },
       ],
     },
+    boulangerie: {
+      key: "boulangerie",
+      label: "Boulangerie & Pâtisserie",
+      icon: "🥐",
+      primary: "#9A4A1C",
+      secondary: "#FFF7EA",
+      heading: "bistrot",
+      body: "sans",
+      defaultNom: "Maison Dorée",
+      defaultAccroche: "Pains au levain naturel, viennoiseries pur beurre & pâtisseries du matin.",
+      defaultHistoire: "Pétris et cuits sur place dès 4 h chaque matin avec des farines françaises locales.",
+      defaultBadge: "Ouvert du mardi au dimanche · 6h30–19h30",
+      motCartes: "Nos fournées",
+      cartes: [
+        {
+          nom: "Boulangerie & Viennoiserie",
+          rubriques: [
+            {
+              nom: "Nos incontournables",
+              fiches: [
+                { nom: "Tradition au Levain", description: "Croûte dorée, mie alvéolée, fermentation longue 24 h.", prix: "1,35 €", badges: ["traditionnel", "fait_maison"] },
+                { nom: "Croissant Pur Beurre AOP", description: "Feuilletage croustillant au beurre Charentes-Poitou.", prix: "1,50 €", badges: ["fait_maison"] },
+                { nom: "Tartelette Citron Meringuée", description: "Pâte sucrée amande, crémeux citron frais.", prix: "4,40 €", badges: ["nouveau"] },
+              ],
+            },
+          ],
+        },
+      ],
+    },
     commerce: {
       key: "commerce",
       label: "Autre commerce",

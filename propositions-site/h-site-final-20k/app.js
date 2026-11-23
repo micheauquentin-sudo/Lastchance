@@ -8,6 +8,13 @@
   const O = window.LC_OFFRE;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const escapeHtml = (s) =>
+    String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   const el = (tag, attrs = {}, html = "") => {
     const n = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
@@ -940,7 +947,7 @@
 
     const triggerHpPlayRound = () => {
       if (hpSim) {
-        const actionBtn = hpPhoneScreen ? hpPhoneScreen.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube, .lc-rps-btn, .lc-memory-card") : null;
+        const actionBtn = hpPhoneScreen ? hpPhoneScreen.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube, .lc-rps-btn, .lc-memory-tile") : null;
         if (actionBtn) {
           actionBtn.click();
         } else if (typeof hpSim.triggerWin === "function") {
@@ -983,14 +990,14 @@
 
         <div style="text-align:center;background:rgba(255,255,255,0.92);color:#211d16;padding:0.45rem 0.65rem;border-radius:14px;border:2px solid #211d16;margin-bottom:0.45rem;">
           <small style="font:800 0.64rem var(--body);text-transform:uppercase;color:#267f53;">${mech.family === "adresse" ? "🎯 Défi d'adresse + Tirage" : "🎲 Jeu de hasard instantané"}</small>
-          <strong style="display:block;font:900 0.98rem var(--display);line-height:1.2;">${drafts.vitrine.nom || "Votre Établissement"}</strong>
-          <span style="font-size:0.74rem;font-weight:700;">${drafts.roue.name || "Tentez votre chance !"}</span>
+          <strong style="display:block;font:900 0.98rem var(--display);line-height:1.2;">${escapeHtml(drafts.vitrine.nom || "Votre Établissement")}</strong>
+          <span style="font-size:0.74rem;font-weight:700;">${escapeHtml(drafts.roue.name || "Tentez votre chance !")}</span>
         </div>
 
         <div id="hp-live-stage" style="width:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:260px;"></div>
 
         <div id="hp-win-banner" style="${hpLastWin ? "" : "display:none;"}background:#e6f9ef;color:#211d16;border:2px solid #211d16;border-radius:12px;padding:0.45rem 0.65rem;text-align:center;font-size:0.75rem;font-weight:800;box-shadow:2px 2px 0 #211d16;margin-top:0.4rem;">
-          ${hpLastWin ? `🎉 Gain : <b>${hpLastWin.label}</b> · Code caisse : <code style="background:#fcca59;padding:0.1rem 0.35rem;border-radius:5px;border:1px solid #211d16;">${hpLastWin.code}</code>` : ""}
+          ${hpLastWin ? `🎉 Gain : <b>${escapeHtml(hpLastWin.label)}</b> · Code caisse : <code style="background:#fcca59;padding:0.1rem 0.35rem;border-radius:5px;border:1px solid #211d16;">${escapeHtml(hpLastWin.code)}</code>` : ""}
         </div>
       `;
 
@@ -1022,19 +1029,25 @@
           lots: lots,
           ringColor: st.ringColor || "#211d16",
           pointerColor: st.pointerColor || "#f5793b",
-          buttonStyle: {
-            background: `linear-gradient(135deg, ${st.buttonFrom || "#f5793b"}, ${st.buttonTo || "#fcca59"})`,
-            color: "#ffffff"
-          },
+          buttonFrom: st.buttonFrom || "#f5793b",
+          buttonTo: st.buttonTo || "#fcca59",
           onWin: (res) => {
             hpLastWin = { label: res.prize, code: res.code };
             if (winBanner) {
               winBanner.style.display = "block";
-              winBanner.innerHTML = `🎉 Gain : <b>${res.prize}</b> · Code caisse : <code style="background:#fcca59;padding:0.1rem 0.35rem;border-radius:5px;border:1px solid #211d16;">${res.code}</code>`;
+              winBanner.innerHTML = `🎉 Gain : <b>${escapeHtml(res.prize)}</b> · Code caisse : <code style="background:#fcca59;padding:0.1rem 0.35rem;border-radius:5px;border:1px solid #211d16;">${escapeHtml(res.code)}</code>`;
               try { winBanner.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch {}
             }
           }
         });
+      }
+    };
+
+    const closeHeroPlayModal = () => {
+      modalHeroPlay.hidden = true;
+      if (hpSim) {
+        hpSim.destroy();
+        hpSim = null;
       }
     };
 
@@ -1048,9 +1061,12 @@
 
     if (heroQrBtn) heroQrBtn.addEventListener("click", openHeroPlayModal);
     if (heroOpenPlayCta) heroOpenPlayCta.addEventListener("click", openHeroPlayModal);
-    if (hpModalClose) hpModalClose.addEventListener("click", () => (modalHeroPlay.hidden = true));
+    if (hpModalClose) hpModalClose.addEventListener("click", closeHeroPlayModal);
     modalHeroPlay.addEventListener("click", (e) => {
-      if (e.target === modalHeroPlay) modalHeroPlay.hidden = true;
+      if (e.target === modalHeroPlay) closeHeroPlayModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !modalHeroPlay.hidden) closeHeroPlayModal();
     });
 
     $$("[data-hp-tab]", modalHeroPlay).forEach((tabBtn) => {
@@ -1509,7 +1525,7 @@
 
     if (jpPlayBtn) {
       jpPlayBtn.addEventListener("click", () => {
-        const actionBtn = jpPhoneStage ? jpPhoneStage.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube, .lc-rps-btn, .lc-memory-card") : null;
+        const actionBtn = jpPhoneStage ? jpPhoneStage.querySelector(".lc-action-btn, .lc-cup-item, .lc-card-3d, .lc-chest-item, .lc-reflex-pad, .lc-dice-cube, .lc-rps-btn, .lc-memory-tile") : null;
         if (actionBtn) {
           actionBtn.click();
         } else if (jpSim) {
@@ -2295,10 +2311,10 @@
     floatingDraftBar.hidden = false;
     floatingDraftBar.innerHTML = `
       <div style="flex:1;min-width:0;">
-        <strong style="display:block;font:800 0.8rem var(--display);color:var(--k-ink);">✨ ${statusText}</strong>
+        <strong style="display:block;font:800 0.8rem var(--display);color:var(--k-ink);">✨ ${escapeHtml(statusText)}</strong>
         <small style="font-size:0.74rem;font-weight:700;color:var(--k-muted);">Reprenez votre modification là où vous vous étiez arrêté.</small>
       </div>
-      <a class="k-btn k-btn-yellow k-btn-sm" href="/studio?module=${d.lastModule || "vitrine"}">
+      <a class="k-btn k-btn-yellow k-btn-sm" href="/studio?module=${encodeURIComponent(d.lastModule || "vitrine")}">
         Reprendre ma création →
       </a>
       <button type="button" class="lc-draft-close" id="lc-draft-close" aria-label="Fermer cette notification" title="Fermer">✕</button>
@@ -3351,14 +3367,12 @@
           ],
           ringColor: st.ringColor || "#211d16",
           pointerColor: st.pointerColor || "#f5793b",
-          buttonStyle: {
-            background: `linear-gradient(135deg, ${st.buttonFrom || "#f5793b"}, ${st.buttonTo || "#ffd93d"})`,
-            color: "#ffffff",
-          },
+          buttonFrom: st.buttonFrom || "#f5793b",
+          buttonTo: st.buttonTo || "#ffd93d",
           onWin: (res) => {
             if (winEl) {
               winEl.hidden = false;
-              winEl.innerHTML = `🎉 Gagné : <b>${res.prize}</b> · Présentez le code <span class="lc-emu-code-pill">${res.code}</span> en caisse !`;
+              winEl.innerHTML = `🎉 Gagné : <b>${escapeHtml(res.prize)}</b> · Présentez le code <span class="lc-emu-code-pill">${escapeHtml(res.code)}</span> en caisse !`;
             }
           },
         });
