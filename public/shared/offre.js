@@ -30,7 +30,7 @@ window.LC_OFFRE = (function () {
   // Ordre = ordre de prix croissant (PLAN_TIERS).
   const FORMULES = [
     {
-      id: "core", nom: "Coup d'envoi", prix: 29, essai: 7, jauge: 100,
+      id: "core", nom: "Coup d'envoi", prix: 29, essai: 0, jauge: 100,
       promesse: "Lancer une animation",
       tagline: "Lancer une animation : le jeu qui fait revenir vos clients, en libre-service.",
       droits: ["core", "duo", "bande"],
@@ -43,7 +43,7 @@ window.LC_OFFRE = (function () {
       ],
     },
     {
-      id: "engagement", nom: "Le Club", prix: 59, essai: 7, jauge: 100,
+      id: "engagement", nom: "Le Club", prix: 59, essai: 0, jauge: 100,
       promesse: "Fidéliser",
       tagline: "Fidéliser : installer l'habitude — fidélité, rendez-vous, bouche-à-oreille.",
       droits: ["core", "duo", "bande", "loyalty", "calendar", "referral", "hunts", "quiz"],
@@ -56,7 +56,7 @@ window.LC_OFFRE = (function () {
       ],
     },
     {
-      id: "place", nom: "Sur Place", prix: 79, essai: 7, jauge: 100,
+      id: "place", nom: "Sur Place", prix: 79, essai: 0, jauge: 100,
       promesse: "Se faire lire et réserver",
       tagline: "Se faire lire et réserver : votre carte au QR code et votre agenda, dans un seul abonnement.",
       droits: ["core", "duo", "bande", "vitrine", "reserver", "rendez_vous", "quiz"],
@@ -69,7 +69,7 @@ window.LC_OFFRE = (function () {
       ],
     },
     {
-      id: "live", nom: "Le Grand Jeu", prix: 89, essai: 7, jauge: 250,
+      id: "live", nom: "Le Grand Jeu", prix: 89, essai: 0, jauge: 250,
       promesse: "Animer régulièrement",
       tagline: "Animer régulièrement : soirées, compétitions, temps réel dans votre salle.",
       droits: ["core", "duo", "bande", "events", "pronostics", "jackpot", "quiz"],
@@ -82,7 +82,7 @@ window.LC_OFFRE = (function () {
       ],
     },
     {
-      id: "full", nom: "La Totale", prix: 129, essai: 7, jauge: 250,
+      id: "full", nom: "La Totale", prix: 129, essai: 0, jauge: 250,
       promesse: "Réunir toutes les briques",
       tagline: "Réunir toutes les briques : toute la plateforme, sans arbitrage entre modules.",
       droits: ["core", "duo", "bande", "pronostics", "hunts", "loyalty", "jackpot", "events", "calendar", "quiz", "referral", "vitrine", "reserver", "rendez_vous"],

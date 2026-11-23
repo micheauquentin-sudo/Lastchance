@@ -2,6 +2,7 @@ import { cache } from "react";
 import { APP_URL } from "@/lib/env";
 import {
   donneesStructureesVitrine,
+  serialiserJsonLdSur,
   etatIndexation,
 } from "@/lib/vitrine-indexation";
 import { Boussole } from "@/components/vitrine/boussole";
@@ -320,15 +321,10 @@ export default async function VitrinePage({
           est déjà dans l'adresse. C'est `/api/page-opens` qui le traduit en
           `resource_id` pour le compteur que lit le dashboard. */}
       {indexation.indexee ? (
-        // `dangerouslySetInnerHTML` est la seule façon d'émettre un
-        // `application/ld+json` : React échapperait le contenu d'un enfant
-        // texte, et un moteur lirait alors du JSON invalide. Ce qui entre ici
-        // vient de `JSON.stringify`, donc d'un document dont chaque chaîne est
-        // déjà échappée — aucune valeur du commerçant n'y arrive brute.
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify(
+            __html: serialiserJsonLdSur(
               donneesStructureesVitrine({
                 nom,
                 accroche: etat.identite.accroche,

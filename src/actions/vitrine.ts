@@ -244,6 +244,7 @@ async function revaliderVitrine(
   slugConnu?: string | null,
 ): Promise<void> {
   revalidatePath(CHEMIN_DASHBOARD);
+  revalidatePath("/vitrine-studio");
   await revaliderVitrinePublique(supabase, organizationId, slugConnu);
 }
 

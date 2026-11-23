@@ -39,9 +39,9 @@ export default function ContactPage() {
         <Card>
           <h2 className="font-semibold">Envie de tester directement ?</h2>
           <p className="mt-2 text-sm text-ink-soft">
-            L&apos;essai gratuit reste le meilleur moyen de se faire une idée :
-            {TRIAL_DAYS} jours, sans carte bancaire, votre roue tourne en 10
-            minutes.
+            {TRIAL_DAYS > 0
+              ? `L'essai gratuit reste le meilleur moyen de se faire une idée : ${TRIAL_DAYS} jours, sans carte bancaire, votre roue tourne en 10 minutes.`
+              : "Le compte gratuit reste le meilleur moyen de se faire une idée : sans carte bancaire, configurez votre roue en brouillon en 10 minutes."}
           </p>
           <ButtonLink href={SIGNUP_URL} external className="mt-5">
             Créer mon compte

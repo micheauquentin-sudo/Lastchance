@@ -131,6 +131,11 @@ export async function sendNewsletterCampaign(
     idempotencyKey: `newsletter:${campaign.id}`,
   });
   if (!enqueued) {
+    await createAdminClient()
+      .from("newsletter_campaigns")
+      .update({ status: "failed" })
+      .eq("id", campaign.id)
+      .eq("organization_id", organization.id);
     return { ok: false, error: "File d'envoi indisponible, réessayez." };
   }
 
@@ -160,8 +165,10 @@ export async function retryNewsletterCampaign(
   formData: FormData,
 ): Promise<ActionResult> {
   const organization = await requireOrg();
-  const campaignId = String(formData.get("id") ?? "");
-  if (!campaignId) return { ok: false, error: "Campagne inconnue" };
+  const campaignId = String(formData.get("id") ?? "").trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaignId)) {
+    return { ok: false, error: "Campagne inconnue" };
+  }
 
   const supabase = await createClient();
   const { data: campaign } = await supabase
@@ -179,7 +186,8 @@ export async function retryNewsletterCampaign(
   const { error: statusError } = await admin
     .from("newsletter_campaigns")
     .update({ status: "queued", completed_at: null })
-    .eq("id", campaignId);
+    .eq("id", campaignId)
+    .eq("organization_id", organization.id);
   if (statusError) {
     reportError("newsletter.retry", statusError.message);
     return { ok: false, error: "Relance impossible" };

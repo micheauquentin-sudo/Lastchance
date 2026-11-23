@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <base href="/h-site-final-20k/" />
   <title>Roue de la Fortune — Simple comme QR</title>
   <meta name="description" content="Tournez la roue sans installer d'application et remportez votre lot au comptoir." />
@@ -12,6 +12,7 @@
   <style>
     :root {
       --ink: #161317;
+      --body: "Manrope", system-ui, sans-serif;
       --yellow: #ffd000;
       --pink: #ff358b;
       --mint: #05d38a;
@@ -437,6 +438,11 @@
         modal.classList.remove("active");
         btn.disabled = false;
         btn.textContent = "TOURNER LA ROUE !";
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && modal.classList.contains("active")) {
+          btnClose.click();
+        }
       });
 
       if (btnShare) {

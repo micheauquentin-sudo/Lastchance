@@ -15,7 +15,7 @@ import { CHECKOUT_ENABLED, SIGNUP_URL } from "@/content/site";
 export const metadata: Metadata = {
   title: "Tarifs",
   description:
-    "Quatre offres Simple comme QR par objectif — lancer, fidéliser, animer, tout réunir — et huit options achetables seules.",
+    "Cinq offres Simple comme QR par objectif — lancer, fidéliser, sur place, animer, tout réunir — et dix options achetables seules.",
   alternates: { canonical: "/tarifs" },
 };
 
@@ -78,7 +78,9 @@ export default function PricingPage() {
                 className="mt-8 w-full"
               >
                 {CHECKOUT_ENABLED
-                  ? `Commencer — ${plan.trialDays} jours gratuits`
+                  ? plan.trialDays > 0
+                    ? `Commencer — ${plan.trialDays} jours gratuits`
+                    : "Créer mon compte gratuit"
                   : "Parler de cette offre"}
               </ButtonLink>
             </Card>

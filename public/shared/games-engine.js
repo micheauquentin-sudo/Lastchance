@@ -10,6 +10,9 @@
 (function (global) {
   "use strict";
 
+  const safeColor = (c, fallback) =>
+    typeof c === "string" && /^#[0-9a-f]{3,8}$/i.test(c.trim()) ? c.trim() : fallback;
+
   // Palette par défaut pour les confettis et animations
   const CONFETTI_COLORS = ["#ffd93d", "#ff6b6b", "#4dabf7", "#69db7c", "#ff922b", "#da77f2", "#20c997"];
 
@@ -493,21 +496,31 @@ function burstConfetti(container) {
         const ty = center - (radius * 0.62) * Math.cos(midRad);
         const rot = (start + end) / 2;
 
+        const safeLabel = escapeHtml(
+          String(lots[i].label || "").length > 12
+            ? String(lots[i].label || "").slice(0, 11) + "…"
+            : String(lots[i].label || ""),
+        );
+        const sliceColor = safeColor(lots[i].color, "#ffd93d");
+
         paths += `
           <g>
-            <path d="M${center} ${center} L${x1.toFixed(1)} ${y1.toFixed(1)} A${radius} ${radius} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="${lots[i].color || "#ffd93d"}" stroke="#211d16" stroke-width="2.5" />
+            <path d="M${center} ${center} L${x1.toFixed(1)} ${y1.toFixed(1)} A${radius} ${radius} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="${sliceColor}" stroke="#211d16" stroke-width="2.5" />
             <text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" fill="#211d16" font-size="9" font-weight="900" text-anchor="middle" dominant-baseline="middle" transform="rotate(${rot.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})">
-              ${lots[i].label.length > 12 ? lots[i].label.slice(0, 11) + "…" : lots[i].label}
+              ${safeLabel}
             </text>
           </g>
         `;
       }
 
+      const pointerColor = safeColor(this.options.pointerColor, "#e63946");
+      const ringColor = safeColor(this.options.ringColor, "#211d16");
+
       this.stageElement.innerHTML = `
         <div class="lc-wheel-arena">
-          <div class="lc-wheel-pointer" style="border-top-color:${this.options.pointerColor || "#e63946"}"></div>
+          <div class="lc-wheel-pointer" style="border-top-color:${pointerColor}"></div>
           <svg viewBox="0 0 220 220" class="lc-wheel-svg" id="lc-live-wheel-svg">
-            <circle cx="110" cy="110" r="106" fill="none" stroke="${this.options.ringColor || "#211d16"}" stroke-width="6" />
+            <circle cx="110" cy="110" r="106" fill="none" stroke="${ringColor}" stroke-width="6" />
             <g id="lc-wheel-disc">
               ${paths}
               <circle cx="110" cy="110" r="18" fill="#fdf6e3" stroke="#211d16" stroke-width="3" />
@@ -556,7 +569,7 @@ function burstConfetti(container) {
         <div class="lc-scratch-wrap" id="lc-scratch-container">
           <div class="lc-scratch-underlay">
             <span class="lc-scratch-icon">🎁</span>
-            <strong>${prizeLabel}</strong>
+            <strong>${escapeHtml(prizeLabel)}</strong>
             <small>Félicitations pour votre découverte !</small>
           </div>
           <canvas class="lc-scratch-canvas" id="lc-scratch-canvas"></canvas>
@@ -1370,7 +1383,7 @@ function burstConfetti(container) {
           </div>
 
           <div class="lc-modal-actions">
-            <a href="studio.html?module=roue&mech=${k}" class="ticket-btn pop-btn-yellow ticket-btn-large">
+            <a href="/studio?module=roue&mech=${encodeURIComponent(k)}" class="ticket-btn pop-btn-yellow ticket-btn-large">
               🛠️ Personnaliser ce jeu dans le Studio →
             </a>
           </div>

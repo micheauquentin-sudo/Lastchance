@@ -554,6 +554,11 @@ async function traiterAbonnementDePass(
     // révocation non ambiguë sans avoir à persister l'identifiant d'abonnement.
     // `source = 'stripe'` s'y ajoute pour qu'une résiliation ne révoque JAMAIS
     // un octroi offert par le back-office, que Stripe n'a jamais gouverné.
+    // LE FILTRE COUVRE AUSSI UN OCTROI PASSÉ EN `past_due` (où `echeanceImpaye`
+    // a déjà posé une date `ends_at = +14 j`) : une résiliation effective doit
+    // révoquer l'octroi immédiatement sans attendre la fin de la grâce, tout en
+    // excluant les pass bornés à une ressource (`resource_id is null`) et les
+    // octrois back-office (`source = 'stripe'`).
     const { data, error } = await admin
       .from("organization_module_grants")
       .update({
@@ -564,8 +569,8 @@ async function traiterAbonnementDePass(
       .eq("module", moduleVise)
       .eq("kind", "recurring")
       .eq("source", "stripe")
+      .is("resource_id", null)
       .is("revoked_at", null)
-      .is("ends_at", null)
       .select("id");
 
     if (error) {

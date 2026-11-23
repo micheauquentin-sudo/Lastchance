@@ -2076,6 +2076,8 @@ export async function cancelReservationStaff(
       });
     }
     revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/reservations/[activityId]", "page");
+    revalidatePath("/studio/reservation/[activityId]", "page");
     return { ok: true as const, data: resultat };
   });
 }
@@ -2254,6 +2256,8 @@ export async function createInvitation(
     }
 
     revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/reservations/[activityId]", "page");
+    revalidatePath("/studio/reservation/[activityId]", "page");
     return {
       ok: true as const,
       data: {
@@ -2305,6 +2309,8 @@ export async function revokeInvitation(
       return { ok: false as const, error: INDISPONIBLE };
     }
     revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/reservations/[activityId]", "page");
+    revalidatePath("/studio/reservation/[activityId]", "page");
     return { ok: true as const, data: resultat };
   });
 }
@@ -2348,6 +2354,8 @@ export async function closeInvitation(
       return { ok: false as const, error: INDISPONIBLE };
     }
     revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/reservations/[activityId]", "page");
+    revalidatePath("/studio/reservation/[activityId]", "page");
     return { ok: true as const, data: resultat };
   });
 }
@@ -2437,6 +2445,7 @@ export async function createReserverActivity(
   }
 
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/moments");
   // LA VITRINE PUBLIE CE DRAPEAU (VIT-3, revue L13). Une activité naît `active`
   // : elle devient donc immédiatement une porte de `/v/{slug}`, servie en ISR.
   // Sans cette purge, le commerçant la cherche une minute sur sa propre carte.
@@ -2647,6 +2656,8 @@ export async function updateReserverActivity(
   }
 
   revalidatePath("/dashboard/reservations");
+  revaliderActivite(parsed.data.id);
+  revalidatePath("/dashboard/moments");
   // `active` vient de changer, dans un sens ou dans l'autre : la porte s'ouvre
   // ou disparaît de la vitrine — voir `createReserverActivity`.
   await revaliderVitrinePublique(supabase, garde.organizationId);
@@ -2718,6 +2729,8 @@ export async function createReserverSlot(
   }
 
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/reservations/[activityId]", "page");
+  revalidatePath("/studio/reservation/[activityId]", "page");
   return { ok: true, data: undefined };
 }
 
@@ -2783,6 +2796,8 @@ export async function updateReserverSlot(
   }
 
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/reservations/[activityId]", "page");
+  revalidatePath("/studio/reservation/[activityId]", "page");
   return { ok: true, data: undefined };
 }
 
@@ -2820,6 +2835,8 @@ export async function updateReserverSlotStatus(
   }
 
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/reservations/[activityId]", "page");
+  revalidatePath("/studio/reservation/[activityId]", "page");
   return { ok: true, data: undefined };
 }
 
@@ -4666,6 +4683,7 @@ export async function createStockOffer(
   }
 
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/moments");
   // Une offre peut naître `open` ET dans sa fenêtre de retrait : porte publiée
   // à l'insertion — voir `createReserverActivity`.
   await revaliderVitrinePublique(supabase, garde.organizationId);
@@ -4746,6 +4764,7 @@ export async function updateStockOffer(
   }
 
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/moments");
   // `closed` EST l'interrupteur ici — il n'y a pas de suppression. La fenêtre
   // de retrait entre elle aussi dans le filtre de la RPC publique : la corriger
   // peut faire apparaître ou disparaître la porte, au même titre que le statut.

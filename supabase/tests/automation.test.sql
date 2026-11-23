@@ -34,10 +34,10 @@ values ('aa000000-0000-4000-8000-000000000003',
         'aa000000-0000-4000-8000-000000000001',
         'aa000000-0000-4000-8000-000000000002', 'Roue budget', 'unlimited');
 
-insert into public.prizes (id, organization_id, wheel_id, label, cost_cents)
+insert into public.prizes (id, organization_id, wheel_id, label, cost_cents, value_cents)
 values ('aa000000-0000-4000-8000-000000000004',
         'aa000000-0000-4000-8000-000000000001',
-        'aa000000-0000-4000-8000-000000000003', 'Menu offert', 150);
+        'aa000000-0000-4000-8000-000000000003', 'Menu offert', 150, 150);
 
 insert into public.spins
   (id, organization_id, campaign_id, wheel_id, prize_id, is_losing, player_key)
@@ -125,6 +125,31 @@ select results_eq(
       from public.campaigns where id = 'aa000000-0000-4000-8000-000000000002'$$,
   $$values ('active', 0, null::text)$$,
   'la campagne redevient active quand le budget est réellement disponible'
+);
+
+-- Une campagne archivée portant un paused_reason='budget_reached' n'est jamais
+-- réactivée par release_expired_spin_budget_reservations, et set_campaign_status
+-- nettoie paused_reason au passage en archived.
+insert into public.campaigns (id, organization_id, name, status, paused_reason, budget_cents)
+values ('aa000000-0000-4000-8000-000000000099',
+        'aa000000-0000-4000-8000-000000000001', 'Campagne archivee budget', 'archived', 'budget_reached', 200);
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
+values ('aa000000-0000-4000-8000-000000000098',
+        'aa000000-0000-4000-8000-000000000001',
+        'aa000000-0000-4000-8000-000000000099', 'Roue archivee', 'unlimited');
+insert into public.prizes (id, organization_id, wheel_id, label, cost_cents, value_cents)
+values ('aa000000-0000-4000-8000-000000000097',
+        'aa000000-0000-4000-8000-000000000001',
+        'aa000000-0000-4000-8000-000000000098', 'Lot archive', 100, 100);
+select is(
+  public.release_expired_spin_budget_reservations(
+    'aa000000-0000-4000-8000-000000000099'
+  ), 0, 'la liberation de budget ignore les campagnes archivees'
+);
+select results_eq(
+  $$select status from public.campaigns where id = 'aa000000-0000-4000-8000-000000000099'$$,
+  $$values ('archived'::text)$$,
+  'une campagne archivee ne redevient jamais active apres liberation de budget'
 );
 
 -- ══ 2. Programmation automatique ═════════════════════════════

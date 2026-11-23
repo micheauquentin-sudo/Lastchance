@@ -117,9 +117,11 @@ export const PRICING_ADDONS: readonly GeneratedAddon[] = GENERATED_ADDONS;
  * `ADDON_TRIAL_DAYS`.
  */
 export const PRICING_NOTES = [
-  `Essai gratuit de ${TRIAL_DAYS} jours sur l'abonnement, sans carte bancaire.`,
+  TRIAL_DAYS > 0
+    ? `Essai gratuit de ${TRIAL_DAYS} jours sur l'abonnement, sans carte bancaire.`
+    : "Création de compte gratuite, sans carte bancaire : configurez en brouillon avant de publier.",
   ADDON_TRIAL_DAYS === 0
-    ? "Les options ne comportent pas d'essai : l'essai reste celui de l'abonnement."
+    ? "Les options à la carte sont sans essai : vous payez uniquement ce que vous activez."
     : `Essai de ${ADDON_TRIAL_DAYS} jours sur les options.`,
   "Sans engagement : annulable à tout moment depuis le portail de facturation.",
   "Paiement sécurisé par Stripe.",
@@ -130,14 +132,12 @@ export const PRICING_NOTES = [
  * DEUX FAMILLES D'OPTIONS DEPUIS LE 2026-08-22, et la phrase doit le dire.
  *
  * Le ternaire d'origine supposait que le catalogue était homogène : soit tout
- * s'achète seul, soit rien. Vitrine et Réserver ont cassé ça — ce sont des
- * lignes d'abonnement, jamais des achats séparés. Annoncer « chaque option
- * s'achète seule » les vendrait pour ce qu'elles ne sont pas ; annoncer
- * l'inverse mentirait sur les huit autres.
+ * s'achète seul, soit rien. Vitrine, Moments et Réserver ont cassé ça — ce sont
+ * des lignes d'abonnement, jamais des achats séparés.
  */
 export const ADDONS_INTRO = ADDONS_PURCHASABLE_STANDALONE
   ? "Chaque option s'achète seule, sans abonnement : elle embarque le strict nécessaire (organisation, QR, lots, caisse) sans déverrouiller les autres modules. Vous pouvez aussi en cumuler plusieurs."
-  : "La plupart des options s'achètent seules, sans abonnement : elles embarquent le strict nécessaire (organisation, QR, lots, caisse) sans déverrouiller les autres modules. Vitrine et Réserver font exception — elles s'ajoutent à une offre en cours, sur la même facture et à la même date.";
+  : "La plupart des options s'achètent seules, sans abonnement : elles embarquent le strict nécessaire (organisation, QR, lots, caisse) sans déverrouiller les autres modules. Vitrine, Moments et Réserver font exception — elles s'ajoutent à une offre en cours, sur la même facture et à la même date.";
 
 export const ADDON_NOTES: readonly string[] = ADDON_EXPIRY_RULES;
 

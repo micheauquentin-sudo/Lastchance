@@ -30,10 +30,10 @@ export default async function SignupPage({
           <span className="text-base">🛠️</span>
           <div className="space-y-0.5">
             <strong className="font-bold text-purple-900 block text-xs uppercase tracking-wide">
-              Configuration Studio sauvegardée{mod ? ` (${mod})` : ""}
+              Aperçu Studio conservé sur cet appareil{mod ? ` (${mod})` : ""}
             </strong>
             <p className="text-purple-800 leading-relaxed">
-              Vos réglages sont gardés en mémoire et seront importés directement dans votre tableau de bord.
+              Votre aperçu reste consultable sur ce navigateur pendant que vous créez votre espace. Vous pourrez ensuite configurer et publier vos modules depuis votre tableau de bord.
             </p>
           </div>
         </div>

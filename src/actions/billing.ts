@@ -686,5 +686,7 @@ export async function activateAddonGrant(
   }
 
   revalidatePath("/dashboard/settings/modules");
+  revalidatePath("/dashboard/subscription");
+  revalidatePath("/dashboard", "layout");
   return { ok: true, data: undefined };
 }

@@ -136,6 +136,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/dashboard/**": ["./node_modules/@img/**"],
     "/poster/**": ["./node_modules/@img/**"],
+    "/vitrine-studio/**": ["./node_modules/@img/**"],
   },
   async headers() {
     return [

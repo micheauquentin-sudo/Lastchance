@@ -874,6 +874,7 @@ describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
     // `vitrine_settings` (ligne par défaut du faux client, `le-comptoir`).
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
+      "/vitrine-studio",
       "/v/le-comptoir",
       "/v/le-comptoir/en",
     ]);
@@ -903,6 +904,7 @@ describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
     // pour éviter l'aller-retour.
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
+      "/vitrine-studio",
       "/v/chez-marie",
       "/v/chez-marie/en",
     ]);
@@ -931,6 +933,7 @@ describe("activerExperiencesVitrine — annoncer les jeux avec consentement", ()
     expect(maj?.filters.organization_id).toBe(ORG_ID);
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
+      "/vitrine-studio",
       "/v/le-comptoir",
       "/v/le-comptoir/en",
     ]);
@@ -1214,6 +1217,7 @@ describe("importVitrineCarte — le succès rend les comptes et purge les pages"
     // reste devant sa propre vitrine inchangée jusqu'à la fin de la fenêtre ISR.
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
+      "/vitrine-studio",
       "/v/le-comptoir",
       "/v/le-comptoir/en",
     ]);
@@ -1366,6 +1370,7 @@ describe("setVitrineContenu — un upsert par (organisation, place)", () => {
 
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
+      "/vitrine-studio",
       "/v/le-comptoir",
       "/v/le-comptoir/en",
     ]);

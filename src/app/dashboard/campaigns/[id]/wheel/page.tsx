@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
@@ -77,6 +77,7 @@ export default async function WheelConfigPage({
   // étape (politique « premiere »), comme avant l'extraction des primitives.
   const etape = parseEtape(ETAPES_ROUE, etapeParam, "premiere") as EtapeRoue;
   const { organization } = await getUserAndOrg();
+  if (!organization) redirect("/onboarding");
   const supabase = await createClient();
 
   // Multi-roues : on liste les roues de la campagne (triées par

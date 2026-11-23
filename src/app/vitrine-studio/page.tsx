@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import {
@@ -44,6 +44,7 @@ export default async function VitrineStudioPage() {
   if (!organization) redirect("/onboarding");
 
   const capacites = await capacitesDuModule("vitrine");
+  if (!capacites.canExplore) notFound();
   const ctx = await loadVitrineDashboardContext();
   if (!ctx.ok || !ctx.settings) redirect("/dashboard/vitrine?etape=adresse");
 

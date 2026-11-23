@@ -67,9 +67,10 @@ function lotBloquePourIdentiteFaible(lot: LotValorise): boolean {
   return estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot);
 }
 
-async function requireOrg() {
-  const { user, organization } = await getUserAndOrg();
+async function requireEditorOrg() {
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") return null;
   return organization;
 }
 
@@ -108,7 +109,8 @@ export async function addPrize(
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
-  const organization = await requireOrg();
+  const organization = await requireEditorOrg();
+  if (!organization) return { ok: false, error: "Action non autorisée" };
   const supabase = await createClient();
 
   // La roue doit appartenir à l'org (la RLS re-vérifie à l'insert).
@@ -176,7 +178,8 @@ export async function updatePrize(
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
-  const organization = await requireOrg();
+  const organization = await requireEditorOrg();
+  if (!organization) return { ok: false, error: "Action non autorisée" };
   const supabase = await createClient();
 
   const { id, stock_seen: stockVu, ...fields } = parsed.data;
@@ -334,7 +337,8 @@ export async function deletePrize(
   const parsed = deletePrizeSchema.safeParse({ id: formData.get("id") });
   if (!parsed.success) return { ok: false, error: "Données invalides" };
 
-  const organization = await requireOrg();
+  const organization = await requireEditorOrg();
+  if (!organization) return { ok: false, error: "Action non autorisée" };
   const supabase = await createClient();
 
   // ── GARDE : NE PAS RENDRE INJOUABLE UNE ROUE OUVERTE AUX JOUEURS ──
@@ -484,7 +488,8 @@ export async function updateWheel(
     skillConfig = result.config as Record<string, unknown>;
   }
 
-  const organization = await requireOrg();
+  const organization = await requireEditorOrg();
+  if (!organization) return { ok: false, error: "Action non autorisée" };
   const supabase = await createClient();
 
   const { data: updated, error } = await supabase
@@ -524,7 +529,8 @@ export async function updateWheelSchedule(
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
-  const organization = await requireOrg();
+  const organization = await requireEditorOrg();
+  if (!organization) return { ok: false, error: "Action non autorisée" };
   const supabase = await createClient();
 
   const { id, schedule_days, ...hours } = parsed.data;
@@ -566,7 +572,8 @@ export async function createWheel(
   });
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
-  const organization = await requireOrg();
+  const organization = await requireEditorOrg();
+  if (!organization) return { ok: false, error: "Action non autorisée" };
   const supabase = await createClient();
 
   // La campagne doit appartenir à l'org (la RLS re-vérifie à l'insert).
@@ -769,7 +776,8 @@ export async function updateWheelStyle(
   const parsed = wheelStyleWriteSchema.safeParse(candidate);
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
-  const organization = await requireOrg();
+  const organization = await requireEditorOrg();
+  if (!organization) return { ok: false, error: "Action non autorisée" };
   const supabase = await createClient();
 
   const { data: updated, error } = await supabase
