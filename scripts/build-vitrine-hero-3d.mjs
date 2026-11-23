@@ -4,7 +4,7 @@ import { build } from "rolldown";
 
 const ROOT = process.cwd();
 const ENTRY = path.join(ROOT, "scripts", "vitrine-hero-3d-src.mjs");
-const OUTFILE = path.join(ROOT, "public", "h-site-final-20k", "hero-3d.js");
+const OUTFILE = path.join(ROOT, "public", "h-site-final-20k", "hero-3d.min.js");
 
 await build({
   input: ENTRY,
@@ -19,5 +19,5 @@ await build({
 
 const bytes = statSync(OUTFILE).size;
 console.log(
-  `Hero 3D Pixar bundlé : ${path.relative(ROOT, OUTFILE)} (${(bytes / 1024).toFixed(1)} Ko brut)`,
+  `Scènes 3D Pixar bundlées : ${path.relative(ROOT, OUTFILE)} (${(bytes / 1024).toFixed(1)} Ko brut)`,
 );

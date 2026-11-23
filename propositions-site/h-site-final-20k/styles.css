@@ -13017,7 +13017,7 @@ button.lc-invit-continue-btn:hover {
 
 
 /* ==========================================================
-   IMMERSION 3D PIXAR (HERO PBR) · CONFETTIS · FOIL · DAMIER
+   IMMERSION 3D PIXAR : QR PUR (HERO) · PARCOURS 3D CONTINU · FOIL · DAMIER
    Remplacements purs sans aucun bloc ajouté.
    ========================================================== */
 .qr-cartoon-3d-block {
@@ -13025,11 +13025,11 @@ button.lc-invit-continue-btn:hover {
 }
 .hero-3d-stage {
   position: absolute;
-  inset: -44px;
+  inset: -24px;
   z-index: 2;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.38s cubic-bezier(0.22, 1, 0.36, 1);
   display: block;
 }
 .hero-3d-canvas {
@@ -13049,7 +13049,7 @@ button.lc-invit-continue-btn:hover {
 .qr-cartoon-3d-block.is-3d-ready .qr-cartoon-inner {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.32s ease;
+  transition: opacity 0.28s ease;
 }
 .qr-cartoon-3d-block.is-3d-ready .hero-3d-stage {
   opacity: 1;
@@ -13058,48 +13058,105 @@ button.lc-invit-continue-btn:hover {
   animation: none;
 }
 .qr-cartoon-3d-block.is-3d-ready .qr-live-sticker {
-  top: -10px;
-  right: -4px;
+  top: -12px;
+  right: -8px;
   z-index: 5;
 }
 @media (max-width: 640px) {
   .hero-3d-stage {
-    inset: -30px;
+    inset: -16px;
   }
 }
 
-/* Parallaxe de profondeur doux sur le sol damier du Hero */
+/* Scène 3D continue 3 actes dans #motion-stage (Ils Scannent / Jouent / Gagnent) */
+.parcours-3d-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at 50% 42%,
+    #fffdf7 0%,
+    #fdf3dc 56%,
+    #f6e5fb 100%
+  );
+  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.parcours-3d-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.parcours-3d-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: calc(100% - 24px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #161317;
+  color: #ffd93d;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  padding: 0.32rem 0.9rem;
+  font: 800 0.76rem var(--fun-font);
+  letter-spacing: 0.02em;
+  box-shadow: 0 6px 18px rgba(22, 19, 23, 0.22);
+}
+.motion-screen-frame.is-3d-parcours-ready .parcours-3d-stage {
+  opacity: 1;
+}
+.motion-screen-frame.is-3d-parcours-ready .motion-scene {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Parallaxe de profondeur fluide sur le sol damier du Hero */
 .checkerboard-surface {
   background-position-y: var(--checker-shift, 0px);
   transform: perspective(420px) rotateX(var(--checker-tilt, 52deg));
   will-change: background-position, transform;
 }
 
-/* Confettis physiques dans l'étape 3 gagnante (#m-scene-3) */
-.motion-scene-win {
-  position: relative;
+/* Bascule 3D élastique à chaque changement d'univers dans le Manège */
+@keyframes jukeboxFlip3D {
+  0% {
+    opacity: 0.35;
+    transform: perspective(900px) rotateY(-18deg) rotateX(6deg) scale(0.95);
+  }
+  65% {
+    opacity: 1;
+    transform: perspective(900px) rotateY(4deg) rotateX(-2deg) scale(1.015);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(900px) rotateY(0deg) rotateX(0deg) scale(1);
+  }
 }
-.motion-confetti-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 6;
+.jukebox-visual-box.is-jb-flipping .jb-anim-scene {
+  animation: jukeboxFlip3D 0.48s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Reflet foil directionnel & micro-tilt 3D discret (Manège + Formules) */
+/* Reflet foil holographique / doré lisible sur fond clair + micro-tilt 3D */
 .foil-interactive {
   --mx: 50%;
   --my: 50%;
+  --foil-angle: 115deg;
   --tilt-x: 0deg;
   --tilt-y: 0deg;
   --glare-opacity: 0;
+  position: relative;
+  overflow: hidden;
   transform-style: preserve-3d;
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
 }
 .foil-interactive:hover {
-  transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-5px);
+  transform: perspective(850px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-6px);
 }
 .foil-interactive::before {
   content: "";
@@ -13107,20 +13164,32 @@ button.lc-invit-continue-btn:hover {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  z-index: 3;
-  opacity: calc(var(--glare-opacity) * 0.42);
-  transition: opacity 0.28s ease;
-  background: radial-gradient(
-    360px circle at var(--mx) var(--my),
-    rgba(255, 250, 224, 0.72) 0%,
-    rgba(255, 217, 61, 0.22) 28%,
-    rgba(242, 150, 189, 0.14) 52%,
-    transparent 74%
-  );
-  mix-blend-mode: soft-light;
+  z-index: 4;
+  opacity: calc(var(--glare-opacity) * 0.78);
+  transition: opacity 0.22s ease;
+  background:
+    radial-gradient(
+      260px circle at var(--mx) var(--my),
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 217, 61, 0.32) 32%,
+      rgba(242, 150, 189, 0.24) 55%,
+      rgba(128, 237, 153, 0.16) 72%,
+      transparent 88%
+    ),
+    linear-gradient(
+      var(--foil-angle),
+      transparent 22%,
+      rgba(255, 217, 61, 0.22) 44%,
+      rgba(255, 255, 255, 0.55) 50%,
+      rgba(242, 150, 189, 0.22) 56%,
+      transparent 78%
+    );
 }
 .jukebox-visual-box.foil-interactive:hover {
-  transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  transform: perspective(850px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  box-shadow:
+    inset 0 0 28px rgba(255, 217, 61, 0.28),
+    0 12px 26px rgba(22, 19, 23, 0.14);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -13133,5 +13202,8 @@ button.lc-invit-continue-btn:hover {
   }
   .foil-interactive::before {
     display: none;
+  }
+  .jukebox-visual-box.is-jb-flipping .jb-anim-scene {
+    animation: none;
   }
 }
