@@ -14,23 +14,31 @@
     typeof window.matchMedia === "function" &&
     window.matchMedia("(pointer: coarse)").matches;
 
-  /* ── 1. PARALLAXE FLUIDE DU SOL DAMIER AU SCROLL ── */
+  /* ── 1. PARALLAXE FLUIDE DES SOLS DAMIER AU SCROLL ── */
   function initCheckerboardParallax() {
     if (reducedMotion) return;
+    const floors = Array.from(document.querySelectorAll(".perspective-checkerboard-floor"));
+    if (!floors.length) return;
     const hero = document.getElementById("top");
-    const surface = document.querySelector(".checkerboard-surface");
-    if (!hero || !surface) return;
 
     let ticking = false;
     const update = () => {
       ticking = false;
-      const rect = hero.getBoundingClientRect();
-      if (rect.bottom < -60 || rect.top > window.innerHeight + 60) return;
-      const progress = Math.max(0, Math.min(1, -rect.top / Math.max(1, rect.height)));
-      const shiftY = (progress * 140).toFixed(1);
-      const tiltDeg = (52 - progress * 15).toFixed(2);
-      surface.style.setProperty("--checker-shift", `${shiftY}px`);
-      surface.style.setProperty("--checker-tilt", `${tiltDeg}deg`);
+      const vh = window.innerHeight || 900;
+      for (const floor of floors) {
+        const surface = floor.querySelector(".checkerboard-surface");
+        if (!surface) continue;
+        const isHeroFloor = Boolean(hero && hero.contains(floor));
+        const refRect = isHeroFloor ? hero.getBoundingClientRect() : floor.getBoundingClientRect();
+        if (refRect.bottom < -80 || refRect.top > vh + 80) continue;
+        const progress = isHeroFloor
+          ? Math.max(0, Math.min(1, -refRect.top / Math.max(1, refRect.height)))
+          : Math.max(0, Math.min(1, (vh - refRect.top) / Math.max(1, vh + refRect.height)));
+        const shiftY = (progress * 140).toFixed(1);
+        const tiltDeg = (52 - progress * 15).toFixed(2);
+        surface.style.setProperty("--checker-shift", `${shiftY}px`);
+        surface.style.setProperty("--checker-tilt", `${tiltDeg}deg`);
+      }
     };
 
     const onScroll = () => {
