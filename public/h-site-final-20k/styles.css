@@ -913,6 +913,25 @@ header, main, section, footer { position: relative; z-index: 2; }
   background: var(--mint);
   border-top: var(--border-thick);
 }
+.clog-lavender-split:has(+ .perspective-checkerboard-floor--lilac) {
+  border-bottom: 0;
+  padding-bottom: 2.5rem;
+}
+.perspective-checkerboard-floor--lilac {
+  background: var(--lilac);
+}
+.checkerboard-surface--lilac {
+  background-color: #fff6e5;
+  background-image: conic-gradient(
+    var(--lilac) 90deg,
+    #fff6e5 90deg 180deg,
+    var(--lilac) 180deg 270deg,
+    #fff6e5 270deg
+  );
+}
+.checkerboard-ledge--lilac {
+  background: var(--yellow);
+}
 
 /* ==========================================================
    2. BANDEAU DÉFILANT VIOLET CIEL + BARRE MENTHE AUX 4 PILULES PRODUIT
