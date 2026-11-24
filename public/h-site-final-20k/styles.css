@@ -13047,9 +13047,10 @@ button.lc-invit-continue-btn:hover {
   box-shadow: none;
 }
 .qr-cartoon-3d-block.is-3d-ready .qr-cartoon-inner {
+  visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.28s ease;
+  transition: opacity 0.24s ease;
 }
 .qr-cartoon-3d-block.is-3d-ready .hero-3d-stage {
   opacity: 1;
@@ -13059,6 +13060,26 @@ button.lc-invit-continue-btn:hover {
 }
 .qr-floating-unit:has(.qr-cartoon-3d-block.is-3d-ready) .qr-call-footer {
   margin-top: 2.15rem;
+}
+.hero-3d-stage--passport {
+  inset: -44px -52px -40px -52px;
+}
+.hero-3d-stage--menu {
+  inset: -38px -92px -34px -92px;
+}
+.qr-floating-unit--annex:has(.hero-3d-stage--passport) .qr-call-footer {
+  margin-top: 2.35rem;
+}
+.qr-floating-unit--annex:has(.hero-3d-stage--menu) .qr-call-footer {
+  margin-top: 2.0rem;
+}
+@media (max-width: 640px) {
+  .hero-3d-stage--passport {
+    inset: -28px -32px -28px -32px;
+  }
+  .hero-3d-stage--menu {
+    inset: -24px -44px -24px -44px;
+  }
 }
 .qr-cartoon-3d-block.is-3d-ready .qr-live-sticker {
   top: -12px;

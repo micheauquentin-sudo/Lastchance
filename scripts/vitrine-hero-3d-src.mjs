@@ -1512,7 +1512,7 @@ async function initParcours3DCinema() {
           p.mesh.visible = false;
         });
       } else {
-        captionPill.textContent = "3. Ticket d'Or immédiat, validé en 2 s en caisse";
+        captionPill.textContent = "3. Code gagnant immédiat, validé en 2 s en caisse";
         drawCrispPhoneScreen(screenCanvas, { mode: "win" }, qrImg);
         screenTex.needsUpdate = true;
         drawCrispGoldenTicketTexture(
@@ -1564,6 +1564,10 @@ async function initParcours3DCinema() {
     window.addEventListener("resize", resize, { passive: true });
 
     const renderAct = (dt) => {
+      const domStep = readActiveStep();
+      if (domStep !== currentStep) {
+        onStepChange(domStep);
+      }
       stepElapsed += dt;
       const ease = 1 - Math.exp(-dt * 6.8);
 
@@ -1804,11 +1808,1027 @@ async function initParcours3DCinema() {
   }
 }
 
+/* ==========================================================================
+   3. HÉRO PAGE FIDÉLITÉ — VRAI PASSEPORT FIDÉLITÉ 3D AVEC QR CODE & TAMPONS
+      Couverture cuir/émail bleu nuit profond, tranche dorée, pages crème
+      feuilletées sur le côté, dorure « PASSEPORT FIDÉLITÉ », QR net intégré
+      (synchronisé en direct avec les 3 pilules), rangée 5 tampons étoiles et
+      sceau doré 3D qui tamponne au survol.
+   ========================================================================== */
+function drawPassportCoverTexture(canvas, mode, qrImg) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+
+  const palettes = {
+    passeport: {
+      top: "#1b1538",
+      bot: "#2d1f59",
+      accent: "#ffd93d",
+      pillBg: "#ffd93d",
+      pillFg: "#161317",
+      title: "PASSEPORT",
+      subtitle: "CARTE DE FIDÉLITÉ",
+      progressLabel: "4 / 5 VISITES · 1 CADEAU OFFERT",
+    },
+    jackpot: {
+      top: "#291436",
+      bot: "#4a1b54",
+      accent: "#ffd93d",
+      pillBg: "#ff5c93",
+      pillFg: "#ffffff",
+      title: "JACKPOT",
+      subtitle: "CAGNOTTE COLLECTIVE",
+      progressLabel: "OBJECTIF 86 / 100 PASSAGES",
+    },
+    parrainage: {
+      top: "#0e2b27",
+      bot: "#164e44",
+      accent: "#ffd93d",
+      pillBg: "#34d399",
+      pillFg: "#161317",
+      title: "PARRAINAGE",
+      subtitle: "INVITEZ VOS PROCHES",
+      progressLabel: "DOUBLE RÉCOMPENSE IMMÉDIATE",
+    },
+  };
+  const cfg = palettes[mode] || palettes.passeport;
+
+  // Fond couverture riche façon passeport cuir/émail haut contraste
+  const grad = ctx.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, cfg.top);
+  grad.addColorStop(1, cfg.bot);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Double filet doré embossé tout autour (signature passeport)
+  ctx.strokeStyle = cfg.accent;
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.roundRect(36, 36, w - 72, h - 72, 46);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255, 217, 61, 0.42)";
+  ctx.lineWidth = 3;
+  ctx.setLineDash([12, 10]);
+  ctx.beginPath();
+  ctx.roundRect(56, 56, w - 112, h - 112, 34);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Petit écusson doré en tête
+  ctx.fillStyle = cfg.accent;
+  ctx.font = "900 28px system-ui, -apple-system, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("★  SIMPLE COMME QR  ★", w / 2, 114);
+
+  // Grand titre doré façon passeport officiel
+  ctx.fillStyle = "#ffe566";
+  ctx.font = "900 84px system-ui, -apple-system, sans-serif";
+  ctx.fillText(cfg.title, w / 2, 198);
+
+  // Pastille sous-titre très lisible
+  ctx.fillStyle = cfg.pillBg;
+  ctx.beginPath();
+  ctx.roundRect(w / 2 - 220, 256, 440, 56, 28);
+  ctx.fill();
+  ctx.strokeStyle = "#161317";
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  ctx.fillStyle = cfg.pillFg;
+  ctx.font = "900 27px system-ui, -apple-system, sans-serif";
+  ctx.fillText(cfg.subtitle, w / 2, 286);
+
+  // Fenêtre centrale blanche ultra-nette avec le vrai QR code
+  const qrBox = 510;
+  const qrX = (w - qrBox) / 2;
+  const qrY = 358;
+  ctx.fillStyle = "#161317";
+  ctx.beginPath();
+  ctx.roundRect(qrX - 14, qrY - 14, qrBox + 28, qrBox + 28, 44);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.roundRect(qrX, qrY, qrBox, qrBox, 34);
+  ctx.fill();
+  if (qrImg) {
+    const pad = 34;
+    ctx.drawImage(qrImg, qrX + pad, qrY + pad, qrBox - pad * 2, qrBox - pad * 2);
+  }
+
+  // Rangée de 5 tampons fidélité en bas (4 dorés validés + 5e cadeau à débloquer)
+  const stampY = 988;
+  const startX = 186;
+  const gap = 162;
+  for (let i = 0; i < 5; i++) {
+    const sx = startX + i * gap;
+    const isReward = i === 4;
+    ctx.beginPath();
+    ctx.arc(sx, stampY, 54, 0, Math.PI * 2);
+    ctx.fillStyle = isReward ? "#ff5c93" : "#ffd93d";
+    ctx.fill();
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = "#161317";
+    ctx.stroke();
+
+    if (isReward) {
+      // Petit paquet cadeau vectoriel
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.roundRect(sx - 22, stampY - 12, 44, 34, 6);
+      ctx.fill();
+      ctx.fillStyle = "#ffd93d";
+      ctx.fillRect(sx - 6, stampY - 12, 12, 34);
+      ctx.fillRect(sx - 22, stampY + 1, 44, 10);
+      ctx.beginPath();
+      ctx.arc(sx - 9, stampY - 17, 8, 0, Math.PI * 2);
+      ctx.arc(sx + 9, stampY - 17, 8, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Étoile dorée tamponnée nette
+      ctx.save();
+      ctx.translate(sx, stampY);
+      ctx.beginPath();
+      for (let p = 0; p < 10; p++) {
+        const r = p % 2 === 0 ? 30 : 13;
+        const a = (p * Math.PI) / 5 - Math.PI / 2;
+        if (p === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "#161317";
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Texte de jauge lisible en pied de passeport
+  ctx.fillStyle = "#fff8dc";
+  ctx.font = "900 28px system-ui, -apple-system, sans-serif";
+  ctx.fillText(cfg.progressLabel, w / 2, 1106);
+
+  // Petit rappel doré "ZÉRO APPLI · WALLET"
+  ctx.fillStyle = "rgba(255, 217, 61, 0.85)";
+  ctx.font = "800 22px system-ui, -apple-system, sans-serif";
+  ctx.fillText("SANS APPLI · GOOGLE & APPLE WALLET", w / 2, 1168);
+}
+
+async function initAnnexPassport3D() {
+  const btn = document.getElementById("page-hero-qr-btn");
+  if (!btn || btn.dataset.hero3dInit === "1") return;
+  const pageMode = (btn.dataset.emulate || "").toLowerCase();
+  if (pageMode !== "passeport" && !window.location.pathname.includes("fidelite")) return;
+  btn.dataset.hero3dInit = "1";
+
+  const reducedMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const qrImgEl = document.getElementById("page-hero-qr-img") || btn.querySelector("img.qr-bleed-img");
+  let activeMode = "passeport";
+  let activeQrImg = await loadQrImage(
+    qrImgEl ? qrImgEl.getAttribute("src") || "img/qr-passeport.svg" : "img/qr-passeport.svg",
+  );
+
+  const stageHost = document.createElement("span");
+  stageHost.className = "hero-3d-stage hero-3d-stage--passport";
+  stageHost.setAttribute("aria-hidden", "true");
+  btn.appendChild(stageHost);
+
+  const renderer = new WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    powerPreference: "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = SRGBColorSpace;
+  renderer.toneMapping = NoToneMapping;
+  renderer.setClearColor(0x000000, 0);
+
+  const canvas = renderer.domElement;
+  canvas.className = "hero-3d-canvas";
+  stageHost.appendChild(canvas);
+
+  const scene = new Scene();
+  const envRT = createHighContrastStudioEnv(renderer);
+  scene.environment = envRT.texture;
+
+  const camera = new PerspectiveCamera(31, 1, 0.1, 30);
+  camera.position.set(0, 0.05, 7.65);
+
+  scene.add(new HemisphereLight(0xfffaf0, 0x2e2340, 0.75));
+  const key = new DirectionalLight(0xfff4d6, 1.45);
+  key.position.set(-3.6, 4.6, 5.4);
+  scene.add(key);
+  const rim = new DirectionalLight(0xff7ec2, 0.9);
+  rim.position.set(4.2, 2.2, -2.5);
+  scene.add(rim);
+
+  const inkLeatherMat = new MeshPhysicalMaterial({
+    color: 0x161317,
+    roughness: 0.28,
+    metalness: 0.12,
+    clearcoat: 0.85,
+    clearcoatRoughness: 0.14,
+    envMapIntensity: 0.95,
+  });
+  const brassMat = new MeshPhysicalMaterial({
+    color: 0xf5b82e,
+    roughness: 0.2,
+    metalness: 0.88,
+    clearcoat: 0.55,
+    envMapIntensity: 1.25,
+  });
+  const pagesMat = new MeshStandardMaterial({
+    color: 0xfff7e3,
+    roughness: 0.52,
+    metalness: 0.04,
+    envMapIntensity: 0.35,
+  });
+
+  const passportGroup = new Group();
+  scene.add(passportGroup);
+
+  // Couverture arrière + bloc de pages crème épaisses (visibles sur la tranche droite en 3D !)
+  const backCover = new Mesh(
+    new RoundedBoxGeometry(2.34, 3.12, 0.09, 6, 0.14),
+    inkLeatherMat,
+  );
+  backCover.position.set(0.03, 0, -0.17);
+  passportGroup.add(backCover);
+
+  const pagesBlock = new Mesh(
+    new RoundedBoxGeometry(2.22, 2.94, 0.24, 5, 0.06),
+    pagesMat,
+  );
+  pagesBlock.position.set(0.07, 0, -0.05);
+  passportGroup.add(pagesBlock);
+
+  // Tranche dorée fine le long des pages (effet passeport prestige)
+  const giltEdge = new Mesh(
+    new RoundedBoxGeometry(0.05, 2.86, 0.21, 3, 0.02),
+    brassMat,
+  );
+  giltEdge.position.set(1.18, 0, -0.05);
+  passportGroup.add(giltEdge);
+
+  // Dos arrondi relié à gauche + 2 bagues dorées
+  const spine = new Mesh(
+    new CylinderGeometry(0.18, 0.18, 3.06, 24),
+    inkLeatherMat,
+  );
+  spine.position.set(-1.12, 0, -0.05);
+  passportGroup.add(spine);
+
+  [-0.95, 0.95].forEach((by) => {
+    const band = new Mesh(new TorusGeometry(0.185, 0.025, 10, 24), brassMat);
+    band.rotation.x = Math.PI / 2;
+    band.position.set(-1.12, by, -0.05);
+    passportGroup.add(band);
+  });
+
+  // Couverture avant biseautée + coins dorés + face passeport ultra-nette
+  const frontCover = new Mesh(
+    new RoundedBoxGeometry(2.36, 3.12, 0.10, 7, 0.14),
+    inkLeatherMat,
+  );
+  frontCover.position.set(0, 0, 0.09);
+  passportGroup.add(frontCover);
+
+  // 2 protections d'angles dorées à droite (haut & bas)
+  [1.46, -1.46].forEach((cy) => {
+    const corner = new Mesh(new RoundedBoxGeometry(0.28, 0.28, 0.14, 4, 0.06), brassMat);
+    corner.position.set(1.07, cy, 0.09);
+    passportGroup.add(corner);
+  });
+
+  const coverCanvas = document.createElement("canvas");
+  coverCanvas.width = 1024;
+  coverCanvas.height = 1280;
+  drawPassportCoverTexture(coverCanvas, activeMode, activeQrImg);
+  const coverTex = new CanvasTexture(coverCanvas);
+  coverTex.colorSpace = SRGBColorSpace;
+  coverTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+
+  const coverFace = new Mesh(
+    new PlaneGeometry(2.22, 2.94),
+    new MeshBasicMaterial({ map: coverTex }),
+  );
+  coverFace.position.set(0, 0, 0.146);
+  passportGroup.add(coverFace);
+
+  // Sceau tampon doré 3D en relief avec étoile VIP nette dans le coin bas-droit
+  const sealCanvas = document.createElement("canvas");
+  sealCanvas.width = 256;
+  sealCanvas.height = 256;
+  const sCtx = sealCanvas.getContext("2d");
+  sCtx.fillStyle = "#047857";
+  sCtx.beginPath();
+  sCtx.arc(128, 128, 124, 0, Math.PI * 2);
+  sCtx.fill();
+  sCtx.strokeStyle = "#ffd93d";
+  sCtx.lineWidth = 14;
+  sCtx.beginPath();
+  sCtx.arc(128, 128, 108, 0, Math.PI * 2);
+  sCtx.stroke();
+  sCtx.fillStyle = "#ffffff";
+  sCtx.font = "900 72px system-ui, -apple-system, sans-serif";
+  sCtx.textAlign = "center";
+  sCtx.textBaseline = "middle";
+  sCtx.fillText("VIP", 128, 134);
+  const sealTex = new CanvasTexture(sealCanvas);
+  sealTex.colorSpace = SRGBColorSpace;
+
+  const sealGroup = new Group();
+  sealGroup.position.set(1.0, -1.28, 0.21);
+  passportGroup.add(sealGroup);
+  const sealDisc = new Mesh(new CylinderGeometry(0.26, 0.28, 0.08, 32), brassMat);
+  sealDisc.rotation.x = Math.PI / 2;
+  sealGroup.add(sealDisc);
+  const sealFace = new Mesh(
+    new PlaneGeometry(0.42, 0.42),
+    new MeshBasicMaterial({ map: sealTex, transparent: true }),
+  );
+  sealFace.position.z = 0.046;
+  sealGroup.add(sealFace);
+
+  // Ombre douce au sol
+  const shadowMat = new MeshBasicMaterial({
+    map: createSoftShadowTexture(0.32),
+    transparent: true,
+    opacity: 0.82,
+    depthWrite: false,
+  });
+  const shadowPlane = new Mesh(new PlaneGeometry(2.9, 0.72), shadowMat);
+  shadowPlane.position.set(0, -1.94, -0.1);
+  scene.add(shadowPlane);
+
+  // Synchronisation en direct avec les 3 pilules Passeport / Jackpot / Parrainage
+  const parentUnit = btn.closest(".qr-floating-unit");
+  if (parentUnit) {
+    parentUnit.querySelectorAll(".qr-mode-btn").forEach((modeBtn) => {
+      modeBtn.addEventListener("click", async () => {
+        const nextMode = modeBtn.dataset.emulate || "passeport";
+        const nextSrc = modeBtn.dataset.qrSrc || "img/qr-passeport.svg";
+        activeMode = nextMode;
+        activeQrImg = await loadQrImage(nextSrc);
+        drawPassportCoverTexture(coverCanvas, activeMode, activeQrImg);
+        coverTex.needsUpdate = true;
+      });
+    });
+  }
+
+  const resize = () => {
+    const rect = stageHost.getBoundingClientRect();
+    const w = Math.max(260, Math.round(rect.width || 340));
+    const h = Math.max(260, Math.round(rect.height || 340));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  resize();
+
+  const heroSection = btn.closest("section") || btn;
+  let targetRotY = -0.24;
+  let targetRotX = 0.06;
+  let curRotY = -0.32;
+  let curRotX = 0.08;
+  let isHovering = false;
+  let hoverAmt = 0;
+  let clickPop = 0;
+  let clickVel = 0;
+  let isVisible = true;
+  let rafId = 0;
+  let lastTime = performance.now();
+
+  heroSection.addEventListener(
+    "pointermove",
+    (e) => {
+      const rect = btn.getBoundingClientRect();
+      const nx = MathUtils.clamp((e.clientX - (rect.left + rect.width / 2)) / 380, -1, 1);
+      const ny = MathUtils.clamp((e.clientY - (rect.top + rect.height / 2)) / 320, -1, 1);
+      targetRotY = -0.12 + nx * 0.36;
+      targetRotX = ny * 0.2;
+    },
+    { passive: true },
+  );
+  heroSection.addEventListener(
+    "pointerleave",
+    () => {
+      targetRotY = -0.24;
+      targetRotX = 0.06;
+    },
+    { passive: true },
+  );
+  btn.addEventListener("pointerenter", () => {
+    isHovering = true;
+  });
+  btn.addEventListener("pointerleave", () => {
+    isHovering = false;
+  });
+  btn.addEventListener("pointerdown", () => {
+    clickVel = -3.4;
+  });
+
+  if (typeof IntersectionObserver === "function") {
+    const io = new IntersectionObserver(
+      (entries) => {
+        isVisible = entries[0]?.isIntersecting ?? true;
+        if (isVisible && !reducedMotion && !rafId) {
+          lastTime = performance.now();
+          rafId = requestAnimationFrame(tick);
+        }
+      },
+      { threshold: 0.05 },
+    );
+    io.observe(btn);
+  }
+  window.addEventListener("resize", resize, { passive: true });
+  canvas.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+    btn.classList.remove("is-3d-ready");
+  });
+
+  const renderFrame = (t, dt) => {
+    const ease = 1 - Math.exp(-dt * 7.2);
+    const idleYaw = reducedMotion ? 0 : Math.sin(t * 0.85) * 0.085;
+    const idlePitch = reducedMotion ? 0 : Math.cos(t * 0.65) * 0.04;
+
+    curRotY += (targetRotY + idleYaw - curRotY) * ease;
+    curRotX += (targetRotX + idlePitch - curRotX) * ease;
+    hoverAmt += ((isHovering ? 1 : 0) - hoverAmt) * (1 - Math.exp(-dt * 8));
+
+    const springF = -145 * clickPop - 14 * clickVel;
+    clickVel += springF * dt;
+    clickPop += clickVel * dt;
+
+    const floatY = reducedMotion ? 0 : Math.sin(t * 1.45) * 0.08;
+    passportGroup.position.y = floatY + hoverAmt * 0.05;
+    passportGroup.rotation.y = curRotY;
+    passportGroup.rotation.x = curRotX;
+    passportGroup.rotation.z = -0.04 - curRotY * 0.08;
+
+    const baseScale = 1 + hoverAmt * 0.045;
+    passportGroup.scale.set(
+      baseScale * (1 - clickPop * 0.06),
+      baseScale * (1 + clickPop * 0.08),
+      baseScale,
+    );
+
+    // Le sceau doré fait un léger rebond vers l'avant au survol
+    sealGroup.position.z = 0.22 + hoverAmt * 0.08;
+    sealGroup.scale.setScalar(1 + hoverAmt * 0.14);
+
+    const sScale = 1 - floatY * 0.45 - hoverAmt * 0.05;
+    shadowPlane.scale.set(sScale, sScale, 1);
+    shadowMat.opacity = 0.8 - floatY * 0.7;
+
+    renderer.render(scene, camera);
+  };
+
+  renderFrame(0, 0.016);
+  btn.classList.add("is-3d-ready");
+
+  function tick(now) {
+    if (!isVisible) {
+      rafId = 0;
+      return;
+    }
+    const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+    lastTime = now;
+    renderFrame(now * 0.001, dt);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  if (!reducedMotion) {
+    lastTime = performance.now();
+    rafId = requestAnimationFrame(tick);
+  }
+}
+
+/* ==========================================================================
+   4. HÉRO PAGE VITRINE & RÉSERVATION — CARTE-MENU / AGENDA 3D ARTICULÉE
+      Vraie carte de menu bistrot/atelier ouverte à charnière dorée en 3D :
+      - Volet gauche : La Carte du Jour (plats/prestations + pastilles prix + 0 % COMM)
+      - Volet droit  : QR Code net + créneau de réservation direct confirmé
+      - S'ouvre plus largement vers le visiteur au survol + synchro avec les 3 onglets !
+   ========================================================================== */
+function drawMenuLeftPageTexture(canvas, mode) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Papier crème chaud type belle carte de bistrot / salon
+  ctx.fillStyle = "#fffdf6";
+  ctx.fillRect(0, 0, w, h);
+
+  // Bordure intérieure Kermesse fine + filets dorés
+  ctx.strokeStyle = "#161317";
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.roundRect(30, 30, w - 60, h - 60, 38);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#f5b82e";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.roundRect(48, 48, w - 96, h - 96, 26);
+  ctx.stroke();
+
+  // Pastille haute 0 % COMMISSION
+  ctx.fillStyle = "#047857";
+  ctx.beginPath();
+  ctx.roundRect(w / 2 - 190, 82, 380, 54, 27);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 26px system-ui, -apple-system, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("✓  0 % DE COMMISSION", w / 2, 110);
+
+  const contentByMode = {
+    vitrine: {
+      heading: "LA CARTE DU JOUR",
+      sub: "À jour en direct · Zéro PDF",
+      rows: [
+        { dot: "#ff5c93", title: "Menu du Marché", desc: "Entrée + Plat + Café", price: "19 €" },
+        { dot: "#ffd93d", title: "Plat Signature", desc: "Produits frais locaux", price: "15 €" },
+        { dot: "#34d399", title: "Douceur Maison", desc: "Dessert du pâtissier", price: "8 €" },
+      ],
+    },
+    rdv: {
+      heading: "PRENDRE RDV",
+      sub: "Agenda direct · Sans appli",
+      rows: [
+        { dot: "#34d399", title: "Coupe & Soin", desc: "Durée 45 min · Libre", price: "38 €" },
+        { dot: "#ffd93d", title: "Table 2 pers.", desc: "Terrasse ou salle", price: "19h30" },
+        { dot: "#ff5c93", title: "Soin Visage", desc: "Créneau demain 14h", price: "55 €" },
+      ],
+    },
+    moments: {
+      heading: "MOMENTS VIP",
+      sub: "Places limitées · Flash",
+      rows: [
+        { dot: "#ffd93d", title: "Soirée Dégustation", desc: "Jeudi 19h · 6 places", price: "25 €" },
+        { dot: "#ff5c93", title: "Atelier Pâtisserie", desc: "Samedi 10h · Ouvert", price: "35 €" },
+        { dot: "#34d399", title: "Panier Anti-Gaspi", desc: "Fin de journée 18h30", price: "-40%" },
+      ],
+    },
+  };
+  const cfg = contentByMode[mode] || contentByMode.vitrine;
+
+  ctx.fillStyle = "#161317";
+  ctx.font = "900 58px system-ui, -apple-system, sans-serif";
+  ctx.fillText(cfg.heading, w / 2, 206);
+
+  ctx.fillStyle = "#6b5e4c";
+  ctx.font = "800 28px system-ui, -apple-system, sans-serif";
+  ctx.fillText(cfg.sub, w / 2, 260);
+
+  // Ligne séparatrice
+  ctx.strokeStyle = "#161317";
+  ctx.lineWidth = 4;
+  ctx.setLineDash([12, 10]);
+  ctx.beginPath();
+  ctx.moveTo(92, 304);
+  ctx.lineTo(w - 92, 304);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 3 fiches prestations / plats ultra-lisibles
+  cfg.rows.forEach((row, idx) => {
+    const ry = 352 + idx * 238;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.roundRect(78, ry, w - 156, 198, 28);
+    ctx.fill();
+    ctx.strokeStyle = "#161317";
+    ctx.lineWidth = 7;
+    ctx.stroke();
+
+    // Pastille couleur à gauche
+    ctx.fillStyle = row.dot;
+    ctx.beginPath();
+    ctx.arc(146, ry + 99, 34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#161317";
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
+    // Textes alignés à gauche
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#161317";
+    ctx.font = "900 38px system-ui, -apple-system, sans-serif";
+    ctx.fillText(row.title, 206, ry + 78);
+
+    ctx.fillStyle = "#5c5247";
+    ctx.font = "700 28px system-ui, -apple-system, sans-serif";
+    ctx.fillText(row.desc, 206, ry + 132);
+
+    // Pastille prix jaune Kermesse à droite
+    ctx.fillStyle = "#ffd93d";
+    ctx.beginPath();
+    ctx.roundRect(w - 266, ry + 62, 162, 74, 37);
+    ctx.fill();
+    ctx.strokeStyle = "#161317";
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#161317";
+    ctx.font = "900 34px system-ui, -apple-system, sans-serif";
+    ctx.fillText(row.price, w - 185, ry + 101);
+  });
+
+  // Pied de carte
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#161317";
+  ctx.font = "900 26px system-ui, -apple-system, sans-serif";
+  ctx.fillText("MODIFIABLE EN 1 CLIC DEPUIS VOTRE TÉLÉPHONE", w / 2, 1142);
+}
+
+function drawMenuRightPageTexture(canvas, mode, qrImg) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = "#161317";
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.roundRect(30, 30, w - 60, h - 60, 38);
+  ctx.stroke();
+
+  // En-tête jaune Kermesse
+  ctx.fillStyle = "#ffd93d";
+  ctx.beginPath();
+  ctx.roundRect(96, 74, w - 192, 76, 38);
+  ctx.fill();
+  ctx.strokeStyle = "#161317";
+  ctx.lineWidth = 7;
+  ctx.stroke();
+
+  ctx.fillStyle = "#161317";
+  ctx.font = "900 32px system-ui, -apple-system, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const topLabel =
+    mode === "rdv"
+      ? "SCANNER POUR RÉSERVER"
+      : mode === "moments"
+        ? "SCANNER L'OFFRE VIP"
+        : "SCANNER LA VITRINE";
+  ctx.fillText(topLabel, w / 2, 114);
+
+  // Grand QR Code net central
+  const qrSize = 560;
+  const qx = (w - qrSize) / 2;
+  const qy = 200;
+  ctx.fillStyle = "#161317";
+  ctx.beginPath();
+  ctx.roundRect(qx - 14, qy - 14, qrSize + 28, qrSize + 28, 42);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.roundRect(qx, qy, qrSize, qrSize, 32);
+  ctx.fill();
+  if (qrImg) {
+    const pad = 34;
+    ctx.drawImage(qrImg, qx + pad, qy + pad, qrSize - pad * 2, qrSize - pad * 2);
+  }
+
+  // Encart réservation directe en bas de la page droite
+  ctx.fillStyle = "#ecfdf5";
+  ctx.beginPath();
+  ctx.roundRect(80, 836, w - 160, 290, 32);
+  ctx.fill();
+  ctx.strokeStyle = "#047857";
+  ctx.lineWidth = 8;
+  ctx.stroke();
+
+  ctx.fillStyle = "#064e3b";
+  ctx.font = "900 32px system-ui, -apple-system, sans-serif";
+  ctx.fillText("RÉSERVATION DIRECTE", w / 2, 896);
+
+  ctx.fillStyle = "#161317";
+  ctx.font = "900 44px system-ui, -apple-system, sans-serif";
+  ctx.fillText("Sam. 19h30 · 2 pers.", w / 2, 964);
+
+  // Bouton confirmé vert émeraude
+  ctx.fillStyle = "#047857";
+  ctx.beginPath();
+  ctx.roundRect(w / 2 - 210, 1020, 420, 72, 36);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 30px system-ui, -apple-system, sans-serif";
+  ctx.fillText("✓ CONFIRMÉ EN 2 CLICS", w / 2, 1058);
+}
+
+async function initAnnexMenuVitrine3D() {
+  const btn = document.getElementById("page-hero-qr-btn");
+  if (!btn || btn.dataset.hero3dInit === "1") return;
+  const pageMode = (btn.dataset.emulate || "").toLowerCase();
+  if (pageMode !== "vitrine" && !window.location.pathname.includes("vitrine-reservation")) return;
+  btn.dataset.hero3dInit = "1";
+
+  const reducedMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const qrImgEl = document.getElementById("page-hero-qr-img") || btn.querySelector("img.qr-bleed-img");
+  let activeMode = "vitrine";
+  let activeQrImg = await loadQrImage(
+    qrImgEl ? qrImgEl.getAttribute("src") || "img/qr-vitrine.svg" : "img/qr-vitrine.svg",
+  );
+
+  const stageHost = document.createElement("span");
+  stageHost.className = "hero-3d-stage hero-3d-stage--menu";
+  stageHost.setAttribute("aria-hidden", "true");
+  btn.appendChild(stageHost);
+
+  const renderer = new WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    powerPreference: "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = SRGBColorSpace;
+  renderer.toneMapping = NoToneMapping;
+  renderer.setClearColor(0x000000, 0);
+
+  const canvas = renderer.domElement;
+  canvas.className = "hero-3d-canvas";
+  stageHost.appendChild(canvas);
+
+  const scene = new Scene();
+  const envRT = createHighContrastStudioEnv(renderer);
+  scene.environment = envRT.texture;
+
+  const camera = new PerspectiveCamera(31, 1.18, 0.1, 30);
+  camera.position.set(0, 0.06, 7.55);
+
+  scene.add(new HemisphereLight(0xfffaf0, 0x2f253c, 0.78));
+  const key = new DirectionalLight(0xfff4d6, 1.45);
+  key.position.set(-3.8, 4.8, 5.5);
+  scene.add(key);
+  const rim = new DirectionalLight(0xff7ec2, 0.85);
+  rim.position.set(4.4, 2.2, -2.6);
+  scene.add(rim);
+
+  const inkCoverMat = new MeshPhysicalMaterial({
+    color: 0x161317,
+    roughness: 0.26,
+    metalness: 0.14,
+    clearcoat: 0.88,
+    clearcoatRoughness: 0.12,
+    envMapIntensity: 0.95,
+  });
+  const brassMat = new MeshPhysicalMaterial({
+    color: 0xf5b82e,
+    roughness: 0.2,
+    metalness: 0.88,
+    clearcoat: 0.55,
+    envMapIntensity: 1.25,
+  });
+
+  const menuGroup = new Group();
+  scene.add(menuGroup);
+
+  // Charnière / reliure dorée centrale
+  const spine = new Mesh(new CylinderGeometry(0.085, 0.085, 2.86, 20), brassMat);
+  menuGroup.add(spine);
+
+  const pageW = 2.02;
+  const pageH = 2.82;
+
+  // Volet GAUCHE (La Carte / Menu) articulé sur la charnière centrale
+  const leftPivot = new Group();
+  menuGroup.add(leftPivot);
+
+  const leftBoard = new Mesh(
+    new RoundedBoxGeometry(pageW, pageH, 0.11, 6, 0.12),
+    inkCoverMat,
+  );
+  leftBoard.position.set(-pageW / 2 - 0.04, 0, 0);
+  leftPivot.add(leftBoard);
+
+  const leftCanvas = document.createElement("canvas");
+  leftCanvas.width = 1024;
+  leftCanvas.height = 1280;
+  drawMenuLeftPageTexture(leftCanvas, activeMode);
+  const leftTex = new CanvasTexture(leftCanvas);
+  leftTex.colorSpace = SRGBColorSpace;
+  leftTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+
+  const leftFace = new Mesh(
+    new PlaneGeometry(pageW - 0.12, pageH - 0.14),
+    new MeshBasicMaterial({ map: leftTex }),
+  );
+  leftFace.position.set(-pageW / 2 - 0.04, 0, 0.062);
+  leftPivot.add(leftFace);
+
+  // Volet DROIT (QR Code + Réservation directe) articulé sur la charnière centrale
+  const rightPivot = new Group();
+  menuGroup.add(rightPivot);
+
+  const rightBoard = new Mesh(
+    new RoundedBoxGeometry(pageW, pageH, 0.11, 6, 0.12),
+    inkCoverMat,
+  );
+  rightBoard.position.set(pageW / 2 + 0.04, 0, 0);
+  rightPivot.add(rightBoard);
+
+  const rightCanvas = document.createElement("canvas");
+  rightCanvas.width = 1024;
+  rightCanvas.height = 1280;
+  drawMenuRightPageTexture(rightCanvas, activeMode, activeQrImg);
+  const rightTex = new CanvasTexture(rightCanvas);
+  rightTex.colorSpace = SRGBColorSpace;
+  rightTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+
+  const rightFace = new Mesh(
+    new PlaneGeometry(pageW - 0.12, pageH - 0.14),
+    new MeshBasicMaterial({ map: rightTex }),
+  );
+  rightFace.position.set(pageW / 2 + 0.04, 0, 0.062);
+  rightPivot.add(rightFace);
+
+  // Petit marque-page / pince dorée en haut de la page droite
+  const goldClip = new Mesh(new RoundedBoxGeometry(0.42, 0.24, 0.16, 4, 0.05), brassMat);
+  goldClip.position.set(pageW / 2 + 0.04, pageH / 2 + 0.02, 0.02);
+  rightPivot.add(goldClip);
+
+  // Ombre douce au sol
+  const shadowMat = new MeshBasicMaterial({
+    map: createSoftShadowTexture(0.32),
+    transparent: true,
+    opacity: 0.82,
+    depthWrite: false,
+  });
+  const shadowPlane = new Mesh(new PlaneGeometry(4.2, 0.78), shadowMat);
+  shadowPlane.position.set(0, -1.78, -0.1);
+  scene.add(shadowPlane);
+
+  // Synchronisation avec les 3 pilules Carte & Tarifs / Rendez-vous / Moments VIP
+  const parentUnit = btn.closest(".qr-floating-unit");
+  if (parentUnit) {
+    parentUnit.querySelectorAll(".qr-mode-btn").forEach((modeBtn) => {
+      modeBtn.addEventListener("click", async () => {
+        const nextMode = modeBtn.dataset.emulate || "vitrine";
+        const nextSrc = modeBtn.dataset.qrSrc || "img/qr-vitrine.svg";
+        activeMode = nextMode;
+        activeQrImg = await loadQrImage(nextSrc);
+        drawMenuLeftPageTexture(leftCanvas, activeMode);
+        leftTex.needsUpdate = true;
+        drawMenuRightPageTexture(rightCanvas, activeMode, activeQrImg);
+        rightTex.needsUpdate = true;
+      });
+    });
+  }
+
+  const resize = () => {
+    const rect = stageHost.getBoundingClientRect();
+    const w = Math.max(300, Math.round(rect.width || 400));
+    const h = Math.max(250, Math.round(rect.height || 320));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  resize();
+
+  const heroSection = btn.closest("section") || btn;
+  let targetRotY = -0.1;
+  let targetRotX = 0.06;
+  let curRotY = -0.16;
+  let curRotX = 0.08;
+  let isHovering = false;
+  let hoverAmt = 0;
+  let clickPop = 0;
+  let clickVel = 0;
+  let isVisible = true;
+  let rafId = 0;
+  let lastTime = performance.now();
+
+  heroSection.addEventListener(
+    "pointermove",
+    (e) => {
+      const rect = btn.getBoundingClientRect();
+      const nx = MathUtils.clamp((e.clientX - (rect.left + rect.width / 2)) / 420, -1, 1);
+      const ny = MathUtils.clamp((e.clientY - (rect.top + rect.height / 2)) / 320, -1, 1);
+      targetRotY = nx * 0.28;
+      targetRotX = ny * 0.18;
+    },
+    { passive: true },
+  );
+  heroSection.addEventListener(
+    "pointerleave",
+    () => {
+      targetRotY = -0.1;
+      targetRotX = 0.06;
+    },
+    { passive: true },
+  );
+  btn.addEventListener("pointerenter", () => {
+    isHovering = true;
+  });
+  btn.addEventListener("pointerleave", () => {
+    isHovering = false;
+  });
+  btn.addEventListener("pointerdown", () => {
+    clickVel = -3.2;
+  });
+
+  if (typeof IntersectionObserver === "function") {
+    const io = new IntersectionObserver(
+      (entries) => {
+        isVisible = entries[0]?.isIntersecting ?? true;
+        if (isVisible && !reducedMotion && !rafId) {
+          lastTime = performance.now();
+          rafId = requestAnimationFrame(tick);
+        }
+      },
+      { threshold: 0.05 },
+    );
+    io.observe(btn);
+  }
+  window.addEventListener("resize", resize, { passive: true });
+  canvas.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+    btn.classList.remove("is-3d-ready");
+  });
+
+  const renderFrame = (t, dt) => {
+    const ease = 1 - Math.exp(-dt * 7.2);
+    const idleYaw = reducedMotion ? 0 : Math.sin(t * 0.8) * 0.07;
+    const idlePitch = reducedMotion ? 0 : Math.cos(t * 0.6) * 0.035;
+
+    curRotY += (targetRotY + idleYaw - curRotY) * ease;
+    curRotX += (targetRotX + idlePitch - curRotX) * ease;
+    hoverAmt += ((isHovering ? 1 : 0) - hoverAmt) * (1 - Math.exp(-dt * 8));
+
+    const springF = -145 * clickPop - 14 * clickVel;
+    clickVel += springF * dt;
+    clickPop += clickVel * dt;
+
+    const floatY = reducedMotion ? 0 : Math.sin(t * 1.4) * 0.075;
+    menuGroup.position.y = floatY + hoverAmt * 0.05;
+    menuGroup.rotation.y = curRotY;
+    menuGroup.rotation.x = curRotX;
+    menuGroup.rotation.z = -curRotY * 0.06;
+
+    // Ouverture articulée des 2 volets : s'ouvrent plus largement au survol !
+    const hingeAngle = MathUtils.lerp(0.28, 0.09, hoverAmt);
+    leftPivot.rotation.y = hingeAngle;
+    rightPivot.rotation.y = -hingeAngle;
+
+    const baseScale = 1 + hoverAmt * 0.045;
+    menuGroup.scale.set(
+      baseScale * (1 - clickPop * 0.055),
+      baseScale * (1 + clickPop * 0.075),
+      baseScale,
+    );
+
+    const sScale = 1 - floatY * 0.45 - hoverAmt * 0.05;
+    shadowPlane.scale.set(sScale, sScale, 1);
+    shadowMat.opacity = 0.8 - floatY * 0.7;
+
+    renderer.render(scene, camera);
+  };
+
+  renderFrame(0, 0.016);
+  btn.classList.add("is-3d-ready");
+
+  function tick(now) {
+    if (!isVisible) {
+      rafId = 0;
+      return;
+    }
+    const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+    lastTime = now;
+    renderFrame(now * 0.001, dt);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  if (!reducedMotion) {
+    lastTime = performance.now();
+    rafId = requestAnimationFrame(tick);
+  }
+}
+
 const bootAll = () => {
   if (!hasWebGL()) return;
   const run = () => {
     void initHeroBubbleQr3D();
     void initParcours3DCinema();
+    void initAnnexPassport3D();
+    void initAnnexMenuVitrine3D();
   };
   if (typeof window.requestIdleCallback === "function") {
     window.requestIdleCallback(run, { timeout: 700 });
