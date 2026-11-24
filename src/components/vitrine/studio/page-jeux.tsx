@@ -84,6 +84,7 @@ export function PageJeuxStudio({
   socialVisible,
   onSocialVisible,
   peutEditer,
+  peutGererOrganisation = peutEditer,
 }: {
   jeuxVisibles: boolean;
   /** L'ordre ET la visibilité : un bloc masqué est un bloc ABSENT (VIT-3). */
@@ -100,6 +101,7 @@ export function PageJeuxStudio({
   socialVisible: boolean;
   onSocialVisible: (visible: boolean) => void;
   peutEditer: boolean;
+  peutGererOrganisation?: boolean;
 }) {
   /**
    * L'ÉTAT DES CASES SE LIT PAR LE RÉSOLVEUR, JAMAIS DANS LE THÈME BRUT.
@@ -173,6 +175,7 @@ export function PageJeuxStudio({
           socialVisible={socialVisible}
           onSocialVisible={onSocialVisible}
           peutEditer={peutEditer}
+          peutGererOrganisation={peutGererOrganisation}
         />
       </div>
     </div>

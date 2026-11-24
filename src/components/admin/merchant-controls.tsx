@@ -176,7 +176,7 @@ export function ModuleAddonControl({
   enabled,
 }: {
   organizationId: string;
-  module: "vitrine" | "reserver" | "duo" | "bande";
+  module: "vitrine" | "reserver" | "rendez_vous" | "duo" | "bande";
   enabled: boolean;
 }) {
   const { state, pending, onSubmit } = useActionForm(

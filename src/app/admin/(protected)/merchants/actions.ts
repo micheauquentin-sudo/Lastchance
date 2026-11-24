@@ -1665,6 +1665,7 @@ export async function revokeMerchantModuleGrant(
 const MODULES_DE_LIEU = {
   vitrine: { colonne: "addon_vitrine", chemin: "/dashboard/vitrine" },
   reserver: { colonne: "addon_reserver", chemin: "/dashboard/reservations" },
+  rendez_vous: { colonne: "addon_rendez_vous", chemin: "/dashboard/reservations" },
   duo: { colonne: "addon_duo", chemin: "/dashboard/salons/duo" },
   bande: { colonne: "addon_bande", chemin: "/dashboard/salons/bande" },
 } as const;

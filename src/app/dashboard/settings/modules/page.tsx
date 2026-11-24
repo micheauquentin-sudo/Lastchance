@@ -22,7 +22,10 @@ import {
   type AddonBilling,
   type AddonOffer,
 } from "@/lib/plans";
-import { hasSubscriptionAccess } from "@/lib/subscription";
+import {
+  droitEffectifModule,
+  hasSubscriptionAccess,
+} from "@/lib/subscription";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card, TITRE_CARTE } from "@/components/ui/card";
@@ -249,19 +252,26 @@ export default async function ModulesSettingsPage({
           </Card>
         )}
 
-        {ADDON_OFFERS.map((offre) => (
-          <CarteAddon
-            key={offre.entitlement}
-            offre={offre}
-            ouvert={(ouverts as readonly string[]).includes(offre.entitlement)}
-            compris={
-              offreEnCours !== null && tierIncludes(offreEnCours, offre.entitlement)
-            }
-            finDePass={finsDePass.get(offre.entitlement) ?? null}
-            proprietaire={proprietaire}
-            competitions={competitions}
-          />
-        ))}
+        {ADDON_OFFERS.map((offre) => {
+          const compris =
+            offreEnCours !== null && tierIncludes(offreEnCours, offre.entitlement);
+          const ouvert =
+            (ouverts as readonly string[]).includes(offre.entitlement) ||
+            (!offre.soldStandalone &&
+              !compris &&
+              droitEffectifModule(offre.entitlement, organization, maintenant));
+          return (
+            <CarteAddon
+              key={offre.entitlement}
+              offre={offre}
+              ouvert={ouvert}
+              compris={compris}
+              finDePass={finsDePass.get(offre.entitlement) ?? null}
+              proprietaire={proprietaire}
+              competitions={competitions}
+            />
+          );
+        })}
 
         <Card>
           <h2 className="mb-2 font-semibold">Quand une option se termine</h2>

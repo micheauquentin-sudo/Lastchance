@@ -1205,7 +1205,8 @@
         const idx = Number(inp.dataset.bindPronoPrize);
         if (Array.isArray(drafts.pronostics?.rankPrizes) && drafts.pronostics.rankPrizes[idx]) {
           drafts.pronostics.rankPrizes[idx].reward = inp.value;
-          saveAndRefreshPreview();
+          triggerAutoSave();
+          renderPreviewColumn();
         }
       });
     });
@@ -1284,7 +1285,10 @@ $$("[data-bind]", container).forEach((inp) => {
           renderPreviewColumn();
         } else if (act === "set-field") {
           const [mod, key] = el.dataset.path.split(".");
-          drafts[mod][key] = el.dataset.val;
+          drafts[mod][key] =
+            mod === "calendrier" && key === "nbCases"
+              ? Number(el.dataset.val) || 24
+              : el.dataset.val;
           if (mod === "pronostics" && key === "eventKind") {
             const newEk = CB.EVENT_KINDS.find((e) => e.key === el.dataset.val) || CB.EVENT_KINDS[0];
             drafts.pronostics.customQuestion = newEk.prompt || "";
@@ -1418,11 +1422,30 @@ $$("[data-bind]", container).forEach((inp) => {
   /* ==========================================================================
      RENDU DE LA COLONNE DE DROITE : APERÇU CLIENT FIDÈLE EN DIRECT
      ========================================================================== */
+  let activePreviewSim = null;
+  let activeModalSim = null;
+
+  function destroyPreviewSim(isModal) {
+    if (isModal) {
+      if (activeModalSim && typeof activeModalSim.destroy === "function") {
+        activeModalSim.destroy();
+      }
+      activeModalSim = null;
+    } else {
+      if (activePreviewSim && typeof activePreviewSim.destroy === "function") {
+        activePreviewSim.destroy();
+      }
+      activePreviewSim = null;
+    }
+  }
+
   function renderPreviewColumn() {
     const phone = $("#k-preview-phone");
     const urlPill = $("#k-preview-url-pill");
     const tools = $("#k-preview-tools");
     if (!phone) return;
+
+    destroyPreviewSim(false);
 
     if (currentModule === "vitrine") {
       if (urlPill) urlPill.textContent = `simplecommeqr.fr/v/${drafts.vitrine.slug || "mon-commerce"}`;
@@ -1432,12 +1455,12 @@ $$("[data-bind]", container).forEach((inp) => {
       phone.innerHTML = buildVitrinePreviewHTML();
     } else if (currentModule === "roue") {
       if (urlPill) urlPill.textContent = `simplecommeqr.fr/play/mon-jeu`;
-      if (tools) tools.innerHTML = `<span class="k-tool-pill">Thème : ${drafts.roue.preset}</span>`;
+      if (tools) tools.innerHTML = `<span class="k-tool-pill">Thème : ${escapeHtml(drafts.roue.preset)}</span>`;
       phone.innerHTML = buildRouePreviewHTML();
-      bindInteractivePlayInside(phone);
+      bindInteractivePlayInside(phone, false);
     } else if (currentModule === "pronostics") {
       if (urlPill) urlPill.textContent = `simplecommeqr.fr/pronos/mon-concours`;
-      if (tools) tools.innerHTML = `<span class="k-tool-pill">Saison : ${drafts.pronostics.theme}</span>`;
+      if (tools) tools.innerHTML = `<span class="k-tool-pill">Saison : ${escapeHtml(drafts.pronostics.theme)}</span>`;
       phone.innerHTML = buildPronosticsPreviewHTML();
     } else if (currentModule === "fidelite") {
       if (urlPill) urlPill.textContent = `simplecommeqr.fr/passeport/mon-programme`;
@@ -1447,7 +1470,7 @@ $$("[data-bind]", container).forEach((inp) => {
       const cName = drafts.calendrier?.name || "mon-calendrier";
       const slug = encodeURIComponent(cName.toLowerCase().replace(/[^a-z0-9]+/g, "-")).slice(0, 24);
       if (urlPill) urlPill.textContent = `simplecommeqr.fr/calendar/${slug}`;
-      if (tools) tools.innerHTML = `<span class="k-tool-pill">Cases : ${drafts.calendrier?.nbCases || 24}j · ${drafts.calendrier?.theme || "kermesse"}</span>`;
+      if (tools) tools.innerHTML = `<span class="k-tool-pill">Cases : ${escapeHtml(String(Number(drafts.calendrier?.nbCases) || 24))}j · ${escapeHtml(drafts.calendrier?.theme || "kermesse")}</span>`;
       phone.innerHTML = buildCalendrierPreviewHTML();
       bindCalendrierInteractive(phone);
     }
@@ -1601,9 +1624,10 @@ $$("[data-bind]", container).forEach((inp) => {
     `;
   }
 
-  function bindInteractivePlayInside(root) {
+  function bindInteractivePlayInside(root, isModal = false) {
     const stage = $("#kp-play-stage", root);
     if (!stage) return;
+    destroyPreviewSim(isModal);
     const r = drafts.roue;
     const GE = window.LC_GAMES_ENGINE;
     if (GE && typeof GE.createSimulator === "function") {
@@ -1611,7 +1635,7 @@ $$("[data-bind]", container).forEach((inp) => {
       const chosen = winningLots[0] || (r.lots && r.lots[0]) || { label: "-15 % sur l'addition ☕" };
       const isDark = (r.pageTheme === "nuit");
 
-      GE.createSimulator(stage, {
+      const sim = GE.createSimulator(stage, {
         gameKey: r.gameType,
         lots: r.lots,
         prize: chosen.label,
@@ -1632,6 +1656,8 @@ $$("[data-bind]", container).forEach((inp) => {
           }
         }
       });
+      if (isModal) activeModalSim = sim;
+      else activePreviewSim = sim;
     }
   }
 
@@ -1920,19 +1946,23 @@ $$("[data-bind]", container).forEach((inp) => {
     const modal = $("#k-modal-preview");
     const phoneLarge = $("#k-modal-preview-phone");
     if (!modal || !phoneLarge) return;
+    destroyPreviewSim(true);
     phoneLarge.innerHTML = $("#k-preview-phone")?.innerHTML || "";
-    if (currentModule === "roue") bindInteractivePlayInside(phoneLarge);
+    if (currentModule === "roue") bindInteractivePlayInside(phoneLarge, true);
     if (currentModule === "calendrier") bindCalendrierInteractive(phoneLarge);
     modal.hidden = false;
   });
 
   $("#k-close-preview-modal")?.addEventListener("click", () => {
+    destroyPreviewSim(true);
     $("#k-modal-preview").hidden = true;
   });
   $("#k-modal-preview-continue")?.addEventListener("click", () => {
+    destroyPreviewSim(true);
     $("#k-modal-preview").hidden = true;
   });
   $("#k-modal-preview-to-publish")?.addEventListener("click", () => {
+    destroyPreviewSim(true);
     $("#k-modal-preview").hidden = true;
     openPublishModal();
   });

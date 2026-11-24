@@ -183,6 +183,7 @@ async function handleWebhook(request: Request) {
             subscriptionId: current.id,
             customerId,
             status,
+            rawStatus: current.status,
             metadata: current.metadata ?? null,
             passes,
             mixte: autres.length > 0,
@@ -446,6 +447,8 @@ interface ContexteAbonnementPass {
   customerId: string;
   /** Statut déjà normalisé par l'appelant (`canceled` inclut `deleted`). */
   status: string;
+  /** Statut brut Stripe (distingue `unpaid` réversible d'une résiliation définitive). */
+  rawStatus?: Stripe.Subscription.Status;
   metadata: Record<string, string> | null;
   passes: PrixDePass[];
   mixte: boolean;
@@ -492,7 +495,14 @@ async function traiterAbonnementDePass(
   //
   // ET ELLE SE LÈVE SEULE : au retour en `active`, ce même chemin efface
   // l'échéance. Un commerçant qui régularise retrouve son module sans geste.
-  if (ctx.status === "past_due" || ctx.status === "active") {
+  // Même règle pour `unpaid` (impayé Stripe non résilié) : fermeture immédiate
+  // par `ends_at` (réversible si la facture est réglée dans le portail Stripe)
+  // plutôt que `revoked_at` (irréversible).
+  if (
+    ctx.status === "past_due" ||
+    ctx.status === "active" ||
+    (ctx.rawStatus === "unpaid" && event.type !== "customer.subscription.deleted")
+  ) {
     return await echeanceImpaye(admin, event, ctx);
   }
 
@@ -1371,7 +1381,9 @@ async function echeanceImpaye(
   const modules = ctx.passes.map((p) => p.entitlement);
   if (modules.length === 0) return null;
 
-  if (ctx.status !== "past_due") {
+  const isUnpaid =
+    ctx.rawStatus === "unpaid" && event.type !== "customer.subscription.deleted";
+  if (ctx.status !== "past_due" && !isUnpaid) {
     // LA LEVÉE NE LIT RIEN. La valeur posée est `null` : aucun calcul ne peut
     // être aberrant, aucune contrainte ne peut être violée, et c'est ce qui
     // rend la branche `reactivated` joignable dans les deux sens — l'échéance
@@ -1397,8 +1409,13 @@ async function echeanceImpaye(
     return null;
   }
 
+  // En `unpaid`, l'accès ferme immédiatement (horodatage de l'événement) tout
+  // en restant réversible au retour en `active`. En `past_due`, on accorde la
+  // grâce standard (`PAST_DUE_GRACE_DAYS`).
   const fin = new Date(
-    event.created * 1000 + PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
+    isUnpaid
+      ? event.created * 1000
+      : event.created * 1000 + PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
 
   // LIRE AVANT D'ÉCRIRE, et c'est tout le prix de la borne : sans les
@@ -1436,8 +1453,15 @@ async function echeanceImpaye(
   }>;
 
   const finMs = Date.parse(fin);
-  // MONOTONE : une échéance déjà posée ne bouge plus (voir l'en-tête).
-  const aDater = lignes.filter((ligne) => ligne.ends_at === null);
+  // MONOTONE en `past_due` : une échéance déjà posée ne recule pas.
+  // En `unpaid`, on peut avancer l'échéance à l'instant de l'événement si une
+  // grâce `past_due` future était encore posée.
+  const aDater = lignes.filter((ligne) => {
+    if (ligne.ends_at === null) return true;
+    if (!isUnpaid) return false;
+    const existingMs = Date.parse(ligne.ends_at);
+    return Number.isFinite(existingMs) && existingMs > finMs;
+  });
   const posables = aDater.filter((ligne) => {
     const debut = ligne.starts_at === null ? NaN : Date.parse(ligne.starts_at);
     return Number.isFinite(debut) && debut < finMs;

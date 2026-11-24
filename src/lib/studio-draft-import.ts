@@ -15,7 +15,7 @@ const STUDIO_MODULE_DESTINATIONS: Record<StudioModule, string> = {
   roue: "/dashboard/campaigns",
   pronostics: "/dashboard/pronostics",
   fidelite: "/dashboard/loyalty",
-  calendrier: "/dashboard/calendars",
+  calendrier: "/dashboard/calendar",
 };
 
 const STUDIO_MODULE_LABELS: Record<StudioModule, string> = {

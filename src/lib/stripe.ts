@@ -700,7 +700,9 @@ export function resolveStripeEntitlements(priceIds: string[]): {
   let selectedPlan: (typeof PLANS)[number] = PLANS[0];
 
   for (const priceId of new Set(priceIds)) {
-    const plan = PLANS.find((candidate) => candidate.getPriceId() === priceId);
+    const plan = PLANS.find((candidate) =>
+      PLAN_PRICE_ENV[candidate.id].some((envName) => optionalEnv(envName) === priceId),
+    );
     if (plan) {
       if (
         PLANS.findIndex((candidate) => candidate.id === plan.id)

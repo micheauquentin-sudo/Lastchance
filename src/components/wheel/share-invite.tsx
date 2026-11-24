@@ -1,7 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { capturePlayEvent } from "@/components/analytics";
+
+const subscribeNoop = () => () => {};
+const getCanNativeShare = () =>
+  typeof navigator !== "undefined" && "share" in navigator;
+const getCanNativeShareServer = () => false;
+const getOriginClient = () =>
+  typeof window !== "undefined" ? window.location.origin : "";
+const getOriginServer = () => "";
 
 /**
  * Invitation au partage affichée après une partie. Propose au joueur de
@@ -24,13 +32,22 @@ export function ShareInvite({
 }) {
   const [copied, setCopied] = useState(false);
 
+  const canNativeShare = useSyncExternalStore(
+    subscribeNoop,
+    getCanNativeShare,
+    getCanNativeShareServer,
+  );
+  const clientOrigin = useSyncExternalStore(
+    subscribeNoop,
+    getOriginClient,
+    getOriginServer,
+  );
+
   // Construit le lien de partage à partir de l'origine courante : évite
   // de dépendre d'une variable d'env côté client et reste juste en prod
   // comme en préproduction.
   function shareUrl(): string {
-    const origin =
-      typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}/play/${slug}?ref=share`;
+    return `${clientOrigin}/play/${slug}?ref=share`;
   }
 
   const shareText = `🎁 Tente ta chance chez ${organizationName} !`;
@@ -60,9 +77,6 @@ export function ShareInvite({
       // Presse-papiers indisponible — l'utilisateur peut toujours WhatsApp.
     }
   }
-
-  const canNativeShare =
-    typeof navigator !== "undefined" && "share" in navigator;
 
   const whatsappHref = `https://wa.me/?text=${encodeURIComponent(
     `${shareText} ${shareUrl()}`,

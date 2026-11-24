@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
 import { createClient } from "@/lib/supabase/server";
 import { gardeEditeurVitrine } from "@/lib/vitrine-context";
@@ -14,6 +15,9 @@ export async function POST(): Promise<Response> {
   const garde = await gardeEditeurVitrine();
   if (!garde.ok) return new Response(null, { status: 403 });
 
+  revalidatePath("/dashboard/vitrine");
+  revalidatePath("/vitrine-studio");
+  revalidatePath("/dashboard/vitrine/traductions");
   const supabase = await createClient();
   await revaliderVitrinePublique(supabase, garde.organizationId);
   return new Response(null, { status: 204 });

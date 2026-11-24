@@ -245,6 +245,7 @@ async function revaliderVitrine(
 ): Promise<void> {
   revalidatePath(CHEMIN_DASHBOARD);
   revalidatePath("/vitrine-studio");
+  revalidatePath("/dashboard/vitrine/traductions");
   await revaliderVitrinePublique(supabase, organizationId, slugConnu);
 }
 

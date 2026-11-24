@@ -875,6 +875,7 @@ describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
       "/vitrine-studio",
+      "/dashboard/vitrine/traductions",
       "/v/le-comptoir",
       "/v/le-comptoir/en",
     ]);
@@ -905,6 +906,7 @@ describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
       "/vitrine-studio",
+      "/dashboard/vitrine/traductions",
       "/v/chez-marie",
       "/v/chez-marie/en",
     ]);
@@ -934,6 +936,7 @@ describe("activerExperiencesVitrine — annoncer les jeux avec consentement", ()
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
       "/vitrine-studio",
+      "/dashboard/vitrine/traductions",
       "/v/le-comptoir",
       "/v/le-comptoir/en",
     ]);
@@ -1218,6 +1221,7 @@ describe("importVitrineCarte — le succès rend les comptes et purge les pages"
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
       "/vitrine-studio",
+      "/dashboard/vitrine/traductions",
       "/v/le-comptoir",
       "/v/le-comptoir/en",
     ]);
@@ -1371,6 +1375,7 @@ describe("setVitrineContenu — un upsert par (organisation, place)", () => {
     expect(cheminsRevalides()).toEqual([
       "/dashboard/vitrine",
       "/vitrine-studio",
+      "/dashboard/vitrine/traductions",
       "/v/le-comptoir",
       "/v/le-comptoir/en",
     ]);

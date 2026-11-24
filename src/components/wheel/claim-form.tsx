@@ -504,10 +504,24 @@ export function RedeemCodeScreen({
 
   useEffect(() => {
     if (ttlSeconds == null) return;
-    const interval = window.setInterval(() => {
-      setSecondsLeft((s) => (s == null || s <= 1 ? 0 : s - 1));
-    }, 1000);
-    return () => window.clearInterval(interval);
+    // Calcul contre l'horloge murale (Date.now) : sur iOS Safari en veille ou
+    // onglet en arrière-plan, setInterval se fige — comparer à une échéance
+    // garantit que le code passe à 0 dès le réveil si redeem_expires_at est
+    // dépassé en base.
+    const deadlineMs = Date.now() + ttlSeconds * 1000;
+    const syncRemaining = () => {
+      const remaining = Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+    };
+    const interval = window.setInterval(syncRemaining, 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") syncRemaining();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [ttlSeconds]);
 
   const cardClass = kermesse

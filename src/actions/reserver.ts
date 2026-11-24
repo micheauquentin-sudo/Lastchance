@@ -2078,6 +2078,7 @@ export async function cancelReservationStaff(
     revalidatePath("/dashboard/reservations");
     revalidatePath("/dashboard/reservations/[activityId]", "page");
     revalidatePath("/studio/reservation/[activityId]", "page");
+    revalidatePath("/dashboard/moments");
     return { ok: true as const, data: resultat };
   });
 }
@@ -2133,6 +2134,9 @@ export async function evictWaitlistEntry(
     // qu'elle n'est plus dans une file où elle n'a peut-être jamais su qu'elle
     // était classée serait un message que le module n'a pas à envoyer.
     revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/reservations/[activityId]", "page");
+    revalidatePath("/studio/reservation/[activityId]", "page");
+    revalidatePath("/dashboard/moments");
     return { ok: true as const, data: mapEvictWaitlistEntry(data) };
   });
 }
@@ -2311,6 +2315,7 @@ export async function revokeInvitation(
     revalidatePath("/dashboard/reservations");
     revalidatePath("/dashboard/reservations/[activityId]", "page");
     revalidatePath("/studio/reservation/[activityId]", "page");
+    revalidatePath("/dashboard/moments");
     return { ok: true as const, data: resultat };
   });
 }
@@ -2356,6 +2361,7 @@ export async function closeInvitation(
     revalidatePath("/dashboard/reservations");
     revalidatePath("/dashboard/reservations/[activityId]", "page");
     revalidatePath("/studio/reservation/[activityId]", "page");
+    revalidatePath("/dashboard/moments");
     return { ok: true as const, data: resultat };
   });
 }
@@ -2731,6 +2737,7 @@ export async function createReserverSlot(
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/reservations/[activityId]", "page");
   revalidatePath("/studio/reservation/[activityId]", "page");
+  revalidatePath("/dashboard/moments");
   return { ok: true, data: undefined };
 }
 
@@ -2798,6 +2805,7 @@ export async function updateReserverSlot(
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/reservations/[activityId]", "page");
   revalidatePath("/studio/reservation/[activityId]", "page");
+  revalidatePath("/dashboard/moments");
   return { ok: true, data: undefined };
 }
 
@@ -2837,6 +2845,7 @@ export async function updateReserverSlotStatus(
   revalidatePath("/dashboard/reservations");
   revalidatePath("/dashboard/reservations/[activityId]", "page");
   revalidatePath("/studio/reservation/[activityId]", "page");
+  revalidatePath("/dashboard/moments");
   return { ok: true, data: undefined };
 }
 
@@ -3136,6 +3145,7 @@ export async function queueCallNext(
       return { ok: false as const, error: GENERIC_ERROR };
     }
     revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/moments");
     return { ok: true as const, data: mapQueueCallNext(data) };
   });
 }
@@ -3184,6 +3194,7 @@ export async function queueResolve(
       return { ok: false as const, error: GENERIC_ERROR };
     }
     revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/moments");
     return { ok: true as const, data: mapQueueResolve(data) };
   });
 }
@@ -3228,6 +3239,7 @@ export async function queueReopen(
       return { ok: false as const, error: GENERIC_ERROR };
     }
     revalidatePath("/dashboard/reservations");
+    revalidatePath("/dashboard/moments");
     return { ok: true as const, data: mapQueueReopen(data) };
   });
 }
@@ -3306,6 +3318,7 @@ export async function createReserverQueue(
   }
 
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/moments");
   // Une file peut NAÎTRE `open` : c'est une porte publiée dès l'insertion —
   // voir `createReserverActivity`.
   await revaliderVitrinePublique(supabase, garde.organizationId);
@@ -3373,6 +3386,7 @@ export async function updateReserverQueue(
   }
 
   revalidatePath("/dashboard/reservations");
+  revalidatePath("/dashboard/moments");
   // `open`/`paused`/`closed` : la vitrine n'annonce que `open`. Une file fermée
   // qui resterait affichée envoie le visiteur sur une porte close, signée du
   // commerce — voir `createReserverActivity`.
@@ -4811,28 +4825,10 @@ async function activiteDeLOrganisation(
 
 /** Revalide la page de l'activité — le seul écran que ces gestes changent. */
 function revaliderActivite(activityId: string): void {
+  revalidatePath("/dashboard/reservations");
   revalidatePath(`/dashboard/reservations/${activityId}`);
-  /**
-   * LE STUDIO VIT HORS DE `/dashboard`, il faut donc le nommer (VIT-49).
-   *
-   * `/studio/reservation/[activityId]` n'est atteint par AUCUNE revalidation
-   * d'un chemin de tableau de bord : Next revalide un CHEMIN, pas une
-   * ressource. Sans ce jumeau, ajouter une plage horaire ou une table
-   * laisserait le studio afficher la version d'avant — et c'est précisément
-   * l'écran où l'on règle EN REGARDANT, donc celui où le commerçant revient
-   * vérifier.
-   *
-   * C'est le défaut VIT-37, puis VIT-39, VIT-41, VIT-42, VIT-45, VIT-44 et
-   * VIT-48, mot pour mot. Rien ne casse : l'action répond « enregistré », et
-   * elle dit vrai. `studio/revalidation-studio.test.ts` compte les deux appels
-   * PAR FONCTION (ADR-161) et rougit s'il en manque un.
-   *
-   * Les DIX actions de réglage du module passent par ce seul helper — les
-   * plages, les fermetures, les réglages de rendez-vous, la génération, les
-   * quatre gestes de la salle et la durée de service. Un unique point de
-   * jumelage, donc, et aucun endroit où l'oublier.
-   */
   revalidatePath(`/studio/reservation/${activityId}`);
+  revalidatePath("/dashboard/moments");
 }
 
 export async function ajouterPlageHoraire(

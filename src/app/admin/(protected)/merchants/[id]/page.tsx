@@ -141,11 +141,13 @@ export default async function MerchantDetailPage({
           <dl className="space-y-2.5 text-sm">
             <Row label="Inscription" value={formatDate(org.created_at)} />
             <Row label="Fin d'essai" value={formatDate(org.trial_ends_at)} />
-            <Row
-              label="Client Stripe"
-              value={org.stripe_customer_id ?? "—"}
-              mono
-            />
+            {canViewBilling && (
+              <Row
+                label="Client Stripe"
+                value={org.stripe_customer_id ?? "—"}
+                mono
+              />
+            )}
             <Row
               label="Impayé depuis"
               value={org.past_due_since ? formatDate(org.past_due_since) : "—"}
@@ -296,6 +298,16 @@ export default async function MerchantDetailPage({
                           organizationId={org.id}
                           module="reserver"
                           enabled={org.addon_reserver}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Rendez-vous
+                        </p>
+                        <ModuleAddonControl
+                          organizationId={org.id}
+                          module="rendez_vous"
+                          enabled={org.addon_rendez_vous}
                         />
                       </div>
                       <div>

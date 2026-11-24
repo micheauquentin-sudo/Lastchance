@@ -156,17 +156,21 @@ export const EXPERIENCE_CATALOG: readonly ExperienceCatalogEntry[] = [
   },
 ] as const;
 
-type OrganizationAddons = Pick<Tables<"organizations">, AddonField>;
+type OrganizationAddons = Pick<Tables<"organizations">, AddonField> & {
+  live_module_grants?: readonly string[] | null;
+};
 
 export function activeExperienceKinds(
   organization: OrganizationAddons,
   fullAccess = false,
 ): ExperienceKind[] {
+  const grants = organization.live_module_grants ?? [];
   return EXPERIENCE_CATALOG.filter(
     (entry) =>
       entry.addonField === null ||
       fullAccess ||
-      organization[entry.addonField] === true,
+      organization[entry.addonField] === true ||
+      grants.includes(entry.addonField.replace(/^addon_/, "")),
   ).map((entry) => entry.kind);
 }
 

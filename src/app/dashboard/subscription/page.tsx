@@ -15,6 +15,7 @@ import {
 } from "@/lib/plans";
 import {
   billingActions,
+  droitEffectifModule,
   hasCompAccess,
   hasSubscriptionAccess,
 } from "@/lib/subscription";
@@ -131,6 +132,11 @@ export default async function SubscriptionPage() {
     for (const ent of currentTier.entitlements) {
       ownedEntitlements.add(ent);
     }
+    for (const offre of ADDON_OFFERS) {
+      if (!offre.soldStandalone && droitEffectifModule(offre.entitlement, org, now)) {
+        ownedEntitlements.add(offre.entitlement);
+      }
+    }
   }
 
   const enAttente = enAttenteRaw
@@ -242,9 +248,15 @@ export default async function SubscriptionPage() {
           {ADDON_OFFERS.map((offre) => {
             const compris =
               hasActiveSub && tierIncludes(currentTier, offre.entitlement);
-            const ouvert = (ouverts as readonly string[]).includes(
-              offre.entitlement,
-            );
+            const ouvert =
+              (ouverts as readonly string[]).includes(offre.entitlement) ||
+              (!offre.soldStandalone &&
+                !compris &&
+                droitEffectifModule(offre.entitlement, org, now));
+            const optionLigneGerable =
+              !compris &&
+              !offre.soldStandalone &&
+              Boolean(getAddonLinePriceId(offre.entitlement));
             const dejaActif = compris || ouvert;
             const achetable = addonAchetableEnLigne(offre.entitlement);
             const paliers =
@@ -260,7 +272,7 @@ export default async function SubscriptionPage() {
               <Card
                 key={offre.entitlement}
                 className={
-                  dejaActif
+                  dejaActif && !optionLigneGerable
                     ? "border-zinc-200 bg-zinc-50/80 opacity-60"
                     : "border-amber-300 bg-white shadow-sm"
                 }
@@ -272,7 +284,7 @@ export default async function SubscriptionPage() {
                       ✓ Inclus dans votre formule
                     </span>
                   ) : ouvert ? (
-                    <span className="rounded-full bg-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-700">
+                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
                       ✓ Déjà actif
                     </span>
                   ) : (
@@ -290,11 +302,9 @@ export default async function SubscriptionPage() {
                   </ul>
                 )}
 
-                {dejaActif ? (
+                {compris ? (
                   <p className="rounded-xl bg-zinc-100 px-3.5 py-2.5 text-xs font-medium text-zinc-600">
-                    {compris
-                      ? "Ce module est déjà inclus dans votre abonnement actuel."
-                      : "Vous disposez déjà de cette option sur votre compte."}
+                    Ce module est déjà inclus dans votre abonnement actuel.
                   </p>
                 ) : !offre.soldStandalone ? (
                   getAddonLinePriceId(offre.entitlement) ? (
@@ -302,13 +312,17 @@ export default async function SubscriptionPage() {
                       entitlement={offre.entitlement}
                       nom={offre.name}
                       prixMensuel={prixAffiche(offre.billing) ?? 0}
-                      active={false}
+                      active={ouvert}
                     />
                   ) : (
                     <p className="rounded-xl bg-zinc-100 px-3.5 py-2.5 text-xs text-zinc-600">
                       Option disponible sur demande par email.
                     </p>
                   )
+                ) : ouvert ? (
+                  <p className="rounded-xl bg-zinc-100 px-3.5 py-2.5 text-xs font-medium text-zinc-600">
+                    Vous disposez déjà de cette option sur votre compte.
+                  </p>
                 ) : achetable ? (
                   <AchatAddon
                     entitlement={offre.entitlement}

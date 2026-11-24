@@ -12,10 +12,8 @@ import {
   updateContestPlayer,
 } from "@/actions/pronostics";
 import { coerceAvatarId, DEFAULT_AVATAR, type AvatarId } from "@/lib/avatars";
-import {
-  TurnstileWidget,
-  turnstileClientEnabled,
-} from "@/components/wheel/turnstile-widget";
+import { TurnstileGate } from "@/components/wheel/turnstile-gate";
+import { turnstileClientEnabled } from "@/components/wheel/turnstile-widget";
 import { AvatarPicker } from "@/components/ui/avatar-picker";
 import {
   RankingPicker,
@@ -60,6 +58,7 @@ export function ContestRegisterForm({
   tiebreakerQuestion?: string | null;
 }) {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaNonce, setCaptchaNonce] = useState(0);
   const [avatar, setAvatar] = useState<AvatarId>(DEFAULT_AVATAR);
   const [state, formAction, pending] = useActionState(
     async (
@@ -86,7 +85,14 @@ export function ContestRegisterForm({
       // #82289/#88767 ; e2e/pronostics.spec.ts:34 restait bloqué sur
       // « Inscription… » malgré une réponse serveur 200 en ~50 ms). Même
       // correctif que `progression-season-card.tsx` / `quiz-editor.tsx`.
-      if (result.ok) window.location.reload();
+      if (result.ok) {
+        window.location.reload();
+      } else {
+        // Jeton Turnstile à usage unique déjà consommé : forcer un jeton frais
+        // afin que la seconde soumission après correction ne soit pas rejetée.
+        setCaptchaToken(null);
+        setCaptchaNonce((n) => n + 1);
+      }
       return result;
     },
     null,
@@ -215,9 +221,11 @@ export function ContestRegisterForm({
             complète.
           </span>
         </label>
-        <TurnstileWidget
+        <TurnstileGate
+          key={captchaNonce}
           action="prono-register"
           onToken={setCaptchaToken}
+          conseil="Si le message revient, désactivez votre bloqueur de publicités le temps de vous inscrire, ou signalez-le au comptoir."
         />
         <button
           type="submit"
@@ -885,16 +893,23 @@ export function QuestionCard({
 export function RecoveryRequestForm({ slug }: { slug: string }) {
   const [open, setOpen] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaNonce, setCaptchaNonce] = useState(0);
   const [state, formAction, pending] = useActionState(
     async (
       _prev: Awaited<ReturnType<typeof requestContestRecovery>> | null,
       formData: FormData,
-    ) =>
-      requestContestRecovery({
+    ) => {
+      const result = await requestContestRecovery({
         slug,
         email: String(formData.get("email") ?? ""),
         turnstileToken: captchaToken ?? undefined,
-      }),
+      });
+      if (!result.ok) {
+        setCaptchaToken(null);
+        setCaptchaNonce((n) => n + 1);
+      }
+      return result;
+    },
     null,
   );
 
@@ -940,7 +955,12 @@ export function RecoveryRequestForm({ slug }: { slug: string }) {
       />
       {turnstileClientEnabled() && (
         <div className="mt-3">
-          <TurnstileWidget action="prono-recover" onToken={setCaptchaToken} />
+          <TurnstileGate
+            key={captchaNonce}
+            action="prono-recover"
+            onToken={setCaptchaToken}
+            conseil="Si le message revient, désactivez votre bloqueur de publicités le temps de recevoir le lien."
+          />
         </div>
       )}
       {state?.ok && (
