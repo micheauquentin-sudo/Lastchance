@@ -75,6 +75,7 @@ export function ScratchExperience({
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
   const [error, setError] = useState("");
   const [nextEligibleAt, setNextEligibleAt] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [returningName, setReturningName] = useState<string | null>(null);
   /** La reprise d'un gain a échoué deux fois : on l'avoue sur l'écran bloqué. */
@@ -220,10 +221,12 @@ export function ScratchExperience({
       }
       setError(result.error);
       setNextEligibleAt(result.nextEligibleAt ?? null);
+      setCanRetry(Boolean(result.outcomeUnknown));
       setPhase("blocked");
       return;
     }
 
+    setCanRetry(false);
     setOutcome(result.data);
     setPhase("scratching");
     // Événement générique "tirage effectué" — même nom que pour la roue
@@ -343,6 +346,27 @@ export function ScratchExperience({
               Nous n&apos;avons pas pu vérifier si un lot vous attend déjà —
               retrouvez-le dans vos récompenses.
             </p>
+          )}
+          {canRetry && !nextEligibleAt && (
+            <div className="mt-5">
+              <button
+                type="button"
+                disabled={lancement}
+                onClick={() => {
+                  setCanRetry(false);
+                  setError("");
+                  setPhase("idle");
+                  void handleStart();
+                }}
+                className={
+                  kermesse
+                    ? "k-btn-sm rounded-xl border-2 border-k-ink bg-k-yellow px-5 py-2.5 text-sm font-black text-k-ink disabled:opacity-50"
+                    : "rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-zinc-900 disabled:opacity-50"
+                }
+              >
+                {lancement ? "Nouvel essai…" : "Réessayer"}
+              </button>
+            </div>
           )}
           {/* LA SEULE SORTIE DE CET ÉCRAN. C'est ici qu'un joueur se retrouve
               coincé alors qu'un lot existe à son nom en base : le refus dit

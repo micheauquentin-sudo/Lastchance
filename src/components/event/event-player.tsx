@@ -12,10 +12,8 @@ import { DEFAULT_AVATAR, type AvatarId } from "@/lib/avatars";
 import { AvatarPicker } from "@/components/ui/avatar-picker";
 import type { EventPublicState } from "@/lib/event";
 import type { EventSubmitState } from "@/types/database";
-import {
-  TurnstileWidget,
-  turnstileClientEnabled,
-} from "@/components/wheel/turnstile-widget";
+import { TurnstileGate } from "@/components/wheel/turnstile-gate";
+import { turnstileClientEnabled } from "@/components/wheel/turnstile-widget";
 import {
   computeCountdown,
   eventQuestionTypeMeta,
@@ -191,6 +189,7 @@ function JoinForm({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaNonce, setCaptchaNonce] = useState(0);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -212,6 +211,10 @@ function JoinForm({
         onJoined();
         return;
       }
+      if (protectsPrize) {
+        setCaptchaToken(null);
+        setCaptchaNonce((n) => n + 1);
+      }
       setError(
         result.ok && result.data.state === "invalid_pseudo"
           ? "Choisissez un autre pseudo (1 à 24 caractères)."
@@ -222,6 +225,10 @@ function JoinForm({
             : result.error,
       );
     } catch {
+      if (protectsPrize) {
+        setCaptchaToken(null);
+        setCaptchaNonce((n) => n + 1);
+      }
       setError("Connexion perdue. Vérifiez votre réseau puis réessayez.");
     } finally {
       setPending(false);
@@ -259,9 +266,11 @@ function JoinForm({
       <AvatarPicker value={avatar} onChange={setAvatar} label="Votre avatar" />
 
       {protectsPrize && (
-        <TurnstileWidget
+        <TurnstileGate
+          key={captchaNonce}
           action="event-join"
           onToken={setCaptchaToken}
+          conseil="Si le message revient, désactivez votre bloqueur de publicités le temps de rejoindre la partie, ou signalez-le à l'animateur."
         />
       )}
 

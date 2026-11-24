@@ -157,6 +157,9 @@ export async function postSafeWebhook(params: {
         path: `${url.pathname}${url.search}`,
         servername: url.hostname,
         rejectUnauthorized: true,
+        // Timeout mural strict : `request.setTimeout` ne coupe que l'inactivité
+        // socket, permettant à un récepteur lent de bloquer le worker partagé.
+        signal: AbortSignal.timeout(params.timeoutMs),
         headers: {
           ...params.headers,
           host: url.host,

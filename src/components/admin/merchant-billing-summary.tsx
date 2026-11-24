@@ -7,6 +7,7 @@ const ENTITLEMENT_LABELS = {
   core: "Socle LastChance",
   vitrine: "Vitrine",
   reserver: "Réserver",
+  rendez_vous: "Rendez-vous",
   duo: "Duo Miroir",
   bande: "Portrait de la Bande",
 } as const;

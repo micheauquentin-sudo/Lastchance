@@ -32,6 +32,7 @@ import { signClaimToken } from "@/lib/spin";
 import { verifyTurnstile } from "@/lib/turnstile";
 import {
   isClientReportedSkillGameType,
+  isSecretSkillGameType,
   isSkillGameType,
   parseSkillAttempt,
   parseSkillConfig,
@@ -103,8 +104,12 @@ async function startInner(
     if (!isSkillGameType(gameType)) return { ok: false, error: UNAVAILABLE };
     // La contrainte SQL NOT VALID protège toute nouvelle écriture, mais laisse
     // volontairement les anciennes lignes en place. Ce garde ferme aussi ces
-    // configurations historiques jusqu'à correction par le commerçant.
-    if (isClientReportedSkillGameType(gameType) && wheel.play_limit === "unlimited") {
+    // configurations historiques (jeux client-reportés ET à secret serveur)
+    // jusqu'à correction par le commerçant.
+    if (
+      (isClientReportedSkillGameType(gameType) || isSecretSkillGameType(gameType)) &&
+      wheel.play_limit === "unlimited"
+    ) {
       reportSecurityEvent("skill_unlimited_historique_refuse", { wheel_id: wheel.id });
       return { ok: false, error: UNAVAILABLE };
     }
@@ -147,6 +152,41 @@ async function startInner(
     await pressionIp;
     if (!startAllowed) {
       return { ok: false, error: RATE_LIMITED };
+    }
+
+    // Pré-contrôle de play_limit dès le départ : évite au joueur de résoudre
+    // tout le défi avant d'apprendre au submit qu'il a déjà participé.
+    // Fail-open sur erreur de lecture : perform_atomic_spin reste la garde SQL.
+    if (
+      wheel.play_limit !== "unlimited" &&
+      typeof ctx.admin?.from === "function"
+    ) {
+      const playerKey = hashPlayerKey(deviceKey);
+      const { data: latestSpin } = await ctx.admin
+        .from("spins")
+        .select("created_at")
+        .eq("wheel_id", wheel.id)
+        .eq("player_key", playerKey)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestSpin?.created_at) {
+        const lastMs = new Date(latestSpin.created_at).getTime();
+        const windowMs =
+          wheel.play_limit === "once"
+            ? Number.POSITIVE_INFINITY
+            : wheel.play_limit === "daily"
+              ? 24 * 60 * 60 * 1000
+              : wheel.play_limit === "weekly"
+                ? 7 * 24 * 60 * 60 * 1000
+                : wheel.play_limit === "monthly"
+                  ? 30 * 24 * 60 * 60 * 1000
+                  : 0;
+        if (Number.isFinite(lastMs) && Date.now() - lastMs < windowMs) {
+          return { ok: false, error: "Vous avez déjà participé." };
+        }
+      }
     }
 
     // Relecture de skill_config (service role). loadPlayContext a chargé la roue
@@ -252,7 +292,10 @@ async function submitInner(
     ) {
       return { ok: false, error: UNAVAILABLE };
     }
-    if (isClientReportedSkillGameType(gameType) && wheel.play_limit === "unlimited") {
+    if (
+      (isClientReportedSkillGameType(gameType) || isSecretSkillGameType(gameType)) &&
+      wheel.play_limit === "unlimited"
+    ) {
       reportSecurityEvent("skill_unlimited_historique_refuse", { wheel_id: wheel.id });
       return { ok: false, error: UNAVAILABLE };
     }

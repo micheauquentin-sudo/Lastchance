@@ -245,12 +245,38 @@ function burstConfetti(container) {
       this.meta = GAMES_META[this.gameKey] || GAMES_META.wheel;
       this.isPlaying = false;
       this.isWon = false;
+      this.isDestroyed = false;
       this.rafId = null;
+      this.intervals = [];
+      this.timeouts = [];
+      this.cleanups = [];
       this.wheelRotation = 0;
       this.prize = options.prize || "Un café offert ☕";
       this.code = "";
       this.isDark = Boolean(options.isDark || options.pageTheme === "nuit");
       this.init();
+    }
+
+    addTimeout(fn, ms) {
+      const id = setTimeout(() => {
+        if (this.isDestroyed) return;
+        fn();
+      }, ms);
+      this.timeouts.push(id);
+      return id;
+    }
+
+    addInterval(fn, ms) {
+      const id = setInterval(() => {
+        if (this.isDestroyed) return;
+        fn();
+      }, ms);
+      this.intervals.push(id);
+      return id;
+    }
+
+    addCleanup(fn) {
+      if (typeof fn === "function") this.cleanups.push(fn);
     }
 
     applyButtonStyle(btn) {
@@ -264,6 +290,7 @@ function burstConfetti(container) {
     }
 
     destroy() {
+      this.isDestroyed = true;
       if (this.rafId) {
         cancelAnimationFrame(this.rafId);
         this.rafId = null;
@@ -276,7 +303,16 @@ function burstConfetti(container) {
         this.timeouts.forEach((id) => clearTimeout(id));
         this.timeouts = [];
       }
+      if (Array.isArray(this.cleanups)) {
+        this.cleanups.forEach((fn) => {
+          try {
+            fn();
+          } catch {}
+        });
+        this.cleanups = [];
+      }
       if (this.container) {
+        this.container.classList.remove("is-dark");
         this.container.innerHTML = "";
       }
     }
@@ -288,9 +324,7 @@ function burstConfetti(container) {
     render() {
       this.container.innerHTML = "";
       this.container.classList.add("lc-sim-root");
-      if (this.isDark) {
-        this.container.classList.add("is-dark");
-      }
+      this.container.classList.toggle("is-dark", this.isDark);
 
       const shell = document.createElement("div");
       shell.className = `lc-game-shell lc-game-${this.gameKey} ${this.isDark ? "is-dark-theme" : ""}`;
@@ -465,7 +499,7 @@ function burstConfetti(container) {
 
     /* ── 1. ROUE DE LA FORTUNE ── */
     mountWheel() {
-      const lots = (this.options.lots && this.options.lots.length >= 4)
+      const lots = (this.options.lots && this.options.lots.length >= 2)
         ? this.options.lots
         : [
             { label: "-15 % sur l'addition", color: "#fcca59" },
@@ -550,7 +584,7 @@ function burstConfetti(container) {
         disc.style.transformOrigin = "110px 110px";
         disc.style.transform = `rotate(${this.wheelRotation}deg)`;
 
-        setTimeout(() => {
+        this.addTimeout(() => {
           const finalAngle = (360 - (this.wheelRotation % 360)) % 360;
           const winningIdx = Math.floor(finalAngle / span) % n;
           const chosenLot = lots[winningIdx] || lots[0];
@@ -592,64 +626,83 @@ function burstConfetti(container) {
       canvas.height = h;
 
       const ctx = canvas.getContext("2d");
+      const foilPalettes = {
+        argent: ["#cbd5e1", "#f8fafc", "#94a3b8", "#e2e8f0"],
+        velours: ["#312e81", "#4c1d95", "#1e1b4b", "#5b21b6"],
+        rose: ["#f472b6", "#fbcfe8", "#db2777", "#f9a8d4"],
+        emeraude: ["#10b981", "#a7f3d0", "#059669", "#6ee7b7"],
+      };
+      const foil = foilPalettes[this.options.objectColor] || ["#d4af37", "#fff2a1", "#c59b27", "#f3e08a"];
       const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, "#d4af37");
-      grad.addColorStop(0.3, "#fff2a1");
-      grad.addColorStop(0.7, "#c59b27");
-      grad.addColorStop(1, "#f3e08a");
+      grad.addColorStop(0, foil[0]);
+      grad.addColorStop(0.3, foil[1]);
+      grad.addColorStop(0.7, foil[2]);
+      grad.addColorStop(1, foil[3]);
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
 
       // Motif de grille scintillante
-      ctx.fillStyle = "rgba(0,0,0,0.15)";
+      ctx.fillStyle = this.options.objectColor === "velours" ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.22)";
       ctx.font = "bold 13px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("★ GRATTEZ ICI POUR DÉCOUVRIR LE LOT ★", w / 2, h / 2 + 5);
 
       let isScratching = false;
       let scratchedCount = 0;
+      let revealStarted = false;
+
+      const finishReveal = (delayMs) => {
+        if (revealStarted || this.isWon) return;
+        revealStarted = true;
+        this.isPlaying = true;
+        if (revealBtn) revealBtn.disabled = true;
+        canvas.style.transition = "opacity 0.5s ease";
+        canvas.style.opacity = "0";
+        this.addTimeout(() => {
+          canvas.remove();
+          this.triggerWin(prizeLabel);
+        }, delayMs);
+      };
 
       const scratchPoint = (x, y) => {
+        if (revealStarted || this.isWon) return;
         ctx.globalCompositeOperation = "destination-out";
         ctx.beginPath();
         ctx.arc(x, y, 22, 0, Math.PI * 2);
         ctx.fill();
         scratchedCount++;
 
-        if (scratchedCount > 35 && !this.isWon) {
-          canvas.style.transition = "opacity 0.6s ease";
-          canvas.style.opacity = "0";
-          setTimeout(() => {
-            canvas.remove();
-            this.triggerWin(prizeLabel);
-          }, 400);
+        if (scratchedCount > 35) {
+          finishReveal(400);
         }
       };
 
       const handleMove = (e) => {
-        if (!isScratching) return;
+        if (!isScratching || revealStarted) return;
         const box = canvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         scratchPoint(clientX - box.left, clientY - box.top);
       };
 
+      const stopScratch = () => {
+        isScratching = false;
+      };
+
       canvas.addEventListener("mousedown", (e) => { isScratching = true; handleMove(e); });
-      window.addEventListener("mouseup", () => { isScratching = false; });
+      window.addEventListener("mouseup", stopScratch);
       canvas.addEventListener("mousemove", handleMove);
 
       canvas.addEventListener("touchstart", (e) => { isScratching = true; handleMove(e); e.preventDefault(); }, { passive: false });
-      window.addEventListener("touchend", () => { isScratching = false; });
+      window.addEventListener("touchend", stopScratch);
       canvas.addEventListener("touchmove", (e) => { handleMove(e); e.preventDefault(); }, { passive: false });
 
-      revealBtn.addEventListener("click", () => {
-        canvas.style.transition = "opacity 0.5s ease";
-        canvas.style.opacity = "0";
-        setTimeout(() => {
-          canvas.remove();
-          this.triggerWin(prizeLabel);
-        }, 350);
+      this.addCleanup(() => {
+        window.removeEventListener("mouseup", stopScratch);
+        window.removeEventListener("touchend", stopScratch);
       });
+
+      revealBtn.addEventListener("click", () => finishReveal(350));
     }
 
     /* ── 3. MACHINE À SOUS ── */
@@ -693,13 +746,13 @@ function burstConfetti(container) {
 
         if (arm) {
           arm.classList.add("pulled");
-          setTimeout(() => arm.classList.remove("pulled"), 600);
+          this.addTimeout(() => arm.classList.remove("pulled"), 600);
         }
 
         reels.forEach((r) => r.parentElement.classList.add("spinning"));
 
         const intervals = reels.map((reel) => {
-          return setInterval(() => {
+          return this.addInterval(() => {
             reel.textContent = symbols[Math.floor(Math.random() * symbols.length)];
           }, 70);
         });
@@ -709,14 +762,14 @@ function burstConfetti(container) {
         const winningSym = "💎";
 
         stops.forEach((ms, i) => {
-          setTimeout(() => {
+          this.addTimeout(() => {
             clearInterval(intervals[i]);
             reels[i].parentElement.classList.remove("spinning");
             reels[i].parentElement.classList.add("locked");
             reels[i].textContent = winningSym;
 
             if (i === 2) {
-              setTimeout(() => {
+              this.addTimeout(() => {
                 this.triggerWin(this.prize ? "TRIPLE JACKPOT 💎 · " + this.prize : "TRIPLE JACKPOT 💎💎💎");
               }, 500);
             }
@@ -747,14 +800,14 @@ function burstConfetti(container) {
       const arena = this.stageElement.querySelector("#lc-cups-arena");
 
       // Étape 1 : Révélation initiale du bon gobelet
-      setTimeout(() => {
+      this.addTimeout(() => {
         if (cups[this.winningCup]) cups[this.winningCup].classList.add("lifted");
-        setTimeout(() => {
+        this.addTimeout(() => {
           if (cups[this.winningCup]) cups[this.winningCup].classList.remove("lifted");
           status.textContent = "🌪️ Les gobelets se mélangent à toute allure...";
           arena.classList.add("shuffling");
 
-          setTimeout(() => {
+          this.addTimeout(() => {
             arena.classList.remove("shuffling");
             status.textContent = "👇 Où est la pièce ? Touchez un gobelet !";
             this.canPickCup = true;
@@ -772,13 +825,13 @@ function burstConfetti(container) {
 
           if (isWin) {
             status.textContent = "🎉 TROUVÉ ! La pièce d'or était bien là !";
-            setTimeout(() => {
+            this.addTimeout(() => {
               this.triggerWin(this.prize ? this.prize + " 🪙" : "Bonneteau Gagné · Pièce d'Or");
             }, 600);
           } else {
             if (cups[this.winningCup]) cups[this.winningCup].classList.add("lifted");
             status.textContent = "❌ PERDU ! La pièce était sous l'autre gobelet !";
-            setTimeout(() => {
+            this.addTimeout(() => {
               this.triggerLoss("Mauvais gobelet choisi");
             }, 750);
           }
@@ -889,7 +942,7 @@ function burstConfetti(container) {
         dice.classList.add("rolling");
 
         let ticks = 0;
-        const interval = setInterval(() => {
+        const interval = this.addInterval(() => {
           const randVal = Math.floor(Math.random() * 6) + 1;
           dice.innerHTML = renderDiceSVG(randVal);
           ticks++;
@@ -898,7 +951,7 @@ function burstConfetti(container) {
             dice.classList.remove("rolling");
             dice.classList.add("bounced");
             dice.innerHTML = renderDiceSVG(6);
-            setTimeout(() => {
+            this.addTimeout(() => {
               this.triggerWin(this.prize ? this.prize + " 🎲 (Score 6)" : "Score Parfait 6 au Dé !");
             }, 600);
           }
@@ -907,6 +960,12 @@ function burstConfetti(container) {
 
       btn.addEventListener("click", roll);
       dice.addEventListener("click", roll);
+      dice.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          roll();
+        }
+      });
     }
 
     /* ── 8. MEMORY ── */
@@ -1084,7 +1143,7 @@ function burstConfetti(container) {
           sub.textContent = "Ne touchez pas avant le vert sous peine de faux départ !";
 
           const delay = 1200 + Math.random() * 1600;
-          timerId = setTimeout(() => {
+          timerId = this.addTimeout(() => {
             state = "ready";
             pad.classList.remove("armed");
             pad.classList.add("green");
@@ -1105,7 +1164,7 @@ function burstConfetti(container) {
           light.textContent = "⚡";
           text.textContent = `⚡ ${elapsed} ms ! Réflexe d'éclair !`;
           sub.textContent = "Défi d'adresse validé avec succès.";
-          setTimeout(() => {
+          this.addTimeout(() => {
             this.triggerWin(this.prize ? `${this.prize} ⚡ (${elapsed} ms)` : `Réflexe Record : ${elapsed} ms`);
           }, 600);
         }
@@ -1137,7 +1196,7 @@ function burstConfetti(container) {
       let active = true;
 
       const loop = () => {
-        if (!active) return;
+        if (!active || this.isDestroyed) return;
         pos += dir * speed;
         if (pos >= 96) { pos = 96; dir = -1; }
         if (pos <= 2) { pos = 2; dir = 1; }
@@ -1150,6 +1209,7 @@ function burstConfetti(container) {
         if (!active || this.isWon) return;
         active = false;
         cancelAnimationFrame(this.rafId);
+        this.rafId = null;
         btn.disabled = true;
 
         // Zone cible centrale : entre 39% et 61%
@@ -1159,7 +1219,7 @@ function burstConfetti(container) {
           btn.textContent = "🎯 EN PLEIN DANS LE MILLE !";
           btn.style.backgroundColor = "#d1fae5";
           btn.style.color = "#065f46";
-          setTimeout(() => {
+          this.addTimeout(() => {
             this.triggerWin(this.prize ? this.prize + " 🎯 (Précision 100%)" : "Précision Jauge 100%");
           }, 600);
         } else {
@@ -1167,7 +1227,7 @@ function burstConfetti(container) {
           btn.textContent = "❌ HORS DE LA ZONE VERTE !";
           btn.style.backgroundColor = "#fee2e2";
           btn.style.color = "#b91c1c";
-          setTimeout(() => {
+          this.addTimeout(() => {
             this.triggerLoss("Aiguille stoppée hors de la zone cible");
           }, 750);
         }

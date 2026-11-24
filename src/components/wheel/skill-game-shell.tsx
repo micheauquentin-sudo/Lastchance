@@ -105,6 +105,8 @@ export function SkillGameShell({
   const [challenge, setChallenge] = useState<SkillChallengePublic | null>(null);
   // Jeton du défi en cours (émis par startSkillChallenge, exigé par submit).
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [lastAttempt, setLastAttempt] = useState<SkillAttempt | null>(null);
+  const [pendingWin, setPendingWin] = useState<SkillWin | null>(null);
   const [win, setWin] = useState<SkillWin | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -161,6 +163,7 @@ export function SkillGameShell({
           claimToken: pendingWin.claimToken,
         };
         pendingWinRef.current = repris;
+        setPendingWin(repris);
         if (startedRef.current) return;
         setWin(repris);
         setPhase("won");
@@ -243,6 +246,7 @@ export function SkillGameShell({
     async (attempt: SkillAttempt) => {
       if (!challengeToken || pending) return;
 
+      setLastAttempt(attempt);
       setPending(true);
       setError("");
 
@@ -272,6 +276,7 @@ export function SkillGameShell({
         return;
       }
 
+      setLastAttempt(null);
       const data = result.data;
       // Événement générique « tirage effectué » — même nom que la roue afin de
       // garder un entonnoir d'analytics unique entre toutes les mécaniques.
@@ -280,6 +285,11 @@ export function SkillGameShell({
       }
 
       if (data.state === "blocked") {
+        if (pendingWin) {
+          setWin(pendingWin);
+          setPhase("won");
+          return;
+        }
         setNextEligibleAt(data.nextEligibleAt ?? null);
         setError("Vous avez déjà participé.");
         setPhase("blocked");
@@ -296,7 +306,7 @@ export function SkillGameShell({
       });
       setPhase("won");
     },
-    [slug, challengeToken, pending],
+    [slug, challengeToken, pending, pendingWin],
   );
 
   const idle = gameIdle(gameType);
@@ -339,9 +349,25 @@ export function SkillGameShell({
         <div className="play-in w-full text-center">
           {renderChallenge(challenge, submit, pending)}
           {error && (
-            <p role="alert" aria-live="assertive" className={`mt-4 text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>
-              {error}
-            </p>
+            <div className="mt-4 space-y-3">
+              <p role="alert" aria-live="assertive" className={`text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>
+                {error}
+              </p>
+              {lastAttempt && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => void submit(lastAttempt)}
+                  className={
+                    kermesse
+                      ? "k-btn-sm rounded-xl border-2 border-k-ink bg-k-yellow px-5 py-2.5 text-sm font-black text-k-ink disabled:opacity-50"
+                      : "rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-zinc-900 disabled:opacity-50"
+                  }
+                >
+                  {pending ? "Envoi…" : "Réessayer l'envoi"}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

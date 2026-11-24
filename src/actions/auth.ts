@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -16,8 +17,8 @@ import {
 } from "@/lib/validations/auth";
 import { slugify, randomCode, type ActionResult } from "@/lib/utils";
 import { APP_URL } from "@/lib/env";
-import { reportError } from "@/lib/monitoring";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { reportError, reportSecurityEvent } from "@/lib/monitoring";
+import { clientIpFromHeaders, IP_CLIENT_INCONNUE } from "@/lib/request-ip";
 import { RAPPELS_COOKIE } from "@/lib/rappels";
 import {
   parseStudioModule,
@@ -41,6 +42,25 @@ async function requestIp(): Promise<string> {
   return clientIpFromHeaders(h);
 }
 
+/**
+ * Clé de rate-limit auth : si l'IP client est inconnue (en-tête proxy absent
+ * ou multi-valué), on ne mutualise JAMAIS tous les commerçants dans un seul
+ * seau `unknown` (DoS global) : on bascule sur un hash de l'email ciblé.
+ */
+function authRateLimitKey(scope: string, ip: string, email: string): string {
+  if (ip !== IP_CLIENT_INCONNUE) {
+    return rateLimitBucket(scope, ip);
+  }
+  if (process.env.NODE_ENV === "production") {
+    reportSecurityEvent("auth_client_ip_unknown", { scope });
+  }
+  const emailHash = createHash("sha256")
+    .update(email.trim().toLowerCase())
+    .digest("hex")
+    .slice(0, 32);
+  return rateLimitBucket(scope, "email", emailHash);
+}
+
 export async function signup(
   _prev: ActionResult | null,
   formData: FormData,
@@ -57,7 +77,7 @@ export async function signup(
   const ip = await requestIp();
   if (
     !(await rateLimit(
-      rateLimitBucket("auth:signup", ip),
+      authRateLimitKey("auth:signup", ip, parsed.data.email),
       RATE_LIMITS.authSignup,
       { failClosed: true },
     ))
@@ -98,7 +118,7 @@ export async function requestPasswordReset(
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, error: "Email invalide" };
 
   const ip = await requestIp();
-  if (!(await rateLimit(rateLimitBucket("auth:reset", ip), RATE_LIMITS.authLogin, { failClosed: true }))) {
+  if (!(await rateLimit(authRateLimitKey("auth:reset", ip, email), RATE_LIMITS.authLogin, { failClosed: true }))) {
     return { ok: false, error: "Trop de demandes. Réessayez dans quelques minutes." };
   }
   const supabase = await createClient();
@@ -143,7 +163,7 @@ export async function login(
   const ip = await requestIp();
   if (
     !(await rateLimit(
-      rateLimitBucket("auth:login", ip),
+      authRateLimitKey("auth:login", ip, parsed.data.email),
       RATE_LIMITS.authLogin,
       { failClosed: true },
     ))

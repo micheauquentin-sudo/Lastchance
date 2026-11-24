@@ -357,6 +357,16 @@ const nextConfig: NextConfig = {
         destination: "/abonnements",
         permanent: true,
       },
+      {
+        source: "/animer",
+        destination: "/jeux-pronostics",
+        permanent: true,
+      },
+      {
+        source: "/championnats-evenements",
+        destination: "/jeux-pronostics",
+        permanent: true,
+      },
     ];
   },
 };

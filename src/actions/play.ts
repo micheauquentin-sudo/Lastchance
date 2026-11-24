@@ -1041,6 +1041,8 @@ async function claimPrizeInner(
     const { data: participationRow } = await admin
       .from("participations")
       .select("redeem_expires_at")
+      .eq("id", claimRow.participation_id)
+      .eq("organization_id", spin.organization_id)
       .eq("redeem_code", redeemCode)
       .maybeSingle();
     const redeemExpiresAt =

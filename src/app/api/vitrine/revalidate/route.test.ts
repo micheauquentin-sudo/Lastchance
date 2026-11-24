@@ -5,8 +5,12 @@ const mocks = vi.hoisted(() => ({
   gardeEditeurVitrine: vi.fn(),
   createClient: vi.fn(),
   revaliderVitrinePublique: vi.fn(),
+  revalidatePath: vi.fn(),
 }));
 
+vi.mock("next/cache", () => ({
+  revalidatePath: (...args: unknown[]) => mocks.revalidatePath(...args),
+}));
 vi.mock("@/lib/vitrine-context", () => ({
   gardeEditeurVitrine: () => mocks.gardeEditeurVitrine(),
 }));
@@ -50,6 +54,9 @@ describe("POST /api/vitrine/revalidate", () => {
     const response = await POST();
 
     expect(response.status).toBe(204);
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/dashboard/vitrine");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/vitrine-studio");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/dashboard/vitrine/traductions");
     expect(mocks.revaliderVitrinePublique).toHaveBeenCalledWith(
       { client: "session" },
       "00000000-0000-4000-8000-0000000000a1",

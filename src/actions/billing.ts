@@ -11,9 +11,14 @@ import {
   hasLiveOfferSubscription,
   resolveCheckoutPlan,
   resolveSmsPackCheckout,
+  resolveStripeEntitlements,
   SMS_CREDIT_PURCHASE,
 } from "@/lib/stripe";
-import { ADDONS_LIGNE_ABONNEMENT } from "@/lib/plans";
+import {
+  ADDONS_LIGNE_ABONNEMENT,
+  getPlanTier,
+  tierIncludes,
+} from "@/lib/plans";
 import { MODULE_GRANT_PURCHASE } from "@/lib/octroi-achat";
 import { resolveAddonCheckout } from "@/lib/octroi-checkout";
 import { moduleDepuisEntitlement, termesActivation } from "@/lib/octroi-termes";
@@ -557,6 +562,18 @@ export async function toggleSubscriptionOption(
     const itemExistant = abonnement.itemParPrix.get(priceId);
 
     if (geste === "ajouter") {
+      const droitsExistants = resolveStripeEntitlements(
+        Array.from(abonnement.itemParPrix.keys()),
+      );
+      const dejaInclusDansFormule =
+        droitsExistants.entitlements.includes(offre.entitlement) ||
+        tierIncludes(getPlanTier(organization.plan), offre.entitlement);
+      if (dejaInclusDansFormule && !itemExistant) {
+        return {
+          ok: false,
+          error: `« ${offre.name} » est déjà inclus dans votre formule.`,
+        };
+      }
       if (itemExistant) {
         // Le message dit ce qu'il A, pas ce qui a échoué : même doctrine que
         // le refus de cumul de `createAddonCheckoutSession`.
@@ -590,6 +607,7 @@ export async function toggleSubscriptionOption(
   // l'état affiché cesse d'être celui d'avant le clic.
   revalidatePath("/dashboard/settings/modules");
   revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard/subscription");
   return { ok: true, data: undefined };
 }
 

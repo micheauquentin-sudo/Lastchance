@@ -39,7 +39,7 @@ export const metadata: Metadata = { title: "Personnaliser ma vitrine" };
  * été prise.
  */
 export default async function VitrineStudioPage() {
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user) redirect("/login");
   if (!organization) redirect("/onboarding");
 
@@ -114,6 +114,7 @@ export default async function VitrineStudioPage() {
         tiktok_url: organization.tiktok_url,
       }}
       peutEditer={capacites.canEditDraft}
+      peutGererOrganisation={role === "owner"}
     />
   );
 }

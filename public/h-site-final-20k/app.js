@@ -1056,6 +1056,9 @@
           gameKey: hpMechanic,
           prize: prizeLabel,
           lots: lots,
+          pageTheme: st.pageTheme || (isDark ? "nuit" : "kermesse"),
+          isDark: isDark || (!st.fond && st.pageTheme !== "kermesse"),
+          slotSymbols: st.slotSymbols || drafts.roue.slotSymbols,
           ringColor: st.ringColor || "#211d16",
           pointerColor: st.pointerColor || "#f5793b",
           buttonFrom: st.buttonFrom || "#f5793b",
@@ -1403,7 +1406,7 @@
         vrSlotChoices.forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         if (vrRdvFeedback) {
-          vrRdvFeedback.innerHTML = `📅 Créneau sélectionné : <b>${btn.dataset.slot}</b> (Prêt à ajouter au calendrier du téléphone).`;
+          vrRdvFeedback.innerHTML = `📅 Créneau sélectionné : <b>${escapeHtml(btn.dataset.slot || "")}</b> (Prêt à ajouter au calendrier du téléphone).`;
         }
       });
     });
@@ -1414,7 +1417,7 @@
       const activeSlot = $(".vr-slot-choice.active");
       const slotName = activeSlot ? activeSlot.dataset.slot : "Demain à 14h30";
       if (vrRdvFeedback) {
-        vrRdvFeedback.innerHTML = `✅ <b>Rendez-vous confirmé pour ${slotName} !</b> L'invitation a été ajoutée au calendrier du client.`;
+        vrRdvFeedback.innerHTML = `✅ <b>Rendez-vous confirmé pour ${escapeHtml(slotName || "")} !</b> L'invitation a été ajoutée au calendrier du client.`;
         vrRdvFeedback.style.background = "#ffd93d";
       }
     });
@@ -1510,13 +1513,21 @@
     const GE = window.LC_GAMES_ENGINE;
     if (GE && typeof GE.createSimulator === "function") {
       const prize = jpPrizeText ? jpPrizeText.textContent : "Café offert ☕";
+      const jpIsDark = Boolean(st.fond || st.pageTheme !== "kermesse");
       jpSim = GE.createSimulator(jpPhoneStage, {
         gameKey: currentJpMech,
         prize: prize,
+        pageTheme: st.pageTheme || (jpIsDark ? "nuit" : "kermesse"),
+        isDark: jpIsDark,
+        ringColor: st.ringColor || "#211d16",
+        pointerColor: st.pointerColor || "#f5793b",
+        buttonFrom: st.buttonFrom || "#f5793b",
+        buttonTo: st.buttonTo || "#fcca59",
+        slotSymbols: st.slotSymbols,
         onWin: (res) => {
           if (jpPlayFeedback) {
             jpPlayFeedback.hidden = false;
-            jpPlayFeedback.innerHTML = `🎉 <b>Gain débloqué : ${res.prize}</b> · Code caisse : <b>${res.code}</b>`;
+            jpPlayFeedback.innerHTML = `🎉 <b>Gain débloqué : ${escapeHtml(res.prize)}</b> · Code caisse : <b>${escapeHtml(res.code)}</b>`;
           }
         },
       });

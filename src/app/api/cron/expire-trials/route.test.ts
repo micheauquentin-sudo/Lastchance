@@ -50,7 +50,7 @@ vi.mock("@/lib/monitoring", () => ({
 }));
 vi.mock("@/lib/stripe", () => ({
   getStripe: () => mocks.getStripe(),
-  hasLiveStripeSubscription: (...args: unknown[]) =>
+  hasLiveOfferSubscription: (...args: unknown[]) =>
     mocks.hasLiveStripeSubscription(...args),
 }));
 vi.mock("@/lib/worker-health", () => ({

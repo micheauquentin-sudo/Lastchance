@@ -44,7 +44,7 @@ describe("studio-draft-import", () => {
     expect(studioModuleDestination("roue")).toBe("/dashboard/campaigns");
     expect(studioModuleDestination("pronostics")).toBe("/dashboard/pronostics");
     expect(studioModuleDestination("fidelite")).toBe("/dashboard/loyalty");
-    expect(studioModuleDestination("calendrier")).toBe("/dashboard/calendars");
+    expect(studioModuleDestination("calendrier")).toBe("/dashboard/calendar");
     expect(studioModuleDestination(null)).toBe("/dashboard");
     expect(studioModuleLabel("roue")).toBe("Roue & jeux");
   });

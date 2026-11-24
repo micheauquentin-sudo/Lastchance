@@ -301,11 +301,17 @@ async function initHeroBubbleQr3D() {
   stageHost.setAttribute("aria-hidden", "true");
   btn.appendChild(stageHost);
 
-  const renderer = new WebGLRenderer({
-    alpha: true,
-    antialias: true,
-    powerPreference: "high-performance",
-  });
+  let renderer;
+  try {
+    renderer = new WebGLRenderer({
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance",
+    });
+  } catch {
+    stageHost.remove();
+    return;
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = SRGBColorSpace;
   // NoToneMapping préserve les noirs profonds (#161317) et les couleurs vives de la DA
@@ -1202,19 +1208,25 @@ async function initParcours3DCinema() {
 
     const host = document.createElement("div");
     host.className = "parcours-3d-stage";
-    host.setAttribute("aria-hidden", "true");
     screenFrame.appendChild(host);
 
     const captionPill = document.createElement("div");
     captionPill.className = "parcours-3d-caption";
+    captionPill.setAttribute("aria-live", "polite");
     captionPill.textContent = "1. Le client vise le QR avec son appareil photo";
     host.appendChild(captionPill);
 
-    const renderer = new WebGLRenderer({
-      alpha: true,
-      antialias: true,
-      powerPreference: "high-performance",
-    });
+    let renderer;
+    try {
+      renderer = new WebGLRenderer({
+        alpha: true,
+        antialias: true,
+        powerPreference: "high-performance",
+      });
+    } catch {
+      host.remove();
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = SRGBColorSpace;
     // NoToneMapping = zéro délavage, couleurs Kermesse franches & noirs profonds !
@@ -1223,6 +1235,7 @@ async function initParcours3DCinema() {
 
     const canvas = renderer.domElement;
     canvas.className = "parcours-3d-canvas";
+    canvas.setAttribute("aria-hidden", "true");
     host.appendChild(canvas);
 
     const scene = new Scene();

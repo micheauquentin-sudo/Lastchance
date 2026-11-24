@@ -57,6 +57,7 @@ export function SectionALaUneStudio({
   socialVisible,
   onSocialVisible,
   peutEditer,
+  peutGererOrganisation = peutEditer,
 }: {
   contenus: ContenuVitrineView[];
   liens: VitrineLiensView;
@@ -66,6 +67,7 @@ export function SectionALaUneStudio({
   socialVisible: boolean;
   onSocialVisible: (visible: boolean) => void;
   peutEditer: boolean;
+  peutGererOrganisation?: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -93,7 +95,7 @@ export function SectionALaUneStudio({
           disabled={!peutEditer}
         />
 
-        {peutEditer ? (
+        {peutGererOrganisation ? (
           <SocialLinksForm
             googleReviewUrl={liens.google_review_url ?? ""}
             instagramUrl={liens.instagram_url ?? ""}

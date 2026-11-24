@@ -365,6 +365,8 @@ export default async function VitrinePage({
             couvertureAlt={etat.identite.cover_alt}
             accroche={accrocheHero}
             badgeOuverture={etat.identite.badge_ouverture}
+            horaires={etat.identite.horaires}
+            timezone={etat.identite.timezone}
             allure={allure}
             liens={etat.liens}
             avisGoogle={t.avisGoogle}

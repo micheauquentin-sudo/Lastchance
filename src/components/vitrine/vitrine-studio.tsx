@@ -115,6 +115,7 @@ export function VitrineStudio({
   timezone,
   bilanJeux,
   peutEditer,
+  peutGererOrganisation = peutEditer,
 }: {
   slug: string;
   identiteInitiale: {
@@ -146,6 +147,8 @@ export function VitrineStudio({
    */
   bilanJeux: BilanJeuxVitrine;
   peutEditer: boolean;
+  /** Réglages d'organisation (logo, réseaux/avis) réservés au propriétaire. */
+  peutGererOrganisation?: boolean;
 }) {
   const [etape, setEtape] = useState<EtapeStudio>(() => parseEtapeStudio(null));
   const [exemples, setExemples] = useState(false);
@@ -245,7 +248,7 @@ export function VitrineStudio({
    *    l'aller-retour serait comptée comme déjà enregistrée.
    */
   useEffect(() => {
-    if (!peutEditer) return;
+    if (!peutGererOrganisation) return;
     const reference = liensEnregistres.current;
     const identique =
       (liensEdites.google_review_url ?? "") ===
@@ -278,7 +281,7 @@ export function VitrineStudio({
       });
     }, 1200);
     return () => clearTimeout(t);
-  }, [liensEdites, peutEditer]);
+  }, [liensEdites, peutGererOrganisation]);
 
   const majEtat = (patch: Partial<EtatStudio>) =>
     setEtat((e) => ({ ...e, ...patch }));
@@ -364,6 +367,7 @@ export function VitrineStudio({
           coverPath={identiteInitiale.coverPath}
           coverAlt={identiteInitiale.coverAlt}
           peutEditer={peutEditer}
+          peutGererOrganisation={peutGererOrganisation}
         />
       ) : null}
       {etape === "horaires" ? (
@@ -405,6 +409,7 @@ export function VitrineStudio({
             majEtat({ blocs: basculerBloc(etat.blocs, "social", v) })
           }
           peutEditer={peutEditer}
+          peutGererOrganisation={peutGererOrganisation}
         />
       ) : null}
       {etape === "couleurs" ? (

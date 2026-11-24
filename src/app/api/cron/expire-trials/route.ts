@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { optionalEnv } from "@/lib/env";
 import { recordCounter, reportError, reportSecurityEvent } from "@/lib/monitoring";
-import { getStripe, hasLiveStripeSubscription } from "@/lib/stripe";
+import { getStripe, hasLiveOfferSubscription } from "@/lib/stripe";
 import { TRIAL_EXPIRY_GRACE_DAYS } from "@/lib/subscription";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health";
@@ -170,7 +170,7 @@ export async function GET(request: Request) {
     if (org.stripe_customer_id) {
       let live: boolean;
       try {
-        live = await hasLiveStripeSubscription(stripeClient(), org.stripe_customer_id);
+        live = await hasLiveOfferSubscription(stripeClient(), org.stripe_customer_id);
       } catch (err) {
         // PROPRIÉTÉ 2. On saute, on compte, on réessaiera demain. Une seule
         // remontée après la boucle : une panne Stripe générale produirait

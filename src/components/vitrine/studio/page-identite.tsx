@@ -42,6 +42,7 @@ export function PageIdentiteStudio({
   coverPath,
   coverAlt,
   peutEditer,
+  peutGererOrganisation = peutEditer,
 }: {
   etat: EtatStudio;
   majEtat: (patch: Partial<EtatStudio>) => void;
@@ -49,6 +50,7 @@ export function PageIdentiteStudio({
   coverPath: string | null;
   coverAlt: string | null;
   peutEditer: boolean;
+  peutGererOrganisation?: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -64,7 +66,7 @@ export function PageIdentiteStudio({
             fait échouer l'hydratation, et ce qui tue l'interactivité de TOUT
             l'écran. Le studio place donc son propre formulaire à côté d'eux,
             jamais autour (voir `reglages-formulaires.test.tsx`). */}
-        <LogoChamp logoUrl={logoUrl} peutEditer={peutEditer} />
+        <LogoChamp logoUrl={logoUrl} peutEditer={peutGererOrganisation} />
         <PhotoChamp
           cible="couverture"
           chemin={coverPath}

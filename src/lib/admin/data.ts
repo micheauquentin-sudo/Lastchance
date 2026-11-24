@@ -17,7 +17,13 @@ import type { AdminAuditLog, AdminNote, AdminUser } from "@/types/admin";
 type Db = ReturnType<typeof createAdminBackofficeClient>;
 type FilterQ = ReturnType<ReturnType<Db["from"]>["select"]>;
 
-const PLACE_ENTITLEMENTS = ["vitrine", "reserver", "duo", "bande"] as const;
+const PLACE_ENTITLEMENTS = [
+  "vitrine",
+  "reserver",
+  "rendez_vous",
+  "duo",
+  "bande",
+] as const;
 export type PlaceEntitlement = (typeof PLACE_ENTITLEMENTS)[number];
 export type EntitlementSource = "stripe" | "grant" | "legacy";
 

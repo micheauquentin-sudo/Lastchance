@@ -374,8 +374,8 @@ function drawFidelitePhoneScreen(canvas, mode) {
   ctx.fill();
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffd93d";
-  ctx.font = "900 34px system-ui, -apple-system, sans-serif";
-  ctx.fillText("+ Ajouter à Apple & Google Wallet", w / 2, h - 158);
+  ctx.font = "900 32px system-ui, -apple-system, sans-serif";
+  ctx.fillText("+ Écran d'accueil & Google Wallet", w / 2, h - 158);
 
   // Barre d'accueil iOS
   ctx.fillStyle = "#161317";
@@ -744,11 +744,17 @@ async function mountModernPhoneHero3D({
   stageHost.setAttribute("aria-hidden", "true");
   btn.appendChild(stageHost);
 
-  const renderer = new WebGLRenderer({
-    alpha: true,
-    antialias: true,
-    powerPreference: "high-performance",
-  });
+  let renderer;
+  try {
+    renderer = new WebGLRenderer({
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance",
+    });
+  } catch {
+    stageHost.remove();
+    return;
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = SRGBColorSpace;
   // NoToneMapping = zéro voile blanc, contraste OLED pur !
