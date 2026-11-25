@@ -9,6 +9,12 @@ import {
 } from "@/actions/reserver";
 import { ClaimForm, type ClaimConfig } from "@/components/wheel/claim-form";
 import {
+  LossReboundShell,
+  TensionStage,
+  WinCelebrationShell,
+} from "@/components/motion/game-result-celebration";
+import { prefetchResult3D } from "@/components/motion/result-stage-3d";
+import {
   etatUiPauseChance,
   type ReserverAttenteView,
 } from "@/lib/reserver";
@@ -330,6 +336,16 @@ function CartePauseChance({
           claimConfig={claimConfig}
           slug={attente.sessionId}
         />
+      ) : phase === "en_cours" ? (
+        <div className="mt-4">
+          <TensionStage
+            scene="spinner-seal"
+            label="Tirage de votre Pause Chance…"
+            sublabel="Votre place dans la file ne bouge pas"
+            kermesse
+            compact
+          />
+        </div>
       ) : (
         <>
           {/* « Déjà jouée » N'EST PAS un écran mort : la session garde le tour,
@@ -338,17 +354,15 @@ function CartePauseChance({
               tour déjà tiré, elle n'en accorde pas un second. */}
           <button
             type="button"
-            onClick={() => void jouer()}
-            disabled={phase === "en_cours"}
+            onClick={() => {
+              prefetchResult3D();
+              void jouer();
+            }}
             className="k-btn mt-4 w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-60"
           >
-            {phase === "en_cours"
-              ? "Tirage…"
-              : dejaJouee
-                ? "Revoir mon tour"
-                : "Tenter ma chance"}
+            {dejaJouee ? "Revoir mon tour" : "Tenter ma chance"}
           </button>
-          {dejaJouee && phase !== "en_cours" ? (
+          {dejaJouee ? (
             <p className="mt-2 text-center text-xs font-bold text-k-body">
               Vous l&apos;avez déjà jouée pendant cette attente.
             </p>
@@ -407,50 +421,61 @@ function RevelationPause({
 
   if (resultat.isLosing) {
     return (
-      <Verdict>
-        Pas de gain cette fois. Merci d&apos;avoir joué — et votre place n&apos;a
-        pas bougé.
-      </Verdict>
+      <div className="mt-4">
+        <LossReboundShell
+          scene="clover-miss"
+          kicker="MERCI D'AVOIR JOUÉ !"
+          title="Pas de gain cette fois."
+          kermesse
+          message={
+            <>
+              Merci d&apos;avoir joué — et votre place n&apos;a pas bougé.
+            </>
+          }
+          nextChanceHint="🍀 Vous pourrez retenter votre chance lors de votre prochaine visite !"
+        />
+      </div>
     );
   }
 
   const rejoue = resultat.state === "already_consumed";
 
   return (
-    <div role="status" aria-live="polite" className="mt-4">
+    <div className="mt-4">
       {rejoue ? (
-        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.2em] text-k-body">
+        <p className="mb-2 text-center text-[11px] font-black uppercase tracking-[0.2em] text-k-body">
           Pause Chance déjà jouée
         </p>
       ) : null}
-      <p className="text-xs font-mono font-bold tracking-[0.3em] text-k-green">
-        ✦ GAGNÉ ✦
-      </p>
-      <h3 className="mt-1 text-2xl font-black leading-tight text-k-ink">
-        {resultat.label ?? "Un lot vous attend"}
-      </h3>
-      {resultat.description ? (
-        <p className="mt-1 text-sm font-medium leading-relaxed text-k-body">
-          {resultat.description}
+      <WinCelebrationShell
+        scene="diamond"
+        title={resultat.label ?? "Un lot vous attend"}
+        description={resultat.description}
+        kermesse
+        choregraphieFormulaire={Boolean(
+          !rejoue &&
+            resultat.claimToken &&
+            (claimConfig.collectEmail || claimConfig.collectPhone),
+        )}
+      >
+        {/* LE GAIN EST UN CODE STANDARD, remis en caisse comme tous les autres :
+            aucune économie parallèle, aucun retrait spécial. */}
+        <p className="mb-2 text-sm font-bold leading-relaxed text-k-ink">
+          À retirer au comptoir lors de votre passage.
         </p>
-      ) : null}
-      {/* LE GAIN EST UN CODE STANDARD, remis en caisse comme tous les autres :
-          aucune économie parallèle, aucun retrait spécial. */}
-      <p className="mt-2 text-sm font-bold leading-relaxed text-k-ink">
-        À retirer au comptoir lors de votre passage.
-      </p>
-      {resultat.claimToken ? (
-        <div className="mt-3">
-          <ClaimForm
-            claimToken={resultat.claimToken}
-            config={claimConfig}
-            slug={slug}
-            organizationName={organizationName}
-            organizationId={organizationId}
-            kermesse
-          />
-        </div>
-      ) : null}
+        {resultat.claimToken ? (
+          <div className="mt-2">
+            <ClaimForm
+              claimToken={resultat.claimToken}
+              config={claimConfig}
+              slug={slug}
+              organizationName={organizationName}
+              organizationId={organizationId}
+              kermesse
+            />
+          </div>
+        ) : null}
+      </WinCelebrationShell>
     </div>
   );
 }

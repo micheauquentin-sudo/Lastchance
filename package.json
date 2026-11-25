@@ -47,6 +47,7 @@
     "sharp": "0.35.5",
     "stripe": "22.6.2",
     "tesseract.js": "^7.0.0",
+    "three": "^0.187.0",
     "zod": "^4.6.7"
   },
   "overrides": {
@@ -81,6 +82,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.187.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "happy-dom": "^21.0.4",

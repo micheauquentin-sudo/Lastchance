@@ -26,6 +26,14 @@ import {
 import { Avatar, DEFAULT_AVATAR, type AvatarId } from "@/lib/avatars";
 import { AvatarPicker } from "@/components/ui/avatar-picker";
 import {
+  triggerHaptic,
+  usePrefersReducedMotion,
+} from "@/components/motion/haptics";
+import {
+  prefetchResult3D,
+  ResultStage3D,
+} from "@/components/motion/result-stage-3d";
+import {
   quizGateReprise,
   type QuizAnswerInput,
   type QuizAnswerResult,
@@ -1137,9 +1145,23 @@ function FinishPanel({
         )}
       </div>
 
+      {pending && (
+        <ResultStage3D
+          scene="spinner-seal"
+          phase="tension"
+          compact
+          kermesse
+          className="mt-3"
+        />
+      )}
+
       <button
         type="button"
-        onClick={onFinish}
+        onClick={() => {
+          prefetchResult3D();
+          triggerHaptic("tension");
+          onFinish();
+        }}
         disabled={pending}
         className="k-btn mt-5 w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-60"
       >
@@ -1284,6 +1306,31 @@ function ResultPanel({
 }) {
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
+  // Roulement de score animé (0 → player.score en 680 ms, instantané en reduced-motion).
+  const [animatedScore, setAnimatedScore] = useState(0);
+
+  useEffect(() => {
+    if (reducedMotion || player.score <= 0) return;
+    let rafId = 0;
+    const durationMs = 680;
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setAnimatedScore(Math.round(player.score * eased));
+      if (t < 1) {
+        rafId = requestAnimationFrame(step);
+      } else {
+        triggerHaptic("tick");
+      }
+    };
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  }, [player.score, reducedMotion]);
+
+  const displayedScore =
+    reducedMotion || player.score <= 0 ? player.score : animatedScore;
 
   const copy = async () => {
     if (!reward?.code) return;
@@ -1316,8 +1363,8 @@ function ResultPanel({
         <p className="text-xs font-black uppercase tracking-[0.2em] text-k-body">
           Votre résultat
         </p>
-        <p className="mt-2 font-mono text-5xl font-black tabular-nums text-k-ink">
-          {player.score}
+        <p className="mt-2 font-mono text-5xl font-black tabular-nums text-k-ink lc-title-pop">
+          {displayedScore}
         </p>
         <p className="text-sm font-bold text-k-body">
           point{player.score > 1 ? "s" : ""}
@@ -1393,6 +1440,21 @@ function RewardPanel({
   onCopy: () => void;
   onSpin: (grantToken: string, bundle: QuizSpinBundle) => void;
 }) {
+  const hasWinReward = Boolean(
+    reward?.spinGrantToken || (reward?.code && !reward.redeemedAt),
+  );
+  const missedReward = Boolean(
+    !hasWinReward &&
+      !reward?.outOfStock &&
+      !(pendingDraw && (quiz.rewardMode === "draw" || quiz.rewardMode === "ranking")),
+  );
+
+  useEffect(() => {
+    if (quiz.rewardMode === "none") return;
+    if (hasWinReward) triggerHaptic("win");
+    else if (missedReward) triggerHaptic("loss");
+  }, [quiz.rewardMode, hasWinReward, missedReward]);
+
   if (quiz.rewardMode === "none") return null;
 
   const shareCode = async () => {
@@ -1410,7 +1472,14 @@ function RewardPanel({
   if (reward?.spinGrantToken) {
     return (
       <section className="k-border mb-4 rounded-2xl bg-k-green/15 p-5 text-center shadow-[6px_6px_0_var(--color-k-ink)]">
-        <p className="inline-flex rounded-full border-2 border-k-ink bg-white px-3 py-0.5 text-[11px] font-black uppercase text-k-ink">
+        <ResultStage3D
+          scene="trophy"
+          phase="win"
+          compact
+          kermesse
+          className="mb-1"
+        />
+        <p className="inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3 py-0.5 text-[11px] font-black uppercase text-k-ink shadow-[2px_2px_0_var(--color-k-ink)] lc-badge-pop">
           🎡 Tour de roue offert
         </p>
         <h2 className="mt-3 text-xl font-black leading-tight text-k-ink">
@@ -1441,7 +1510,16 @@ function RewardPanel({
   if (reward?.code) {
     return (
       <section className="k-border mb-4 rounded-2xl bg-k-green/15 p-5 text-center shadow-[6px_6px_0_var(--color-k-ink)]">
-        <p className="inline-flex rounded-full border-2 border-k-ink bg-white px-3 py-0.5 text-[11px] font-black uppercase text-k-ink">
+        {!reward.redeemedAt && (
+          <ResultStage3D
+            scene="trophy"
+            phase="win"
+            compact
+            kermesse
+            className="mb-1"
+          />
+        )}
+        <p className="inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3 py-0.5 text-[11px] font-black uppercase text-k-ink shadow-[2px_2px_0_var(--color-k-ink)] lc-badge-pop">
           🏆 Gagné
           {reward.rank !== null ? ` · ${reward.rank}ᵉ place` : ""}
         </p>
@@ -1541,11 +1619,19 @@ function RewardPanel({
 
   // ── Seuil non atteint ──
   if (quiz.rewardMode === "threshold" && quiz.rewardThreshold !== null) {
+    const ecart = Math.max(0, quiz.rewardThreshold - player.correctCount);
     return (
       <section className="k-border mb-4 rounded-2xl bg-white p-5 text-center shadow-[4px_4px_0_var(--color-k-ink)]">
-        <div aria-hidden className="mb-2 text-3xl">
-          🙂
-        </div>
+        <ResultStage3D
+          scene="clover-miss"
+          phase="loss"
+          compact
+          kermesse
+          className="mb-1"
+        />
+        <p className="mb-1.5 inline-flex rounded-full border-2 border-k-ink bg-k-bg px-3 py-0.5 text-[10px] font-mono font-black uppercase tracking-[0.2em] text-k-orange-text">
+          {ecart <= 2 ? "SI PROCHE !" : "BEL ESSAI !"}
+        </p>
         <h2 className="text-lg font-black text-k-ink">Pas de lot cette fois</h2>
         <p className="mt-2 text-sm font-bold text-k-body">
           Il fallait {quiz.rewardThreshold} bonne
@@ -1563,9 +1649,16 @@ function RewardPanel({
   // ── Tirage passé sans être désigné ──
   return (
     <section className="k-border mb-4 rounded-2xl bg-white p-5 text-center shadow-[4px_4px_0_var(--color-k-ink)]">
-      <div aria-hidden className="mb-2 text-3xl">
-        🙂
-      </div>
+      <ResultStage3D
+        scene="clover-miss"
+        phase="loss"
+        compact
+        kermesse
+        className="mb-1"
+      />
+      <p className="mb-1.5 inline-flex rounded-full border-2 border-k-ink bg-k-bg px-3 py-0.5 text-[10px] font-mono font-black uppercase tracking-[0.2em] text-k-orange-text">
+        À TRÈS VITE !
+      </p>
       <h2 className="text-lg font-black text-k-ink">Pas de lot cette fois</h2>
       <p className="mt-2 text-sm font-bold text-k-body">
         Merci d&apos;avoir joué — à très vite pour le prochain quiz !

@@ -23,6 +23,8 @@ import {
 } from "@/actions/loyalty";
 import { PartageLienJeu } from "@/components/partage/partage-lien-jeu";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { triggerHaptic } from "@/components/motion/haptics";
+import { ResultStage3D } from "@/components/motion/result-stage-3d";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
 import {
   TurnstileWidget,
@@ -836,14 +838,36 @@ function StateBox({
   retryInSeconds?: number | null;
 }) {
   const message = messageForStampState(state, { retryInSeconds });
+  const isStamped = state === "stamped";
+
+  useEffect(() => {
+    if (isStamped) triggerHaptic("stamp");
+  }, [isStamped]);
+
   return (
     <div
       role="status"
       aria-live="polite"
       className={`rounded-xl border-2 px-4 py-3 ${TONE_BOX[message.tone]}`}
     >
-      <p className="text-sm font-black">{message.title}</p>
-      {message.body && <p className="mt-0.5 text-sm font-bold">{message.body}</p>}
+      {isStamped && (
+        <ResultStage3D
+          scene="passport-seal"
+          phase="stamp"
+          badgeText="✓"
+          compact
+          kermesse
+          className="mb-1"
+        />
+      )}
+      <p className={`text-sm font-black ${isStamped ? "text-center lc-badge-pop" : ""}`}>
+        {message.title}
+      </p>
+      {message.body && (
+        <p className={`mt-0.5 text-sm font-bold ${isStamped ? "text-center" : ""}`}>
+          {message.body}
+        </p>
+      )}
     </div>
   );
 }
@@ -1137,11 +1161,25 @@ function RewardCard({
   availability: LoyaltySpinAvailability | null;
   onPlaySpin: (milestoneId: string, grantToken: string, label: string) => void;
 }) {
+  useEffect(() => {
+    if (reward.fresh) triggerHaptic("win");
+  }, [reward.fresh, reward.key]);
+
   return (
     <div className="k-border rounded-2xl bg-white p-5 shadow-[4px_4px_0_var(--color-k-ink)]">
+      {reward.fresh && (
+        <ResultStage3D
+          scene="passport-seal"
+          phase="win"
+          badgeText="★"
+          compact
+          kermesse
+          className="mb-2"
+        />
+      )}
       <div className="mb-2 flex items-center gap-2">
         {reward.fresh && (
-          <span className="rounded-full border-2 border-k-ink bg-k-green/20 px-2 py-0.5 text-[11px] font-black uppercase text-k-ink">
+          <span className="rounded-full border-2 border-k-ink bg-k-yellow px-2.5 py-0.5 text-[11px] font-black uppercase text-k-ink shadow-[2px_2px_0_var(--color-k-ink)] lc-badge-pop">
             Nouveau
           </span>
         )}

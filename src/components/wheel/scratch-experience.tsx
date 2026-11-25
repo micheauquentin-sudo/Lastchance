@@ -16,6 +16,11 @@ import { GameIdleScreen } from "./game-idle-screen";
 import { playText } from "./play-theme";
 import { ScratchCard } from "./scratch-card";
 import { ShareInvite } from "./share-invite";
+import {
+  LossReboundShell,
+  WinCelebrationShell,
+} from "@/components/motion/game-result-celebration";
+import { prefetchResult3D } from "@/components/motion/result-stage-3d";
 import { TurnstileGate } from "./turnstile-gate";
 import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
@@ -229,6 +234,7 @@ export function ScratchExperience({
     setCanRetry(false);
     setOutcome(result.data);
     setPhase("scratching");
+    prefetchResult3D();
     // Événement générique "tirage effectué" — même nom que pour la roue
     // afin de garder un entonnoir d'analytics unique entre mécaniques.
     capturePlayEvent("wheel_spun", { won: !result.data.isLosing });
@@ -298,10 +304,17 @@ export function ScratchExperience({
       )}
 
       {phase === "won" && outcome && (
-        <div role="status" aria-live="polite" className="play-in w-full text-center">
-          <p className={`text-xs font-mono tracking-[0.3em] mb-3 ${kermesse ? "text-k-green font-bold" : "text-emerald-400"}`}>✦ GAGNÉ ✦</p>
-          <h2 className={`text-3xl font-extrabold mb-2 ${playText.title(kermesse)}`}>{outcome.label}</h2>
-          {outcome.description && <p className={`mb-6 ${playText.body(kermesse)}`}>{outcome.description}</p>}
+        <WinCelebrationShell
+          scene="diamond"
+          title={outcome.label}
+          description={outcome.description}
+          accentColor={style.buttonFrom}
+          kermesse={kermesse}
+          choregraphieFormulaire={Boolean(
+            outcome.claimToken &&
+              (claimConfig.collectEmail || claimConfig.collectPhone),
+          )}
+        >
           {outcome.claimToken ? (
             <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} organizationId={organizationId} kermesse={kermesse} />
           ) : (
@@ -313,22 +326,29 @@ export function ScratchExperience({
             <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
           )}
           <DiscoverFooter kermesse={kermesse} />
-        </div>
+        </WinCelebrationShell>
       )}
 
       {phase === "lost" && (
-        <div role="status" aria-live="polite" className="play-in w-full text-center">
-          <div aria-hidden className="text-5xl mb-6">🙁</div>
-          <h2 className={`text-3xl font-extrabold mb-3 ${playText.title(kermesse)}`}>Pas cette fois…</h2>
-          <p className={playText.body(kermesse)}>
-            La carte ne vous a rien donné aujourd&apos;hui. La chance tourne,
-            revenez bientôt !
-          </p>
+        <LossReboundShell
+          scene="clover-miss"
+          kicker="SI PROCHE !"
+          title="Pas cette fois…"
+          accentColor={style.buttonFrom}
+          kermesse={kermesse}
+          message={
+            <>
+              La carte ne vous a rien donné aujourd&apos;hui. La chance tourne,
+              revenez bientôt !
+            </>
+          }
+          nextChanceHint="🍀 Revenez retenter votre chance lors de votre prochaine visite !"
+        >
           {shareEnabled && (
             <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
           )}
           <DiscoverFooter kermesse={kermesse} />
-        </div>
+        </LossReboundShell>
       )}
 
       {phase === "blocked" && (

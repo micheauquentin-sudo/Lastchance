@@ -13,6 +13,11 @@ import {
 import { jetonDeLAdresse } from "@/lib/jeton-de-l-adresse";
 import type { LoyaltyMessageTone } from "./loyalty-passport-state";
 import { messageForOrderStamp } from "./tampon-commande-state";
+import { triggerHaptic } from "@/components/motion/haptics";
+import {
+  prefetchResult3D,
+  ResultStage3D,
+} from "@/components/motion/result-stage-3d";
 
 /**
  * QR DE COMMANDE UNIQUE — écran client (cahier §7).
@@ -227,15 +232,46 @@ export function TamponCommande({
               )}
             </div>
 
+            {etat === "stamped" && (
+              <div className="mb-2 text-center">
+                <ResultStage3D
+                  scene="passport-seal"
+                  phase="stamp"
+                  badgeText="✓"
+                  kermesse
+                  className="mb-1"
+                />
+                <p className="inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3.5 py-0.5 text-[11px] font-mono font-black uppercase tracking-[0.22em] text-k-ink shadow-[2px_2px_0_var(--color-k-ink)] lc-badge-pop">
+                  ✦ TAMPON AJOUTÉ ✦
+                </p>
+              </div>
+            )}
+
             {etat !== "stamped" && (
-              <button
-                type="button"
-                onClick={() => void envoyer(captchaToken, false)}
-                disabled={pending}
-                className="k-btn mt-4 w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-60"
-              >
-                {pending ? "Validation…" : "Ajouter mon tampon"}
-              </button>
+              <>
+                {pending && (
+                  <ResultStage3D
+                    scene="passport-seal"
+                    phase="tension"
+                    badgeText="★"
+                    compact
+                    kermesse
+                    className="mb-2"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    prefetchResult3D();
+                    triggerHaptic("stamp");
+                    void envoyer(captchaToken, false);
+                  }}
+                  disabled={pending}
+                  className="k-btn mt-4 w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-60"
+                >
+                  {pending ? "Validation…" : "Ajouter mon tampon"}
+                </button>
+              </>
             )}
 
             {message && (

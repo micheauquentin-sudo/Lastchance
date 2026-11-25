@@ -21,6 +21,14 @@ import type { CalendarSpinBundle } from "@/lib/calendar-spin-bundle";
 import type { CalendarTheme } from "@/types/database";
 import { CalendarSpinExperience } from "./calendar-spin-experience";
 import {
+  triggerHaptic,
+  usePrefersReducedMotion,
+} from "@/components/motion/haptics";
+import {
+  prefetchResult3D,
+  ResultStage3D,
+} from "@/components/motion/result-stage-3d";
+import {
   calendarBoxState,
   calendarConsolation,
   calendarDaySansGain,
@@ -157,6 +165,7 @@ export function CalendarTracker({
 
   // Case actuellement révélée en modale (ouverture réussie ou re-consultation).
   const [revealed, setRevealed] = useState<CalendarPublicDay | null>(null);
+  const [freshReveal, setFreshReveal] = useState(false);
   // Case en cours d'ouverture (dayIndex) — désactive le clic et affiche l'état.
   const [opening, setOpening] = useState<number | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -236,6 +245,7 @@ export function CalendarTracker({
       if (apercu) return;
       const dayId = dayIds[day.dayIndex];
       if (!dayId || opening !== null) return;
+      prefetchResult3D();
       setOpening(day.dayIndex);
       setOpenError(null);
       try {
@@ -281,6 +291,7 @@ export function CalendarTracker({
                 : prev.completionReward,
           };
         });
+        setFreshReveal(data.state === "opened");
         setRevealed(merged);
       } catch {
         setOpenError("Connexion perdue. Vérifiez votre réseau puis réessayez.");
@@ -394,7 +405,10 @@ export function CalendarTracker({
         tokens={tokens}
         opening={opening}
         onOpen={handleOpen}
-        onReveal={setRevealed}
+        onReveal={(day) => {
+          setFreshReveal(false);
+          setRevealed(day);
+        }}
       />
 
       {openError && (
@@ -413,6 +427,7 @@ export function CalendarTracker({
       {revealed && (
         <RevealDialog
           day={revealed}
+          isFreshOpen={freshReveal}
           progress={progress}
           prochaine={prochaine}
           publicSlug={publicSlug}
@@ -864,6 +879,7 @@ function contentEmoji(day: CalendarPublicDay): string {
 
 function RevealDialog({
   day,
+  isFreshOpen,
   progress,
   prochaine,
   publicSlug,
@@ -874,6 +890,8 @@ function RevealDialog({
   onClose,
 }: {
   day: CalendarPublicDay;
+  /** Vrai uniquement lors d'une nouvelle ouverture (joue la tension 3D). */
+  isFreshOpen: boolean;
   /** Progression d'assiduité — la seule consolation d'une case perdante. */
   progress: CalendarProgress;
   /** Prochaine ouverture, déjà formatée pour le fuseau du navigateur. */
@@ -888,9 +906,27 @@ function RevealDialog({
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  const reducedMotion = usePrefersReducedMotion();
+  const isLosingDay =
+    day.contentType === "content" && calendarDaySansGain(day);
+  const isRewardDay = day.contentType === "lot" || day.contentType === "spin";
+  // Acte 1 (boîte 3D qui tremble 550 ms) → Acte 2 (couvercle 3D s'ouvre + révélation)
+  // uniquement sur une NOUVELLE ouverture ; en re-consultation le contenu est immédiat.
+  const [unboxed, setUnboxed] = useState(() => !isFreshOpen || reducedMotion);
   // Focalisait bien son bouton de fermeture, mais ne piégeait pas Tab : on
   // ressortait dans la page trois tabulations plus loin, modale ouverte.
   const dialogue = useModalFocus<HTMLDivElement>(closeRef);
+
+  useEffect(() => {
+    prefetchResult3D();
+    if (!isFreshOpen || reducedMotion) return;
+    triggerHaptic("tension");
+    const timer = window.setTimeout(() => {
+      setUnboxed(true);
+      triggerHaptic(isLosingDay ? "loss" : "win");
+    }, 550);
+    return () => window.clearTimeout(timer);
+  }, [day.dayIndex, isFreshOpen, isLosingDay, reducedMotion]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -942,6 +978,12 @@ function RevealDialog({
     }
   };
 
+  const boxPhase = !unboxed
+    ? "tension"
+    : isLosingDay
+      ? "loss"
+      : "win";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-k-ink/50 p-4 sm:items-center"
@@ -972,8 +1014,24 @@ function RevealDialog({
           </button>
         </div>
 
-        <div aria-hidden className="mt-2 text-5xl">
-          {contentEmoji(day)}
+        <div
+          onClick={!unboxed ? () => setUnboxed(true) : undefined}
+          className={!unboxed ? "cursor-pointer" : undefined}
+        >
+          <ResultStage3D
+            scene="gift-box"
+            phase={boxPhase}
+            badgeText={String(day.dayIndex)}
+            accentColor={isRewardDay ? "#fcca59" : isLosingDay ? "#34d399" : "#99b7f5"}
+            compact={unboxed}
+            kermesse
+            className="my-1"
+          />
+          {!unboxed && (
+            <p className="mt-1 text-sm font-extrabold text-k-ink lc-tension-pulse">
+              Ouverture de la case {day.dayIndex}…
+            </p>
+          )}
         </div>
 
         {/* Case `content` SANS texte : une vraie issue perdante. Elle affichait
@@ -982,8 +1040,11 @@ function RevealDialog({
             commerçant avait simplement laissé la case vide. On nomme la
             défaite, et on rend à l'assiduité ce qu'elle vaut ici : le seul
             gain restant. */}
-        {day.contentType === "content" && calendarDaySansGain(day) && (
-          <div className="mt-3">
+        {unboxed && day.contentType === "content" && calendarDaySansGain(day) && (
+          <div className="mt-2 lc-form-unfold">
+            <p className="mb-1.5 inline-flex rounded-full border-2 border-k-ink bg-k-bg px-3 py-0.5 text-[10px] font-mono font-black uppercase tracking-[0.2em] text-k-orange-text">
+              C&apos;ÉTAIT TOUT PRÈS !
+            </p>
             <h2 id="calendar-reveal-title" className="text-xl font-black text-k-ink">
               Pas de chance aujourd&apos;hui !
             </h2>
@@ -994,28 +1055,16 @@ function RevealDialog({
             <p className="mt-3 rounded-xl border-2 border-k-ink/20 bg-k-bg px-3 py-2 text-sm font-bold text-k-ink">
               {calendarConsolation(progress)}
             </p>
-            {/* LE RENDEZ-VOUS, ET NON « revenez demain ».
-
-                Une case perdante est le seul écran de ce module où le joueur
-                n'a rien à emporter : c'est donc le seul où le motif de
-                revenir doit être ÉCRIT. « Demain » supposait que les cases
-                s'ouvrent à un jour d'intervalle — c'est le cas courant, pas
-                la règle : la grille se règle en date de départ et en nombre
-                de cases, et rien n'interdit un calendrier hebdomadaire.
-                Nommer le jour ne suppose rien et ne demande rien.
-
-                Absent quand il n'y a plus de case à venir : promettre un
-                rendez-vous qui n'existe pas serait pire que se taire. */}
             {prochaine && (
-              <p className="mt-2 text-sm font-bold text-k-body">
+              <p className="mt-3 rounded-xl border-2 border-k-ink bg-k-yellow/40 px-3 py-2 text-sm font-black text-k-ink shadow-[2px_2px_0_var(--color-k-ink)]">
                 <span aria-hidden>🍀</span> Prochaine case&nbsp;: {prochaine}
               </p>
             )}
           </div>
         )}
 
-        {day.contentType === "content" && !calendarDaySansGain(day) && (
-          <div className="mt-3">
+        {unboxed && day.contentType === "content" && !calendarDaySansGain(day) && (
+          <div className="mt-2 lc-form-unfold">
             <h2 id="calendar-reveal-title" className="text-xl font-black text-k-ink">
               Le mot du jour
             </h2>
@@ -1025,8 +1074,11 @@ function RevealDialog({
           </div>
         )}
 
-        {day.contentType === "lot" && (
-          <div className="mt-3">
+        {unboxed && day.contentType === "lot" && (
+          <div className="mt-2 lc-form-unfold">
+            <p className="mb-1.5 inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3 py-0.5 text-[10px] font-mono font-black uppercase tracking-[0.22em] text-k-ink shadow-[2px_2px_0_var(--color-k-ink)]">
+              ✦ CADEAU DÉBLOQUÉ ✦
+            </p>
             <h2 id="calendar-reveal-title" className="text-xl font-black text-k-ink">
               {day.rewardLabel || "Un cadeau pour vous"}
             </h2>
@@ -1072,8 +1124,11 @@ function RevealDialog({
           </div>
         )}
 
-        {day.contentType === "spin" && (
-          <div className="mt-3">
+        {unboxed && day.contentType === "spin" && (
+          <div className="mt-2 lc-form-unfold">
+            <p className="mb-1.5 inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3 py-0.5 text-[10px] font-mono font-black uppercase tracking-[0.22em] text-k-ink shadow-[2px_2px_0_var(--color-k-ink)]">
+              ✦ TOUR OFFERT ✦
+            </p>
             <h2 id="calendar-reveal-title" className="text-xl font-black text-k-ink">
               {day.rewardLabel || "Un tour de roue offert !"}
             </h2>

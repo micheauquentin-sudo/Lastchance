@@ -22,6 +22,8 @@ import {
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { PartageLienJeu } from "@/components/partage/partage-lien-jeu";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
+import { triggerHaptic } from "@/components/motion/haptics";
+import { ResultStage3D } from "@/components/motion/result-stage-3d";
 import { useEventPoll } from "./use-event-poll";
 import { useServerClockOffset } from "./use-server-clock";
 
@@ -589,6 +591,11 @@ function RevealPlay({
         ? "correct"
         : "wrong";
 
+  useEffect(() => {
+    if (outcome === "correct") triggerHaptic("win");
+    else if (outcome === "wrong") triggerHaptic("loss");
+  }, [outcome, question?.id]);
+
   return (
     <div
       role="status"
@@ -606,26 +613,42 @@ function RevealPlay({
         </>
       ) : outcome === "correct" ? (
         <>
-          <p className="text-4xl" aria-hidden>
-            🎉
+          <ResultStage3D
+            scene="trophy"
+            phase="win"
+            compact
+            kermesse
+            className="mb-1"
+          />
+          <p className="mb-1 inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3 py-0.5 text-[10px] font-mono font-black uppercase tracking-[0.2em] text-k-ink shadow-[2px_2px_0_var(--color-k-ink)] lc-badge-pop">
+            ✦ + POINTS ✦
           </p>
-          <h2 className="mt-2 text-lg font-black text-k-ink">Bonne réponse !</h2>
+          <h2 className="mt-1 text-lg font-black text-k-ink lc-title-pop">
+            Bonne réponse !
+          </h2>
           <p className="mt-1 text-sm font-bold text-k-body">
             Bien joué — vous marquez des points.
           </p>
         </>
       ) : outcome === "wrong" ? (
         <>
-          <p className="text-4xl" aria-hidden>
-            😬
-          </p>
-          <h2 className="mt-2 text-lg font-black text-k-ink">Pas cette fois…</h2>
+          <ResultStage3D
+            scene="clover-miss"
+            phase="loss"
+            compact
+            kermesse
+            className="mb-1"
+          />
+          <h2 className="mt-1 text-lg font-black text-k-ink">Pas cette fois…</h2>
           {correctOption && (
             <p className="mt-1 text-sm font-bold text-k-body">
               La bonne réponse était :{" "}
               <span className="text-k-ink">{correctOption.label}</span>
             </p>
           )}
+          <p className="mt-2 text-xs font-bold text-k-muted">
+            Rien n&apos;est joué — la prochaine question peut tout relancer !
+          </p>
         </>
       ) : (
         <>
@@ -764,9 +787,19 @@ function WinCard({ rank, code }: { rank: number; code: string }) {
     [],
   );
 
+  useEffect(() => {
+    triggerHaptic("win");
+  }, []);
+
   return (
     <div className="k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]">
-      <p className="inline-flex rounded-full border-2 border-k-ink bg-k-green/20 px-3 py-0.5 text-[11px] font-black uppercase text-k-ink">
+      <ResultStage3D
+        scene="trophy"
+        phase="win"
+        kermesse
+        className="mb-1"
+      />
+      <p className="inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3.5 py-0.5 text-[11px] font-black uppercase text-k-ink shadow-[2px_2px_0_var(--color-k-ink)] lc-badge-pop">
         🏆 {rank}ᵉ place — lot gagné
       </p>
       <p className="mt-3 text-[11px] font-mono uppercase tracking-[0.25em] text-k-body">
