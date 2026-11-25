@@ -88,7 +88,7 @@
     "happy-dom": "^21.0.4",
     "local-ssl-proxy": "^2.0.5",
     "pngjs": "^7.0.0",
-    "supabase": "^2.117.0",
+    "supabase": "^3.2.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5",
     "vitest": "4.1.12",
