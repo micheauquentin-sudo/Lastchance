@@ -27,6 +27,12 @@ import { ReferralPanel, type PlayReferral } from "./referral-panel";
 import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 import { CartoonBurst } from "./cartoon-burst";
+import {
+  LossReboundShell,
+  WinCelebrationShell,
+} from "@/components/motion/game-result-celebration";
+import { triggerHaptic } from "@/components/motion/haptics";
+import { prefetchResult3D } from "@/components/motion/result-stage-3d";
 import { fontFamily } from "@/lib/fonts";
 import { gameIdle } from "@/lib/game-idle";
 import { mentionJeu } from "@/lib/limite-participation";
@@ -228,6 +234,8 @@ export function PlayExperience({
 
     spinningRef.current = true;
     setLancement(true);
+    prefetchResult3D();
+    triggerHaptic("tick");
     // Posé AVANT l'aller-retour : la reprise d'un gain en attente ne doit plus
     // pouvoir écraser le tour à partir d'ici.
     startedRef.current = true;
@@ -448,65 +456,73 @@ export function PlayExperience({
       )}
 
       {phase === "won" && outcome && (
-        <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} relative w-full text-center`}>
+        <div className="relative w-full text-center">
           {isCartoon && <CartoonBurst />}
-          <p className={`text-xs font-mono tracking-[0.3em] mb-3 ${kermesse ? "text-k-green font-bold" : "text-emerald-400"}`}>
-            ✦ GAGNÉ ✦
-          </p>
-          <h2 className={`text-3xl font-extrabold mb-2 ${playText.title(kermesse)}`}>
-            {outcome.label}
-          </h2>
-          {outcome.description && (
-            <p className={`mb-6 ${playText.body(kermesse)}`}>{outcome.description}</p>
-          )}
-          {outcome.claimToken ? (
-            <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} organizationId={organizationId} kermesse={kermesse} />
-          ) : (
-            <p className={`text-sm ${playText.body(kermesse)}`}>
-              Présentez cet écran au comptoir pour récupérer votre gain.
-            </p>
-          )}
-          {/* Gain SANS code à réclamer : `ClaimForm` n'est pas rendu, donc
-              `RedeemCodeScreen` — qui porte la proposition sur les sept autres
-              surfaces de la roue — ne l'est pas non plus. */}
-          {!outcome.claimToken && organizationId && (
-            <ProposerPasseport organizationId={organizationId} kermesse={kermesse} />
-          )}
-          {shareEnabled && (
-            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
-          )}
-          {showReferral && referral && (
-            <ReferralPanel
-              slug={slug}
-              referral={referral}
-              proofSpinId={outcome.spinId}
-              segments={segments}
-              claimConfig={claimConfig}
-              organizationName={organizationName}
-              organizationId={organizationId}
-              kermesse={kermesse}
-            />
-          )}
-          {organizationId && (
-            <ProgressionPanel
-              organizationId={organizationId}
-              kermesse={kermesse}
-            />
-          )}
-          <DiscoverFooter kermesse={kermesse} />
+          <WinCelebrationShell
+            scene="trophy"
+            title={outcome.label}
+            description={outcome.description}
+            accentColor={style.buttonFrom}
+            kermesse={kermesse}
+            choregraphieFormulaire={Boolean(
+              outcome.claimToken &&
+                (claimConfig.collectEmail || claimConfig.collectPhone),
+            )}
+          >
+            {outcome.claimToken ? (
+              <ClaimForm claimToken={outcome.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} organizationId={organizationId} kermesse={kermesse} />
+            ) : (
+              <p className={`text-sm ${playText.body(kermesse)}`}>
+                Présentez cet écran au comptoir pour récupérer votre gain.
+              </p>
+            )}
+            {/* Gain SANS code à réclamer : `ClaimForm` n'est pas rendu, donc
+                `RedeemCodeScreen` — qui porte la proposition sur les sept autres
+                surfaces de la roue — ne l'est pas non plus. */}
+            {!outcome.claimToken && organizationId && (
+              <ProposerPasseport organizationId={organizationId} kermesse={kermesse} />
+            )}
+            {shareEnabled && (
+              <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+            )}
+            {showReferral && referral && (
+              <ReferralPanel
+                slug={slug}
+                referral={referral}
+                proofSpinId={outcome.spinId}
+                segments={segments}
+                claimConfig={claimConfig}
+                organizationName={organizationName}
+                organizationId={organizationId}
+                kermesse={kermesse}
+              />
+            )}
+            {organizationId && (
+              <ProgressionPanel
+                organizationId={organizationId}
+                kermesse={kermesse}
+              />
+            )}
+            <DiscoverFooter kermesse={kermesse} />
+          </WinCelebrationShell>
         </div>
       )}
 
       {phase === "lost" && (
-        <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}>
-          <div aria-hidden className="text-5xl mb-6">🙁</div>
-          <h2 className={`text-3xl font-extrabold mb-3 ${playText.title(kermesse)}`}>
-            Pas cette fois…
-          </h2>
-          <p className={playText.body(kermesse)}>
-            La roue ne vous a rien donné aujourd&apos;hui. La chance tourne,
-            revenez bientôt !
-          </p>
+        <LossReboundShell
+          scene="clover-miss"
+          kicker="C'ÉTAIT À UN CRAN !"
+          title="Pas cette fois…"
+          accentColor={style.buttonFrom}
+          kermesse={kermesse}
+          message={
+            <>
+              La roue ne vous a rien donné aujourd&apos;hui. La chance tourne,
+              revenez bientôt !
+            </>
+          }
+          nextChanceHint="✨ Votre prochaine tentative pourrait être la bonne — gardez le lien ou avancez vos missions !"
+        >
           {organizationId && (
             <ProposerPasseport organizationId={organizationId} kermesse={kermesse} />
           )}
@@ -532,7 +548,7 @@ export function PlayExperience({
             />
           )}
           <DiscoverFooter kermesse={kermesse} />
-        </div>
+        </LossReboundShell>
       )}
 
       {phase === "blocked" && (

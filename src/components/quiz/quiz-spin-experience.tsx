@@ -5,6 +5,12 @@ import { consumeQuizSpin, type QuizSpinOutcome } from "@/actions/quiz";
 import { ClaimForm, type ClaimConfig } from "@/components/wheel/claim-form";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
 import { SPIN_WHEEL_STYLE } from "@/components/wheel/spin-wheel-style";
+import {
+  LossReboundShell,
+  WinCelebrationShell,
+} from "@/components/motion/game-result-celebration";
+import { triggerHaptic } from "@/components/motion/haptics";
+import { prefetchResult3D } from "@/components/motion/result-stage-3d";
 
 /**
  * Tour de roue offert par un quiz. Réutilise l'animation de la roue publique
@@ -169,7 +175,11 @@ export function QuizSpinExperience({
 
           <button
             type="button"
-            onClick={launch}
+            onClick={() => {
+              prefetchResult3D();
+              triggerHaptic("tick");
+              void launch();
+            }}
             disabled={phase === "spinning"}
             aria-label={phase === "spinning" ? "La roue tourne" : "Lancer la roue offerte"}
             className="k-btn mt-8 w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-70"
@@ -183,47 +193,53 @@ export function QuizSpinExperience({
       )}
 
       {phase === "won" && outcome && (
-        <div role="status" aria-live="polite" className="mt-6">
-          <p className="mb-3 text-xs font-mono font-bold tracking-[0.3em] text-k-green">
-            ✦ GAGNÉ ✦
-          </p>
-          <h2 className="mb-2 text-3xl font-black text-k-ink">
-            {outcome.label ?? "Un lot vous attend"}
-          </h2>
-          {outcome.description && (
-            <p className="mb-6 text-k-body">{outcome.description}</p>
-          )}
-          {outcome.claimToken ? (
-            <ClaimForm
-              claimToken={outcome.claimToken}
-              config={claimConfig}
-              slug={quizId}
-              organizationName={organizationName}
-              organizationId={organizationId}
-              kermesse
-            />
-          ) : (
-            <p className="text-sm text-k-body">
-              Présentez cet écran au comptoir pour récupérer votre gain.
-            </p>
-          )}
-          <BackButton onExit={onExit} />
+        <div className="mt-4">
+          <WinCelebrationShell
+            scene="trophy"
+            title={outcome.label ?? "Un lot vous attend"}
+            description={outcome.description}
+            kermesse
+            choregraphieFormulaire={Boolean(
+              outcome.claimToken &&
+                (claimConfig.collectEmail || claimConfig.collectPhone),
+            )}
+          >
+            {outcome.claimToken ? (
+              <ClaimForm
+                claimToken={outcome.claimToken}
+                config={claimConfig}
+                slug={quizId}
+                organizationName={organizationName}
+                organizationId={organizationId}
+                kermesse
+              />
+            ) : (
+              <p className="text-sm text-k-body">
+                Présentez cet écran au comptoir pour récupérer votre gain.
+              </p>
+            )}
+            <BackButton onExit={onExit} />
+          </WinCelebrationShell>
         </div>
       )}
 
       {phase === "lost" && (
-        <div role="status" aria-live="polite" className="mt-6">
-          <div aria-hidden className="mb-6 text-5xl">
-            🎲
-          </div>
-          <h2 className="mb-3 text-3xl font-black text-k-ink">
-            Pas de gain cette fois…
-          </h2>
-          <p className="text-k-body">
-            La roue ne vous a rien donné — merci d&apos;avoir joué, et bravo pour
-            votre score !
-          </p>
-          <BackButton onExit={onExit} />
+        <div className="mt-4">
+          <LossReboundShell
+            scene="clover-miss"
+            kicker="BRAVO POUR VOTRE SCORE !"
+            title="Pas de gain cette fois…"
+            kermesse
+            message={
+              <>
+                La roue ne vous a rien donné — merci d&apos;avoir joué, et bravo pour
+                votre score !
+              </>
+            }
+            nextChanceHint="🍀 Revenez défier le prochain quiz pour tenter de nouveau la roue !"
+          >
+            <BackButton onExit={onExit} />
+          </LossReboundShell>
         </div>
       )}
 

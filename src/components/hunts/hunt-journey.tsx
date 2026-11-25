@@ -2,10 +2,16 @@
 
 import {
   useActionState,
+  useEffect,
   useState,
   useSyncExternalStore,
   useTransition,
 } from "react";
+import { triggerHaptic } from "@/components/motion/haptics";
+import {
+  prefetchResult3D,
+  ResultStage3D,
+} from "@/components/motion/result-stage-3d";
 import { claimHuntReward, stampHuntStep } from "@/actions/hunts";
 import { jetonDeLAdresse } from "@/lib/jeton-de-l-adresse";
 import type { HuntScanResult } from "@/lib/hunts";
@@ -355,14 +361,39 @@ function StateBox({
   expectedPosition?: number | null;
 }) {
   const message = messageForScanState(state, { retryInSeconds, expectedPosition });
+  const isStamped = state === "scanned";
+
+  useEffect(() => {
+    if (isStamped) {
+      prefetchResult3D();
+      triggerHaptic("stamp");
+    }
+  }, [isStamped]);
+
   return (
     <div
       role="status"
       aria-live="polite"
       className={`rounded-xl border-2 px-4 py-3 ${TONE_BOX[message.tone]}`}
     >
-      <p className="text-sm font-black">{message.title}</p>
-      {message.body && <p className="mt-0.5 text-sm font-bold">{message.body}</p>}
+      {isStamped && (
+        <ResultStage3D
+          scene="passport-seal"
+          phase="stamp"
+          badgeText="✓"
+          compact
+          kermesse
+          className="mb-1"
+        />
+      )}
+      <p className={`text-sm font-black ${isStamped ? "text-center lc-badge-pop" : ""}`}>
+        {message.title}
+      </p>
+      {message.body && (
+        <p className={`mt-0.5 text-sm font-bold ${isStamped ? "text-center" : ""}`}>
+          {message.body}
+        </p>
+      )}
     </div>
   );
 }
@@ -389,6 +420,10 @@ function CompletionCard({
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    triggerHaptic("win");
+  }, []);
+
   const copy = async () => {
     if (!code) return;
     try {
@@ -414,10 +449,16 @@ function CompletionCard({
   return (
     <section className="mt-6 space-y-4">
       <div className="k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]">
-        <div className="text-4xl" aria-hidden>
-          🏆
-        </div>
-        <h2 className="mt-2 text-xl font-black text-k-ink">
+        <ResultStage3D
+          scene="trophy"
+          phase="win"
+          kermesse
+          className="mb-1"
+        />
+        <p className="mb-2 inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3.5 py-0.5 text-[11px] font-mono font-black uppercase tracking-[0.22em] text-k-ink shadow-[2px_2px_0_var(--color-k-ink)] lc-badge-pop">
+          ✦ CHASSE RÉUSSIE ✦
+        </p>
+        <h2 className="mt-1 text-xl font-black text-k-ink lc-title-pop">
           Chasse au QR terminée — bravo !
         </h2>
 

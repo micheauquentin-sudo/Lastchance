@@ -11,6 +11,12 @@ import { DiscoverFooter } from "./discover-footer";
 import { GameIdleScreen } from "./game-idle-screen";
 import { playText } from "./play-theme";
 import { ShareInvite } from "./share-invite";
+import {
+  LossReboundShell,
+  TensionStage,
+  WinCelebrationShell,
+} from "@/components/motion/game-result-celebration";
+import { prefetchResult3D } from "@/components/motion/result-stage-3d";
 import { TurnstileGate } from "./turnstile-gate";
 import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
@@ -236,6 +242,7 @@ export function SkillGameShell({
     setChallenge(result.data.challenge);
     setError("");
     setPhase("challenge");
+    prefetchResult3D();
   }
 
   // Soumission de la tentative — construite par le composant de défi. Garde
@@ -347,7 +354,18 @@ export function SkillGameShell({
 
       {phase === "challenge" && challenge && (
         <div className="play-in w-full text-center">
-          {renderChallenge(challenge, submit, pending)}
+          {pending ? (
+            <TensionStage
+              scene="spinner-seal"
+              label="Vérification de votre coup…"
+              sublabel="Le verdict tombe dans un instant"
+              accentColor={style.buttonFrom}
+              kermesse={kermesse}
+              compact
+            />
+          ) : (
+            renderChallenge(challenge, submit, pending)
+          )}
           {error && (
             <div className="mt-4 space-y-3">
               <p role="alert" aria-live="assertive" className={`text-sm ${kermesse ? "text-red-600 font-semibold" : "text-red-400"}`}>
@@ -373,10 +391,17 @@ export function SkillGameShell({
       )}
 
       {phase === "won" && win && (
-        <div role="status" aria-live="polite" className="play-in w-full text-center">
-          <p className={`text-xs font-mono tracking-[0.3em] mb-3 ${kermesse ? "text-k-green font-bold" : "text-emerald-400"}`}>✦ GAGNÉ ✦</p>
-          <h2 className={`text-3xl font-extrabold mb-2 ${playText.title(kermesse)}`}>{win.label}</h2>
-          {win.description && <p className={`mb-6 ${playText.body(kermesse)}`}>{win.description}</p>}
+        <WinCelebrationShell
+          scene="trophy"
+          title={win.label ?? "Défi relevé !"}
+          description={win.description}
+          accentColor={style.buttonFrom}
+          kermesse={kermesse}
+          choregraphieFormulaire={Boolean(
+            win.claimToken &&
+              (claimConfig.collectEmail || claimConfig.collectPhone),
+          )}
+        >
           {win.claimToken ? (
             <ClaimForm claimToken={win.claimToken} config={claimConfig} slug={slug} organizationName={organizationName} organizationId={organizationId} kermesse={kermesse} />
           ) : (
@@ -388,21 +413,28 @@ export function SkillGameShell({
             <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
           )}
           <DiscoverFooter kermesse={kermesse} />
-        </div>
+        </WinCelebrationShell>
       )}
 
       {phase === "lost" && (
-        <div role="status" aria-live="polite" className="play-in w-full text-center">
-          <div aria-hidden className="text-5xl mb-6">🙁</div>
-          <h2 className={`text-3xl font-extrabold mb-3 ${playText.title(kermesse)}`}>Pas cette fois…</h2>
-          <p className={playText.body(kermesse)}>
-            Le défi n&apos;est pas passé cette fois. La chance tourne, revenez bientôt !
-          </p>
+        <LossReboundShell
+          scene="clover-miss"
+          kicker="BEL ESSAI !"
+          title="Pas cette fois…"
+          accentColor={style.buttonFrom}
+          kermesse={kermesse}
+          message={
+            <>
+              Le défi n&apos;est pas passé cette fois. La chance tourne, revenez bientôt !
+            </>
+          }
+          nextChanceHint="🎯 Maintenant que vous connaissez la mécanique, la prochaine sera la bonne !"
+        >
           {shareEnabled && (
             <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
           )}
           <DiscoverFooter kermesse={kermesse} />
-        </div>
+        </LossReboundShell>
       )}
 
       {phase === "blocked" && (

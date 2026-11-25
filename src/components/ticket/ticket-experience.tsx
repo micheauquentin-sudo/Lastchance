@@ -1,7 +1,15 @@
 "use client";
 
-import { useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { tirerTicketOr } from "@/actions/ticket-or";
+import {
+  triggerHaptic,
+  usePrefersReducedMotion,
+} from "@/components/motion/haptics";
+import {
+  prefetchResult3D,
+  ResultStage3D,
+} from "@/components/motion/result-stage-3d";
 import {
   cleMemoireTicket,
   lireOuCreerNonceTicket,
@@ -155,15 +163,20 @@ export function TicketExperience({
   const [reseauCoupe, setReseauCoupe] = useState(false);
   const [securisationImpossible, setSecurisationImpossible] = useState(false);
   const [enCours, demarrer] = useTransition();
+  const reducedMotion = usePrefersReducedMotion();
 
   function tirer() {
+    prefetchResult3D();
     if (apercu) {
       // NI APPEL, NI MÉMOIRE. Le résultat est celui que les lots réglés
       // produiraient : un gain d'exemple, ou le refus `sans_lot` — le même
       // que la base rendrait si rien n'était tirable.
+      triggerHaptic(exemple ? "win" : "loss");
       setResultat(exemple ?? { state: "sans_lot" });
       return;
     }
+    triggerHaptic("tension");
+    const debut = Date.now();
     demarrer(async () => {
       let nonce: string;
       try {
@@ -186,12 +199,20 @@ export function TicketExperience({
         setReseauCoupe(true);
         return;
       }
+      if (!reducedMotion) {
+        const restant = Math.max(0, 650 - (Date.now() - debut));
+        if (restant > 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, restant));
+        }
+      }
       setReseauCoupe(false);
       if (etat.state === "ok") {
+        triggerHaptic("win");
         // Le secret n'est effacé qu'une fois le résultat complet relu depuis le
         // stockage. S'il ne peut pas l'être, il reste disponible pour la reprise.
         if (memoriser(code, etat)) oublierNonceTicket(code);
       } else {
+        triggerHaptic("loss");
         // Ces états n'ont rien attribué lors de cet appel, ou indiquent qu'un
         // autre secret a déjà tiré le ticket : cette tentative est terminée.
         oublierNonceTicket(code);
@@ -233,14 +254,20 @@ export function TicketExperience({
   if (!resultat) {
     return (
       <div className="text-center">
-        <p className="text-5xl" aria-hidden>
-          🎟️
-        </p>
-        <h1 className="mt-3 text-2xl font-black text-k-ink">
-          Votre Ticket d&apos;Or
+        <ResultStage3D
+          scene="golden-ticket"
+          phase={enCours ? "tension" : "idle"}
+          badgeText="★ OR ★"
+          kermesse
+          className="mb-1"
+        />
+        <h1 className="mt-1 text-2xl font-black text-k-ink">
+          {enCours ? "Ouverture de votre ticket…" : "Votre Ticket d'Or"}
         </h1>
         <p className="mt-2 text-sm text-k-body">
-          Un tirage, une seule fois. Ce que vous obtenez se retire au comptoir.
+          {enCours
+            ? "Le lot se révèle dans un instant…"
+            : "Un tirage, une seule fois. Ce que vous obtenez se retire au comptoir."}
         </p>
         <button
           type="button"
@@ -268,9 +295,14 @@ export function TicketExperience({
 
   return (
     <div className="text-center">
-      <p className="text-4xl" aria-hidden>
-        🙂
-      </p>
+      <ResultStage3D
+        scene="golden-ticket"
+        phase="loss"
+        badgeText="•••"
+        compact
+        kermesse
+        className="mb-2"
+      />
       <p className="mt-3 text-sm font-semibold text-k-ink">
         {PHRASES_TIRAGE[resultat.state]}
       </p>
@@ -326,12 +358,23 @@ function GainPerime({ tirage }: { tirage: TirageGagnant }) {
 }
 
 function Gain({ tirage }: { tirage: TirageGagnant }) {
+  useEffect(() => {
+    triggerHaptic("stamp");
+  }, []);
+
   return (
     <div className="text-center">
-      <p className="text-5xl" aria-hidden>
-        🎉
+      <ResultStage3D
+        scene="golden-ticket"
+        phase="win"
+        badgeText="★ GAGNÉ ★"
+        kermesse
+        className="mb-1"
+      />
+      <p className="mb-2 inline-flex rounded-full border-2 border-k-ink bg-k-yellow px-3.5 py-0.5 text-[11px] font-mono font-black uppercase tracking-[0.24em] text-k-ink shadow-[2px_2px_0_var(--color-k-ink)] lc-badge-pop">
+        ✦ TICKET GAGNANT ✦
       </p>
-      <h1 className="mt-3 text-2xl font-black text-k-ink">{tirage.lot}</h1>
+      <h1 className="mt-1 text-2xl font-black text-k-ink lc-title-pop">{tirage.lot}</h1>
       <p className="mt-2 text-sm text-k-body">
         Montrez ce code au comptoir pour le retirer.
       </p>

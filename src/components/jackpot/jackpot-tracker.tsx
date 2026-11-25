@@ -21,6 +21,8 @@ import type { JackpotGaugeView } from "@/lib/jackpot-context";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { CheckinTokenReveal } from "./checkin-token-reveal";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
+import { triggerHaptic } from "@/components/motion/haptics";
+import { ResultStage3D } from "@/components/motion/result-stage-3d";
 import type { JackpotDrawMode, JackpotValidationMode } from "@/types/database";
 import {
   TurnstileWidget,
@@ -804,9 +806,22 @@ function WinCard({
     }
   };
 
+  useEffect(() => {
+    if (!win.redeemedAt) triggerHaptic("win");
+  }, [win.id, win.redeemedAt]);
+
   return (
     <div className="k-border rounded-2xl bg-white p-5 text-center shadow-[6px_6px_0_var(--color-k-ink)]">
-      <p className="inline-flex rounded-full border-2 border-k-ink bg-k-green/20 px-3 py-0.5 text-[11px] font-black uppercase text-k-ink">
+      {!win.redeemedAt && (
+        <ResultStage3D
+          scene="diamond"
+          phase="win"
+          compact
+          kermesse
+          className="mb-1"
+        />
+      )}
+      <p className="inline-flex rounded-full border-2 border-k-ink bg-k-green/20 px-3 py-0.5 text-[11px] font-black uppercase text-k-ink lc-badge-pop">
         🎉 Jackpot remporté
       </p>
 

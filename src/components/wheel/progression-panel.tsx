@@ -13,6 +13,11 @@ import {
   openProgressionChest,
 } from "@/actions/meta-progression";
 import { PROGRESSION_BADGE_GLYPHS } from "@/components/progression/progression-labels";
+import { triggerHaptic } from "@/components/motion/haptics";
+import {
+  prefetchResult3D,
+  ResultStage3D,
+} from "@/components/motion/result-stage-3d";
 import type {
   ArchivedProgressionSeason,
   PlayerProgressionSnapshot,
@@ -238,7 +243,10 @@ export function ProgressionPanel({
     busyRef.current = true;
     setOpeningId(chestId);
     setFeedback(null);
+    prefetchResult3D();
+    triggerHaptic("tension");
     const requestId = newRequestId();
+    const startedAt = Date.now();
 
     void (async () => {
       try {
@@ -247,12 +255,21 @@ export function ProgressionPanel({
           chestId,
           requestId,
         });
+        // Courte montée de tension 3D (650 ms min. hors reduced-motion) pour
+        // sentir le coffre trembler avant que son couvercle ne saute.
+        if (!reducedMotion) {
+          const restant = Math.max(0, 650 - (Date.now() - startedAt));
+          if (restant > 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, restant));
+          }
+        }
         if (!result.ok) {
           setFeedback({ kind: "message", text: result.error });
           return;
         }
         const opening = result.data;
         if (opening.state === "opened" && opening.item) {
+          triggerHaptic("win");
           setFeedback(
             opening.idempotent
               ? { kind: "replay", item: opening.item }
@@ -332,23 +349,56 @@ export function ProgressionPanel({
 
       {active && (
         <div role="status" aria-live="polite" className="mt-3">
-          {feedback?.kind === "won" && (
-            <p
-              className={`play-in rounded-xl px-3 py-2 text-sm font-bold ${t.chip}`}
+          {openingId && (
+            <div
+              className={`rounded-2xl p-4 text-center ${
+                kermesse
+                  ? "border-2 border-k-ink bg-k-bg shadow-[3px_3px_0_var(--color-k-ink)]"
+                  : "border border-amber-400/35 bg-white/5"
+              }`}
             >
-              <span aria-hidden>🎉</span> Nouvel objet : {feedback.item.name}
-              {feedback.item.description
-                ? ` — ${feedback.item.description}`
-                : ""}
-            </p>
+              <ResultStage3D
+                scene="chest"
+                phase="tension"
+                rarity="epic"
+                compact
+                kermesse={kermesse}
+              />
+              <p className={`mt-1 text-sm font-black lc-tension-pulse ${t.heading}`}>
+                Ouverture du coffre…
+              </p>
+            </div>
           )}
-          {feedback?.kind === "replay" && (
+          {!openingId && feedback?.kind === "won" && (
+            <div
+              className={`rounded-2xl p-4 text-center lc-form-unfold ${t.chip}`}
+            >
+              <ResultStage3D
+                scene="chest"
+                phase="win"
+                rarity="epic"
+                compact
+                kermesse={kermesse}
+                className="mb-1"
+              />
+              <p className="text-[11px] font-mono font-black uppercase tracking-[0.22em]">
+                ✦ TRÉSOR DÉBLOQUÉ ✦
+              </p>
+              <p className="mt-1 text-base font-black">
+                <span aria-hidden>🎉</span> Nouvel objet : {feedback.item.name}
+                {feedback.item.description
+                  ? ` — ${feedback.item.description}`
+                  : ""}
+              </p>
+            </div>
+          )}
+          {!openingId && feedback?.kind === "replay" && (
             <p className={`rounded-xl px-3 py-2 text-sm font-bold ${t.chip}`}>
               Coffre déjà ouvert : {feedback.item.name} est dans votre
               collection.
             </p>
           )}
-          {feedback?.kind === "message" && (
+          {!openingId && feedback?.kind === "message" && (
             <p
               className={`rounded-xl border px-3 py-2 text-sm font-bold ${t.note}`}
             >

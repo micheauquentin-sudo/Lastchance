@@ -1026,6 +1026,129 @@ details.k-card[open] {
   will-change: transform;
 }
 
+/* ── Chorégraphie de révélation & célébration 3D (zéro opacité < 1 sur texte) ── */
+@keyframes lc-stage-pop {
+  0% {
+    transform: translateY(14px) scale(0.76) rotate(-4deg);
+  }
+  65% {
+    transform: translateY(-4px) scale(1.06) rotate(2deg);
+  }
+  100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+.lc-stage-pop {
+  animation: lc-stage-pop 0.52s cubic-bezier(0.22, 1.35, 0.36, 1) both;
+}
+
+@keyframes lc-badge-pop {
+  0% {
+    transform: translateY(8px) scale(0.86);
+  }
+  70% {
+    transform: translateY(-2px) scale(1.05);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.lc-badge-pop {
+  animation: lc-badge-pop 0.42s cubic-bezier(0.22, 1.35, 0.36, 1) both;
+}
+
+@keyframes lc-title-pop {
+  0% {
+    transform: translateY(10px) scale(0.95);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.lc-title-pop {
+  animation: lc-title-pop 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes lc-form-unfold {
+  0% {
+    transform: translateY(16px) scale(0.985);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.lc-form-unfold {
+  animation: lc-form-unfold 0.44s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes lc-tension-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.045);
+  }
+}
+
+.lc-tension-pulse {
+  animation: lc-tension-pulse 0.85s ease-in-out infinite;
+}
+
+@keyframes lc-miss-tilt {
+  0% {
+    transform: translateY(10px) rotate(0deg) scale(0.88);
+  }
+  45% {
+    transform: translateY(-3px) rotate(-9deg) scale(1.04);
+  }
+  75% {
+    transform: translateY(0) rotate(4deg) scale(0.99);
+  }
+  100% {
+    transform: translateY(0) rotate(-3deg) scale(1);
+  }
+}
+
+.lc-miss-tilt {
+  animation: lc-miss-tilt 0.65s cubic-bezier(0.22, 1.25, 0.36, 1) both;
+}
+
+@keyframes lc-stamp-slam {
+  0% {
+    transform: scale(1.85) rotate(-14deg);
+  }
+  65% {
+    transform: scale(0.92) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(-5deg);
+  }
+}
+
+.lc-stamp-slam {
+  animation: lc-stamp-slam 0.36s cubic-bezier(0.22, 1.35, 0.36, 1) both;
+}
+
+@keyframes lc-celebration-progress {
+  from {
+    transform: scaleX(0);
+    transform-origin: left center;
+  }
+  to {
+    transform: scaleX(1);
+    transform-origin: left center;
+  }
+}
+
+.lc-celebration-progress {
+  animation: lc-celebration-progress 1.3s linear forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
   .play-in,
@@ -1054,7 +1177,15 @@ details.k-card[open] {
   .animate-burst-circle-delay,
   .animate-burst-star,
   .animate-burst-bubble,
-  .fond-derive {
+  .fond-derive,
+  .lc-stage-pop,
+  .lc-badge-pop,
+  .lc-title-pop,
+  .lc-form-unfold,
+  .lc-tension-pulse,
+  .lc-miss-tilt,
+  .lc-stamp-slam,
+  .lc-celebration-progress {
     animation: none;
   }
   /* Le sticker se retourne quand même : c'est le CODE qui est la récompense,
